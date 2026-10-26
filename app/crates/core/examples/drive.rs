@@ -6,43 +6,18 @@
 //! - `--play` を付けると、各曲の 40% の位置から指定の秒数ずつ鳴らす
 //! - `--cache <フォルダ>` を付けると、再生した曲をキャッシュに保存し、そろうまで待つ
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use cyanomelody_core::cache::{DEFAULT_MAX_BYTES, SongCache};
-use cyanomelody_core::drive::DriveClient;
-use cyanomelody_core::drive::auth::{LoopbackLogin, OAuthClient, RefreshingToken, TokenStore};
 use cyanomelody_core::library::{DEFAULT_PARALLELISM, Library};
 use cyanomelody_core::playback::output::CpalOutput;
 use cyanomelody_core::playback::{PlaybackError, Player, PlayerEvent, TrackOpener, TrackRef};
 use cyanomelody_core::source::drive::DriveSource;
 use cyanomelody_core::source::{MusicSource, SourceKind};
-
-fn secrets() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../secrets")
-}
-
-/// 試作（prototypes/drive_probe）と同じ形式のファイルに保存する。
-struct FileStore(PathBuf);
-
-impl TokenStore for FileStore {
-    fn load(&self) -> Option<String> {
-        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
-        json["refresh_token"].as_str().map(String::from)
-    }
-
-    fn save(&self, refresh_token: &str) -> Result<(), cyanomelody_core::drive::DriveError> {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-        let json = serde_json::json!({ "refresh_token": refresh_token, "obtained_at": now });
-        std::fs::write(&self.0, json.to_string())
-            .map_err(|e| cyanomelody_core::drive::DriveError::Auth(e.to_string()))
-    }
-
-    fn clear(&self) {
-        let _ = std::fs::remove_file(&self.0);
-    }
-}
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
@@ -54,16 +29,7 @@ fn main() {
     let cache_dir: Option<PathBuf> =
         args.iter().position(|a| a == "--cache").map(|i| PathBuf::from(&args[i + 1]));
 
-    let client_json = std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap();
-    let oauth = OAuthClient::from_json(&client_json).unwrap();
-    let store = Arc::new(FileStore(secrets().join("google_token.sec.json")));
-    if store.load().is_none() {
-        let login = LoopbackLogin::start(&oauth).unwrap();
-        println!("ブラウザで次の URL を開いてログインしてください:\n{}", login.url);
-        store.save(&login.finish(Duration::from_secs(300)).unwrap()).unwrap();
-    }
-    let tokens = Arc::new(RefreshingToken::new(oauth, store));
-    let client = DriveClient::new(tokens);
+    let client = common::drive_client();
 
     let t = Instant::now();
     println!("アカウント: {}", client.account_email().unwrap());

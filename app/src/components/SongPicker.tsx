@@ -1,32 +1,42 @@
 // 曲を選んでプレイリストに追加する画面。指定フォルダをたどり、ファイル単位かフォルダ単位で追加する。
 
 import { useEffect, useState } from "react";
-import { api, type Listing, type Playlist, type SourceName } from "../api";
+import { api, errorMessage, type Listing, type Playlist, type SourceName } from "../api";
 import { useShared } from "../state";
 
 export default function SongPicker({ playlist, onDone }: { playlist: Playlist; onDone: (p: Playlist | null) => void }) {
-  const { run, busy } = useShared();
+  const { run, busy, notify } = useShared();
   const [source, setSource] = useState<SourceName>("drive");
   const [folder, setFolder] = useState("");
   const [listing, setListing] = useState<Listing | null>(null);
   const [latest, setLatest] = useState<Playlist | null>(null);
-  const [added, setAdded] = useState(0);
+  // 追加した曲の数は、追加する前のプレイリストとの曲数の差で数える（フォルダごと追加しても正しく数えるため）
+  const added = latest ? latest.items.length - playlist.items.length : 0;
 
   useEffect(() => {
-    api.browse(source, folder).then(setListing).catch(() => setListing({ folders: [], songs: [] }));
-  }, [source, folder]);
+    api
+      .browse(source, folder)
+      .then(setListing)
+      .catch((e) => {
+        setListing({ folders: [], songs: [] });
+        notify(`曲の一覧を読めませんでした: ${errorMessage(e)}`);
+      });
+  }, [source, folder, notify]);
 
   const parts = folder ? folder.split("/") : [];
   const enter = (name: string) => setFolder(folder ? `${folder}/${name}` : name);
   const up = () => setFolder(parts.slice(0, -1).join("/"));
 
-  const add = async (label: string, action: () => Promise<Playlist>, count: number) => {
-    const p = await run(label, action);
-    if (p) {
-      setLatest(p);
-      setAdded((n) => n + count);
-    }
+  const switchSource = (next: SourceName) => {
+    setSource(next);
+    setFolder("");
   };
+
+  const add = async (label: string, action: () => Promise<Playlist>) => {
+    const p = await run(label, action);
+    if (p) setLatest(p);
+  };
+  const addFolder = (path: string) => add("フォルダの追加", () => api.addFolder(playlist.id, source, path));
 
   return (
     <section>
@@ -36,10 +46,10 @@ export default function SongPicker({ playlist, onDone }: { playlist: Playlist; o
         {added > 0 && <span className="dim">{added} 曲を追加しました</span>}
       </div>
       <div className="row">
-        <button className={source === "drive" ? "tab active" : "tab"} onClick={() => { setSource("drive"); setFolder(""); }}>
+        <button className={source === "drive" ? "tab active" : "tab"} onClick={() => switchSource("drive")}>
           Google Drive
         </button>
-        <button className={source === "local" ? "tab active" : "tab"} onClick={() => { setSource("local"); setFolder(""); }}>
+        <button className={source === "local" ? "tab active" : "tab"} onClick={() => switchSource("local")}>
           この端末
         </button>
       </div>
@@ -49,7 +59,7 @@ export default function SongPicker({ playlist, onDone }: { playlist: Playlist; o
         </button>
         <span className="grow">/{folder}</span>
         {folder && (
-          <button disabled={busy !== null} onClick={() => add("フォルダの追加", () => api.addFolder(playlist.id, source, folder), 0)}>
+          <button disabled={busy !== null} onClick={() => addFolder(folder)}>
             このフォルダを全部追加
           </button>
         )}
@@ -67,7 +77,7 @@ export default function SongPicker({ playlist, onDone }: { playlist: Playlist; o
               </span>
               <button
                 disabled={busy !== null}
-                onClick={() => add("フォルダの追加", () => api.addFolder(playlist.id, source, folder ? `${folder}/${name}` : name), 0)}
+                onClick={() => addFolder(folder ? `${folder}/${name}` : name)}
               >
                 フォルダごと追加
               </button>
@@ -79,7 +89,7 @@ export default function SongPicker({ playlist, onDone }: { playlist: Playlist; o
                 {song.title}
                 {song.artist && <span className="dim"> / {song.artist}</span>}
               </span>
-              <button disabled={busy !== null} onClick={() => add("曲の追加", () => api.addSong(playlist.id, source, song.key), 1)}>
+              <button disabled={busy !== null} onClick={() => add("曲の追加", () => api.addSong(playlist.id, source, song.key))}>
                 追加
               </button>
             </li>

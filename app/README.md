@@ -37,7 +37,7 @@ bash scripts/check.sh      # 書式、静的な検査、単体テスト、型の
 
    ```powershell
    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
-   .	arget\debug\cyanomelody.exe
+   .\target\debug\cyanomelody.exe
    ```
 
 3. 別の端末で `npm run e2e` を実行する。各段階の画面が `e2e/screenshots/` に保存される

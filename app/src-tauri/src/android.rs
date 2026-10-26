@@ -15,6 +15,8 @@ use jni::{JNIEnv, JavaVM};
 use crate::core::AppCore;
 
 static BRIDGE: OnceLock<(JavaVM, GlobalRef)> = OnceLock::new();
+/// アクセストークンを使い回す時間（Google のアクセストークンの期限は 1 時間）。
+const TOKEN_LIFETIME: Duration = Duration::from_secs(50 * 60);
 /// Kotlin からの操作を渡す先。起動時に設定する。
 pub static CORE: OnceLock<Arc<AppCore>> = OnceLock::new();
 
@@ -117,7 +119,7 @@ impl AndroidToken {
     pub fn login(&self) -> Result<(), DriveError> {
         let token = call_access_token(true)
             .ok_or_else(|| DriveError::Auth("ログインできなかった（同意されなかった）".into()))?;
-        *self.cached.lock().unwrap() = Some((token, Instant::now() + Duration::from_secs(50 * 60)));
+        *self.cached.lock().unwrap() = Some((token, Instant::now() + TOKEN_LIFETIME));
         let _ = std::fs::write(&self.marker, b"1");
         Ok(())
     }
@@ -141,7 +143,7 @@ impl TokenProvider for AndroidToken {
         }
         let token =
             call_access_token(false).ok_or_else(|| DriveError::Auth("ログインし直してください".into()))?;
-        *cached = Some((token.clone(), Instant::now() + Duration::from_secs(50 * 60)));
+        *cached = Some((token.clone(), Instant::now() + TOKEN_LIFETIME));
         Ok(token)
     }
 

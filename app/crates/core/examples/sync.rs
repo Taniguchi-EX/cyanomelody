@@ -3,41 +3,14 @@
 //! - リフレッシュトークンは `secrets/google_token.sec.json` を使う（`examples/drive.rs` で作ったもの）
 //! - マイドライブ直下に `cyanomelody/playlists/` を作り（なければ）、テスト用のプレイリストを作って最後にゴミ箱に移す
 
-use std::path::PathBuf;
-use std::sync::Arc;
+mod common;
+
 use std::time::Instant;
 
-use cyanomelody_core::drive::DriveClient;
-use cyanomelody_core::drive::auth::{OAuthClient, RefreshingToken, TokenStore};
 use cyanomelody_core::sync::{PlaylistItem, SyncStore};
 
-fn secrets() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../secrets")
-}
-
-struct FileStore(PathBuf);
-
-impl TokenStore for FileStore {
-    fn load(&self) -> Option<String> {
-        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
-        json["refresh_token"].as_str().map(String::from)
-    }
-
-    fn save(&self, _: &str) -> Result<(), cyanomelody_core::drive::DriveError> {
-        Ok(())
-    }
-
-    fn clear(&self) {}
-}
-
 fn store() -> SyncStore {
-    let oauth = OAuthClient::from_json(
-        &std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap(),
-    )
-    .unwrap();
-    let tokens =
-        Arc::new(RefreshingToken::new(oauth, Arc::new(FileStore(secrets().join("google_token.sec.json")))));
-    SyncStore::new(DriveClient::new(tokens))
+    SyncStore::new(common::drive_client())
 }
 
 fn main() {

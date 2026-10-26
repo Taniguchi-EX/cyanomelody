@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::parallel::map_parallel;
-use crate::source::{MusicSource, SourceError, SourceKind, Tags, extension_of};
+use crate::source::{FileEntry, MusicSource, SourceError, SourceKind, Tags, extension_of};
 
 /// タグを並行して読む数の既定値。
 pub const DEFAULT_PARALLELISM: usize = 8;
@@ -122,73 +122,74 @@ impl Library {
         // 一覧を取れないとき（フォルダがない、通信できない）は、ライブラリを変えずにエラーを返す
         let entries = source.list()?;
         let kind = source.kind();
-        let known = self.known(kind)?;
-
-        let mut report = RefreshReport::default();
-        let mut to_read = Vec::new();
-        for entry in &entries {
-            match known.get(&entry.key) {
-                None => {
-                    report.added += 1;
-                    to_read.push(entry);
-                }
-                Some(k) if k.size != entry.size as i64 || k.modified != entry.modified || !k.tags_read => {
-                    report.updated += 1;
-                    to_read.push(entry);
-                }
-                Some(_) => report.unchanged += 1,
-            }
-        }
-
+        let (mut report, to_read) = classify(&entries, &self.known(kind)?);
         let tags = map_parallel(&to_read, parallelism, |e| source.read_tags(e), progress);
-
-        let mut conn = self.conn.lock().unwrap();
-        let tx = conn.transaction()?;
-        tx.execute("UPDATE songs SET missing = 1 WHERE source = ?1", params![kind.as_str()])?;
-        for (entry, result) in to_read.iter().zip(tags) {
-            let (tags, tags_read) = match result {
-                Ok(t) => (t, true),
+        let read: Vec<(&FileEntry, Option<Tags>)> = to_read
+            .iter()
+            .zip(tags)
+            .map(|(entry, result)| match result {
+                Ok(t) => (*entry, Some(t)),
                 Err(e) => {
                     log::warn!("{} のタグを読めない: {e}", entry.relative_path);
                     report.tag_failures += 1;
-                    (Tags::default(), false)
+                    (*entry, None)
                 }
-            };
-            tx.execute(
+            })
+            .collect();
+        report.missing = self.save(kind, &entries, &read)?;
+        Ok(report)
+    }
+
+    /// 手動更新の結果を書き込み、見つからなくなった曲の数を返す。
+    /// `read` はタグを読み直した曲（読めなかったものは `None`）、それ以外の `entries` は変わらなかった曲。
+    fn save(
+        &self,
+        kind: SourceKind,
+        entries: &[FileEntry],
+        read: &[(&FileEntry, Option<Tags>)],
+    ) -> Result<usize, LibraryError> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute("UPDATE songs SET missing = 1 WHERE source = ?1", params![kind.as_str()])?;
+        {
+            let mut upsert = tx.prepare_cached(
                 "INSERT INTO songs (source, key, relative_path, title, artist, album, size, modified, missing, tags_read)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9)
                  ON CONFLICT (source, key) DO UPDATE SET
                    relative_path = excluded.relative_path, title = excluded.title, artist = excluded.artist,
                    album = excluded.album, size = excluded.size, modified = excluded.modified,
                    missing = 0, tags_read = excluded.tags_read",
-                params![
+            )?;
+            for (entry, tags) in read {
+                let t = tags.clone().unwrap_or_default();
+                upsert.execute(params![
                     kind.as_str(),
                     entry.key,
                     entry.relative_path,
-                    tags.title.unwrap_or_else(|| entry.file_stem().to_string()),
-                    tags.artist,
-                    tags.album,
+                    t.title.unwrap_or_else(|| entry.file_stem().to_string()),
+                    t.artist,
+                    t.album,
                     entry.size as i64,
                     entry.modified,
-                    tags_read,
-                ],
-            )?;
-        }
-        // 変わらなかった曲は、相対パス（Drive ではフォルダの移動で変わる）だけ更新する
-        let read_keys: HashSet<&str> = to_read.iter().map(|e| e.key.as_str()).collect();
-        for entry in entries.iter().filter(|e| !read_keys.contains(e.key.as_str())) {
-            tx.execute(
+                    tags.is_some(),
+                ])?;
+            }
+            // 変わらなかった曲は、相対パス（Drive ではフォルダの移動で変わる）だけ更新する
+            let read_keys: HashSet<&str> = read.iter().map(|(e, _)| e.key.as_str()).collect();
+            let mut keep = tx.prepare_cached(
                 "UPDATE songs SET missing = 0, relative_path = ?3 WHERE source = ?1 AND key = ?2",
-                params![kind.as_str(), entry.key, entry.relative_path],
             )?;
+            for entry in entries.iter().filter(|e| !read_keys.contains(e.key.as_str())) {
+                keep.execute(params![kind.as_str(), entry.key, entry.relative_path])?;
+            }
         }
-        report.missing = tx.query_row(
+        let missing: i64 = tx.query_row(
             "SELECT COUNT(*) FROM songs WHERE source = ?1 AND missing = 1",
             params![kind.as_str()],
-            |r| r.get::<_, i64>(0),
-        )? as usize;
+            |r| r.get(0),
+        )?;
         tx.commit()?;
-        Ok(report)
+        Ok(missing as usize)
     }
 
     fn known(&self, kind: SourceKind) -> Result<HashMap<String, Known>, LibraryError> {
@@ -249,6 +250,29 @@ impl Library {
         let rows = stmt.query_map(params, row_to_song)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+}
+
+/// 一覧を、新しい曲・変わった曲（タグを読む）と変わらなかった曲に分ける。前回タグを読めなかった曲も読み直す。
+fn classify<'a>(
+    entries: &'a [FileEntry],
+    known: &HashMap<String, Known>,
+) -> (RefreshReport, Vec<&'a FileEntry>) {
+    let mut report = RefreshReport::default();
+    let mut to_read = Vec::new();
+    for entry in entries {
+        match known.get(&entry.key) {
+            None => {
+                report.added += 1;
+                to_read.push(entry);
+            }
+            Some(k) if k.size != entry.size as i64 || k.modified != entry.modified || !k.tags_read => {
+                report.updated += 1;
+                to_read.push(entry);
+            }
+            Some(_) => report.unchanged += 1,
+        }
+    }
+    (report, to_read)
 }
 
 struct Known {

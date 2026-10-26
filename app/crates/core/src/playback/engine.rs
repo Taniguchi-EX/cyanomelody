@@ -116,6 +116,16 @@ struct WorkerStatus {
     sample_rate: u32,
 }
 
+impl WorkerStatus {
+    /// 再生位置（秒）：シークした位置などの起点に、出力先に渡したフレーム数を足す。
+    fn position(&self, shared: &Shared) -> f64 {
+        if self.sample_rate == 0 {
+            return self.base;
+        }
+        self.base + shared.rendered.load(Ordering::Relaxed) as f64 / self.sample_rate as f64
+    }
+}
+
 impl Player {
     /// 再生エンジンを起動する。`output` は出力先を作る関数で、ワーカーのスレッドで呼ばれる
     /// （cpal の出力先はスレッドをまたいで渡せないことがあるため）。
@@ -220,14 +230,11 @@ impl Player {
     }
 
     pub fn status(&self) -> Status {
-        let ws = self.status.lock().unwrap().clone();
-        let mut status = ws.status;
-        if ws.sample_rate > 0 && status.index.is_some() {
-            status.position =
-                ws.base + self.shared.rendered.load(Ordering::Relaxed) as f64 / ws.sample_rate as f64;
-            if let Some(d) = status.duration {
-                status.position = status.position.min(d);
-            }
+        let ws = self.status.lock().unwrap();
+        let mut status = ws.status.clone();
+        if status.index.is_some() {
+            let position = ws.position(&self.shared);
+            status.position = status.duration.map_or(position, |d| position.min(d));
         }
         status
     }
@@ -421,11 +428,7 @@ impl Worker {
     }
 
     fn position(&self) -> f64 {
-        let ws = self.status.lock().unwrap();
-        if ws.sample_rate == 0 {
-            return ws.base;
-        }
-        ws.base + self.shared.rendered.load(Ordering::Relaxed) as f64 / ws.sample_rate as f64
+        self.status.lock().unwrap().position(&self.shared)
     }
 
     fn clear_buffer(&self, base: f64) {

@@ -7,9 +7,12 @@ use symphonia::core::io::MediaSource;
 use super::{FileEntry, MusicSource, SourceError, SourceKind, Tags, is_audio, tags};
 use crate::cache::{CacheFile, SongCache};
 use crate::drive::{DriveClient, DriveError, RangeReader, parse_time};
+use crate::parallel::map_parallel;
 
 /// タグを読むときの取得の単位。タグは先頭か末尾の小さな範囲にあることが多い。
 const TAG_CHUNK: u64 = 64 * 1024;
+/// フォルダの一覧を並行して問い合わせる数。
+const LIST_PARALLELISM: usize = 8;
 /// 再生するときの取得の単位。
 const PLAY_CHUNK: u64 = 256 * 1024;
 
@@ -71,23 +74,30 @@ impl MusicSource for DriveSource {
         SourceKind::Drive
     }
 
+    /// 指定フォルダとサブフォルダの曲。同じ深さのフォルダは並行して問い合わせる（1 回に約 0.3 秒かかるため）。
     fn list(&self) -> Result<Vec<FileEntry>, SourceError> {
         let mut out = Vec::new();
-        let mut folders = vec![(self.folder_id.clone(), String::new())];
-        while let Some((id, prefix)) = folders.pop() {
-            for file in self.client.list_children(&id).map_err(|e| source_error(e, false))? {
-                let relative = format!("{prefix}{}", file.name);
-                if file.is_folder() {
-                    folders.push((file.id, format!("{relative}/")));
-                } else if is_audio(&file.name) {
-                    out.push(FileEntry {
-                        key: file.id,
-                        relative_path: relative,
-                        size: file.size.unwrap_or(0),
-                        modified: file.modified_time.as_deref().and_then(parse_time),
-                    });
+        let mut level = vec![(self.folder_id.clone(), String::new())];
+        while !level.is_empty() {
+            let children =
+                map_parallel(&level, LIST_PARALLELISM, |(id, _)| self.client.list_children(id), |_, _| {});
+            let mut next = Vec::new();
+            for ((_, prefix), files) in level.iter().zip(children) {
+                for file in files.map_err(|e| source_error(e, false))? {
+                    let relative = format!("{prefix}{}", file.name);
+                    if file.is_folder() {
+                        next.push((file.id, format!("{relative}/")));
+                    } else if is_audio(&file.name) {
+                        out.push(FileEntry {
+                            key: file.id,
+                            relative_path: relative,
+                            size: file.size.unwrap_or(0),
+                            modified: file.modified_time.as_deref().and_then(parse_time),
+                        });
+                    }
                 }
             }
+            level = next;
         }
         out.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
         Ok(out)
