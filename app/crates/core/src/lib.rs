@@ -2,6 +2,7 @@
 //! Tauri や画面には依存しない。
 
 pub mod device;
+pub mod drive;
 pub mod library;
 pub mod playback;
 pub mod source;

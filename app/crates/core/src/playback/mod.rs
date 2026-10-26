@@ -8,6 +8,7 @@
 
 pub mod decode;
 mod engine;
+pub mod mp3;
 pub mod output;
 pub mod queue;
 pub mod resample;

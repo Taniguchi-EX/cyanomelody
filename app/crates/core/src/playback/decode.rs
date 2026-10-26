@@ -1,5 +1,8 @@
 //! 曲のデコード。Symphonia で MP3、WAV、`.m4a`（AAC）を読み、ステレオの f32 にする。
 
+use std::io::{Read, Seek, SeekFrom};
+use std::sync::{Arc, Mutex};
+
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymError;
@@ -10,6 +13,7 @@ use symphonia::core::probe::Hint;
 use symphonia::core::units::{Time, TimeBase};
 
 use super::PlaybackError;
+use super::mp3::Mp3Index;
 
 /// 1 曲ぶんのデコーダ。
 pub struct TrackDecoder {
@@ -19,45 +23,93 @@ pub struct TrackDecoder {
     time_base: Option<TimeBase>,
     sample_rate: u32,
     duration: Option<f64>,
+    /// MP3 で、位置を見積もってシークするための情報
+    mp3: Option<Mp3Seek>,
+}
+
+struct Mp3Seek {
+    media: Arc<Mutex<Box<dyn MediaSource>>>,
+    len: u64,
+    index: Mp3Index,
+}
+
+/// 開いた曲の、フォーマットとデコーダ。
+struct Opened {
+    format: Box<dyn FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    time_base: Option<TimeBase>,
+    sample_rate: u32,
+    duration: Option<f64>,
+}
+
+fn open_parts(source: Box<dyn MediaSource>, extension: &str) -> Result<Opened, PlaybackError> {
+    let mss = MediaSourceStream::new(source, Default::default());
+    let mut hint = Hint::new();
+    hint.with_extension(extension);
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(decode_error)?;
+    let format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| PlaybackError::Decode("音声のトラックがない".into()))?;
+    let params = track.codec_params.clone();
+    let decoder = symphonia::default::get_codecs()
+        .make(&params, &DecoderOptions::default())
+        .map_err(decode_error)?;
+    let sample_rate = params
+        .sample_rate
+        .ok_or_else(|| PlaybackError::Decode("サンプルレートが分からない".into()))?;
+    let duration = match (params.time_base, params.n_frames) {
+        (Some(tb), Some(n)) => Some(to_seconds(tb.calc_time(n))),
+        _ => None,
+    };
+    Ok(Opened {
+        track_id: track.id,
+        format,
+        decoder,
+        time_base: params.time_base,
+        sample_rate,
+        duration,
+    })
 }
 
 impl TrackDecoder {
     /// `source` を開く。`extension` は形式の推定の手がかり（`mp3`、`wav`、`m4a`）。
     pub fn open(source: Box<dyn MediaSource>, extension: &str) -> Result<Self, PlaybackError> {
-        let mss = MediaSourceStream::new(source, Default::default());
-        let mut hint = Hint::new();
-        hint.with_extension(extension);
-        let probed = symphonia::default::get_probe()
-            .format(
-                &hint,
-                mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
-            )
-            .map_err(decode_error)?;
-        let format = probed.format;
-        let track = format
-            .default_track()
-            .ok_or_else(|| PlaybackError::Decode("音声のトラックがない".into()))?;
-        let params = track.codec_params.clone();
-        let decoder = symphonia::default::get_codecs()
-            .make(&params, &DecoderOptions::default())
-            .map_err(decode_error)?;
-        let sample_rate = params
-            .sample_rate
-            .ok_or_else(|| PlaybackError::Decode("サンプルレートが分からない".into()))?;
-        let duration = match (params.time_base, params.n_frames) {
-            (Some(tb), Some(n)) => Some(to_seconds(tb.calc_time(n))),
-            _ => None,
-        };
-        Ok(Self {
-            track_id: track.id,
-            format,
-            decoder,
-            time_base: params.time_base,
-            sample_rate,
-            duration,
-        })
+        if extension == "mp3"
+            && let Some(len) = source.byte_len()
+        {
+            // MP3 は、あとでファイルの途中から読み直せるよう、共有して開く
+            let media = Arc::new(Mutex::new(source));
+            let index = Mp3Index::probe(&mut SharedMedia::new(media.clone(), 0, len), len);
+            let opened = open_parts(Box::new(SharedMedia::new(media.clone(), 0, len)), extension)?;
+            let mut decoder = Self::from_opened(opened);
+            if let Some(index) = index {
+                decoder.duration = decoder.duration.or(Some(index.duration));
+                decoder.mp3 = Some(Mp3Seek { media, len, index });
+            }
+            return Ok(decoder);
+        }
+        Ok(Self::from_opened(open_parts(source, extension)?))
+    }
+
+    fn from_opened(o: Opened) -> Self {
+        Self {
+            format: o.format,
+            decoder: o.decoder,
+            track_id: o.track_id,
+            time_base: o.time_base,
+            sample_rate: o.sample_rate,
+            duration: o.duration,
+            mp3: None,
+        }
     }
 
     pub fn sample_rate(&self) -> u32 {
@@ -108,13 +160,28 @@ impl TrackDecoder {
     }
 
     /// `seconds` 秒の位置に移り、実際に移った位置（秒）を返す。
+    /// MP3 は、見積もった位置から読み直す（先頭からたどらないため、Drive でも速い）。
     pub fn seek(&mut self, seconds: f64) -> Result<f64, PlaybackError> {
+        let seconds = seconds.max(0.0);
+        if let Some(m) = &self.mp3 {
+            let seconds = seconds.min(m.index.duration);
+            let byte = m.index.byte_for(seconds);
+            let opened = open_parts(
+                Box::new(SharedMedia::new(m.media.clone(), byte, m.len)),
+                "mp3",
+            )?;
+            self.format = opened.format;
+            self.decoder = opened.decoder;
+            self.track_id = opened.track_id;
+            self.time_base = opened.time_base;
+            return Ok(seconds);
+        }
         let seeked = self
             .format
             .seek(
                 SeekMode::Accurate,
                 SeekTo::Time {
-                    time: Time::from(seconds.max(0.0)),
+                    time: Time::from(seconds),
                     track_id: Some(self.track_id),
                 },
             )
@@ -124,6 +191,72 @@ impl TrackDecoder {
             .time_base
             .map(|tb| to_seconds(tb.calc_time(seeked.actual_ts)))
             .unwrap_or(seconds))
+    }
+}
+
+/// 1 つの読み込み口を、開始位置を変えて共有する。MP3 をファイルの途中から開き直すために使う。
+struct SharedMedia {
+    inner: Arc<Mutex<Box<dyn MediaSource>>>,
+    start: u64,
+    pos: u64,
+    len: u64,
+}
+
+impl SharedMedia {
+    fn new(inner: Arc<Mutex<Box<dyn MediaSource>>>, start: u64, len: u64) -> Self {
+        Self {
+            inner,
+            start: start.min(len),
+            pos: 0,
+            len,
+        }
+    }
+
+    fn view_len(&self) -> u64 {
+        self.len - self.start
+    }
+}
+
+impl Read for SharedMedia {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let remaining = self.view_len().saturating_sub(self.pos);
+        if remaining == 0 || out.is_empty() {
+            return Ok(0);
+        }
+        let want = out.len().min(remaining as usize);
+        let mut inner = self.inner.lock().unwrap();
+        inner.seek(SeekFrom::Start(self.start + self.pos))?;
+        let n = inner.read(&mut out[..want])?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl Seek for SharedMedia {
+    fn seek(&mut self, from: SeekFrom) -> std::io::Result<u64> {
+        let pos = match from {
+            SeekFrom::Start(p) => p as i128,
+            SeekFrom::End(d) => self.view_len() as i128 + d as i128,
+            SeekFrom::Current(d) => self.pos as i128 + d as i128,
+        };
+        if pos < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "負の位置",
+            ));
+        }
+        self.pos = pos as u64;
+        Ok(self.pos)
+    }
+}
+
+impl MediaSource for SharedMedia {
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
+    fn byte_len(&self) -> Option<u64> {
+        Some(self.view_len())
     }
 }
 
@@ -199,6 +332,73 @@ pub(crate) mod tests {
             (rest as f64 / 48000.0 - 1.5).abs() < 0.05,
             "残り {rest} フレーム"
         );
+    }
+
+    /// 左のチャンネルの 0.2〜0.4 秒の、ゼロ交差の数から音の高さ（Hz）を求める。
+    /// MP3 を途中から読み始めると、最初の約 0.15 秒は無音になるため、先頭 0.2 秒は使わない。
+    fn pitch(frames: &[f32], sample_rate: u32) -> f64 {
+        let skip = (sample_rate as f64 * 0.2) as usize;
+        let n = (sample_rate as f64 * 0.2) as usize;
+        let left: Vec<f32> = frames
+            .iter()
+            .step_by(2)
+            .skip(skip)
+            .take(n)
+            .copied()
+            .collect();
+        let crossings = left
+            .windows(2)
+            .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+            .count();
+        crossings as f64 / 2.0 / (left.len() as f64 / sample_rate as f64)
+    }
+
+    fn decode_seconds(d: &mut TrackDecoder, seconds: f64) -> Vec<f32> {
+        let mut out = Vec::new();
+        while out.len() < (d.sample_rate() as f64 * seconds) as usize * 2 {
+            out.extend(d.next_frames().unwrap().unwrap());
+        }
+        out
+    }
+
+    #[test]
+    fn mp3_seek_lands_near_target() {
+        // 1 秒ごとに 100Hz ずつ上がる音。12.3 秒は 1400Hz
+        for (name, tolerance) in [
+            ("steps_cbr.mp3", 0),
+            ("steps_vbr.mp3", 0),
+            ("steps_vbr_noxing.mp3", 1),
+        ] {
+            let data = crate::playback::mp3::tests::fixture(name);
+            let mut d = TrackDecoder::open(Box::new(Cursor::new(data)), "mp3").unwrap();
+            assert!(d.mp3.is_some(), "{name}: 見積もりを使う");
+            let landed = d.seek(12.3).unwrap();
+            assert!((landed - 12.3).abs() < 1e-9);
+            let hz = pitch(&decode_seconds(&mut d, 0.5), d.sample_rate());
+            let second = ((hz - 200.0) / 100.0).round() as i64;
+            assert!(
+                (second - 12).abs() <= tolerance,
+                "{name}: {hz:.0}Hz（{second} 秒目）に着地"
+            );
+        }
+    }
+
+    #[test]
+    fn mp3_seek_over_drive_fetches_little() {
+        use crate::drive::mock::MockDrive;
+        use crate::drive::{DriveClient, RangeReader, StaticToken};
+        use std::sync::atomic::Ordering;
+        let data = crate::playback::mp3::tests::fixture("steps_cbr.mp3");
+        let mock = MockDrive::start();
+        let id = mock.add_file("root", "a.mp3", data.clone());
+        let client = DriveClient::with_base(&mock.base_url(), Arc::new(StaticToken("t".into())));
+        let reader = RangeReader::new(client, &id, data.len() as u64, 4096);
+        let mut d = TrackDecoder::open(Box::new(reader), "mp3").unwrap();
+        let before = mock.media_requests.load(Ordering::Relaxed);
+        d.seek(18.0).unwrap();
+        decode_seconds(&mut d, 0.1);
+        let requests = mock.media_requests.load(Ordering::Relaxed) - before;
+        assert!(requests <= 4, "シーク先の近くだけ取得する: {requests} 回");
     }
 
     #[test]

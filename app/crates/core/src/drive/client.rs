@@ -1,0 +1,272 @@
+//! Drive API の呼び出し。
+
+use std::io::Read;
+use std::sync::Arc;
+use std::time::Duration;
+
+use serde::Deserialize;
+
+use super::{DriveError, FOLDER_MIME, TokenProvider};
+
+const DEFAULT_BASE: &str = "https://www.googleapis.com";
+
+/// Drive のファイルやフォルダ。
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveFile {
+    pub id: String,
+    pub name: String,
+    pub mime_type: String,
+    /// Drive は大きさを文字列で返す。フォルダにはない
+    #[serde(default, deserialize_with = "size_from_str")]
+    pub size: Option<u64>,
+    pub modified_time: Option<String>,
+}
+
+impl DriveFile {
+    pub fn is_folder(&self) -> bool {
+        self.mime_type == FOLDER_MIME
+    }
+}
+
+fn size_from_str<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    let s: Option<String> = Option::deserialize(d)?;
+    Ok(s.and_then(|s| s.parse().ok()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileList {
+    #[serde(default)]
+    files: Vec<DriveFile>,
+    next_page_token: Option<String>,
+}
+
+const FILE_FIELDS: &str = "id,name,mimeType,size,modifiedTime";
+
+/// Drive API の呼び出し口。接続を使い回すため、複製して共有する。
+#[derive(Clone)]
+pub struct DriveClient {
+    agent: ureq::Agent,
+    base: Arc<str>,
+    tokens: Arc<dyn TokenProvider>,
+}
+
+impl DriveClient {
+    pub fn new(tokens: Arc<dyn TokenProvider>) -> Self {
+        Self::with_base(DEFAULT_BASE, tokens)
+    }
+
+    /// 呼び出し先を変える（テスト用）。
+    pub fn with_base(base: &str, tokens: Arc<dyn TokenProvider>) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_secs(10))
+            .timeout_read(Duration::from_secs(30))
+            .build();
+        Self {
+            agent,
+            base: base.trim_end_matches('/').into(),
+            tokens,
+        }
+    }
+
+    /// GET する。Drive に拒否された（401）ときは、アクセストークンを更新して 1 回だけやり直す。
+    fn get(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        range: Option<(u64, u64)>,
+    ) -> Result<ureq::Response, DriveError> {
+        for attempt in 0..2 {
+            let token = self.tokens.access_token()?;
+            let mut req = self
+                .agent
+                .get(&format!("{}{path}", self.base))
+                .set("Authorization", &format!("Bearer {token}"));
+            for (k, v) in query {
+                req = req.query(k, v);
+            }
+            if let Some((start, end)) = range {
+                req = req.set("Range", &format!("bytes={start}-{end}"));
+            }
+            match req.call() {
+                Ok(resp) => return Ok(resp),
+                Err(ureq::Error::Status(401, _)) if attempt == 0 => {
+                    log::info!("アクセストークンが拒否されたため更新する");
+                    self.tokens.invalidate();
+                }
+                Err(e) => return Err(http_error(e)),
+            }
+        }
+        Err(DriveError::Auth(
+            "アクセストークンを更新しても拒否された".into(),
+        ))
+    }
+
+    fn get_json<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T, DriveError> {
+        self.get(path, query, None)?
+            .into_json()
+            .map_err(|e| DriveError::Parse(e.to_string()))
+    }
+
+    /// ファイルやフォルダの情報。
+    pub fn file(&self, id: &str) -> Result<DriveFile, DriveError> {
+        self.get_json(&format!("/drive/v3/files/{id}"), &[("fields", FILE_FIELDS)])
+    }
+
+    /// `query`（Drive の検索式）に合うものをすべて返す。
+    fn search(&self, query: &str) -> Result<Vec<DriveFile>, DriveError> {
+        let fields = format!("nextPageToken,files({FILE_FIELDS})");
+        let mut out = Vec::new();
+        let mut page = String::new();
+        loop {
+            let mut params = vec![
+                ("q", query),
+                ("fields", fields.as_str()),
+                ("pageSize", "1000"),
+            ];
+            if !page.is_empty() {
+                params.push(("pageToken", page.as_str()));
+            }
+            let list: FileList = self.get_json("/drive/v3/files", &params)?;
+            out.extend(list.files);
+            match list.next_page_token {
+                Some(token) => page = token,
+                None => return Ok(out),
+            }
+        }
+    }
+
+    /// フォルダの直下のファイルとフォルダ（ゴミ箱のものは除く）。
+    pub fn list_children(&self, folder_id: &str) -> Result<Vec<DriveFile>, DriveError> {
+        self.search(&format!(
+            "'{}' in parents and trashed = false",
+            escape(folder_id)
+        ))
+    }
+
+    /// フォルダの直下の、名前が `name` のフォルダ。
+    pub fn find_folder(
+        &self,
+        parent_id: &str,
+        name: &str,
+    ) -> Result<Option<DriveFile>, DriveError> {
+        let q = format!(
+            "'{}' in parents and name = '{}' and mimeType = '{FOLDER_MIME}' and trashed = false",
+            escape(parent_id),
+            escape(name)
+        );
+        Ok(self.search(&q)?.into_iter().next())
+    }
+
+    /// マイドライブからのパス（`music/cyanomelody_test` のように `/` 区切り）でフォルダの ID を得る。
+    pub fn folder_by_path(&self, path: &str) -> Result<String, DriveError> {
+        let mut id = "root".to_string();
+        for name in path.split('/').filter(|s| !s.is_empty()) {
+            id = self
+                .find_folder(&id, name)?
+                .ok_or_else(|| DriveError::NotFound(format!("フォルダ {path} の {name}")))?
+                .id;
+        }
+        Ok(id)
+    }
+
+    /// ファイルの `start` から `end`（含む）までのバイトを取得する。
+    pub fn read_range(&self, id: &str, start: u64, end: u64) -> Result<Vec<u8>, DriveError> {
+        let resp = self.get(
+            &format!("/drive/v3/files/{id}"),
+            &[("alt", "media")],
+            Some((start, end)),
+        )?;
+        if resp.status() != 206 && resp.status() != 200 {
+            return Err(DriveError::Http {
+                status: resp.status(),
+                message: "部分取得できない".into(),
+            });
+        }
+        let mut buf = Vec::with_capacity((end - start + 1) as usize);
+        resp.into_reader()
+            .read_to_end(&mut buf)
+            .map_err(|e| DriveError::Network(e.to_string()))?;
+        Ok(buf)
+    }
+}
+
+/// Drive の検索式の文字列の中で、`'` と `\` を逃がす。
+fn escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn http_error(e: ureq::Error) -> DriveError {
+    match e {
+        ureq::Error::Status(401, _) => DriveError::Auth("Google Drive に拒否された".into()),
+        ureq::Error::Status(404, resp) => {
+            DriveError::NotFound(resp.into_string().unwrap_or_default())
+        }
+        ureq::Error::Status(status, resp) => DriveError::Http {
+            status,
+            message: resp.into_string().unwrap_or_default(),
+        },
+        ureq::Error::Transport(t) => DriveError::Network(t.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::StaticToken;
+    use crate::drive::mock::MockDrive;
+
+    fn client(mock: &MockDrive) -> DriveClient {
+        DriveClient::with_base(&mock.base_url(), Arc::new(StaticToken("token".into())))
+    }
+
+    #[test]
+    fn lists_children_across_pages_and_finds_folders_by_path() {
+        let mock = MockDrive::start();
+        let music = mock.add_folder("root", "music");
+        let test = mock.add_folder(&music, "cyanomelody_test");
+        for i in 0..5 {
+            mock.add_file(&test, &format!("{i}.mp3"), vec![0; 10]);
+        }
+        mock.set_page_size(2);
+        let c = client(&mock);
+        assert_eq!(c.folder_by_path("music/cyanomelody_test").unwrap(), test);
+        let children = c.list_children(&test).unwrap();
+        assert_eq!(children.len(), 5, "ページをまたいで全部取る");
+        assert_eq!(children[0].size, Some(10));
+        assert!(matches!(
+            c.folder_by_path("music/ない"),
+            Err(DriveError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn reads_ranges() {
+        let mock = MockDrive::start();
+        let id = mock.add_file("root", "a.wav", (0..=255u8).collect());
+        let c = client(&mock);
+        assert_eq!(c.read_range(&id, 10, 13).unwrap(), vec![10, 11, 12, 13]);
+        assert_eq!(c.file(&id).unwrap().size, Some(256));
+    }
+
+    #[test]
+    fn retries_once_after_401_and_maps_network_errors() {
+        let mock = MockDrive::start();
+        let id = mock.add_file("root", "a.wav", vec![1, 2, 3]);
+        mock.reject_next_requests(1);
+        let c = client(&mock);
+        assert_eq!(
+            c.read_range(&id, 0, 2).unwrap(),
+            vec![1, 2, 3],
+            "1 回拒否されても、やり直して読める"
+        );
+        let offline =
+            DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into())));
+        assert!(offline.list_children("root").unwrap_err().is_offline());
+    }
+}

@@ -1,6 +1,7 @@
 //! 音楽ソース。Google Drive やローカルのフォルダなど、曲の置き場所ごとの違いをこの窓口の裏に隠す。
 //! ソースを足すときは `MusicSource` を実装する。
 
+pub mod drive;
 pub mod local;
 pub mod tags;
 
