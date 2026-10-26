@@ -70,18 +70,20 @@ impl DriveClient {
         }
     }
 
-    /// GET する。Drive に拒否された（401）ときは、アクセストークンを更新して 1 回だけやり直す。
-    fn get(
+    /// 呼び出す。Drive に拒否された（401）ときは、アクセストークンを更新して 1 回だけやり直す。
+    fn send(
         &self,
+        method: &str,
         path: &str,
         query: &[(&str, &str)],
         range: Option<(u64, u64)>,
+        body: Option<(&str, &[u8])>,
     ) -> Result<ureq::Response, DriveError> {
         for attempt in 0..2 {
             let token = self.tokens.access_token()?;
             let mut req = self
                 .agent
-                .get(&format!("{}{path}", self.base))
+                .request(method, &format!("{}{path}", self.base))
                 .set("Authorization", &format!("Bearer {token}"));
             for (k, v) in query {
                 req = req.query(k, v);
@@ -89,7 +91,13 @@ impl DriveClient {
             if let Some((start, end)) = range {
                 req = req.set("Range", &format!("bytes={start}-{end}"));
             }
-            match req.call() {
+            let result = match body {
+                Some((content_type, bytes)) => {
+                    req.set("Content-Type", content_type).send_bytes(bytes)
+                }
+                None => req.call(),
+            };
+            match result {
                 Ok(resp) => return Ok(resp),
                 Err(ureq::Error::Status(401, _)) if attempt == 0 => {
                     log::info!("アクセストークンが拒否されたため更新する");
@@ -101,6 +109,115 @@ impl DriveClient {
         Err(DriveError::Auth(
             "アクセストークンを更新しても拒否された".into(),
         ))
+    }
+
+    fn get(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        range: Option<(u64, u64)>,
+    ) -> Result<ureq::Response, DriveError> {
+        self.send("GET", path, query, range, None)
+    }
+
+    fn json_response<T: serde::de::DeserializeOwned>(
+        resp: ureq::Response,
+    ) -> Result<T, DriveError> {
+        resp.into_json()
+            .map_err(|e| DriveError::Parse(e.to_string()))
+    }
+
+    /// フォルダを作る。
+    pub fn create_folder(&self, parent_id: &str, name: &str) -> Result<DriveFile, DriveError> {
+        let meta =
+            serde_json::json!({ "name": name, "mimeType": FOLDER_MIME, "parents": [parent_id] });
+        let body = meta.to_string();
+        let resp = self.send(
+            "POST",
+            "/drive/v3/files",
+            &[("fields", FILE_FIELDS)],
+            None,
+            Some(("application/json; charset=UTF-8", body.as_bytes())),
+        )?;
+        Self::json_response(resp)
+    }
+
+    /// フォルダの中にファイルを作る（中身ごと）。
+    pub fn create_file(
+        &self,
+        parent_id: &str,
+        name: &str,
+        mime: &str,
+        content: &[u8],
+    ) -> Result<DriveFile, DriveError> {
+        let boundary = "cyanomelody-boundary-7c1f";
+        let meta = serde_json::json!({ "name": name, "mimeType": mime, "parents": [parent_id] });
+        let mut body = Vec::new();
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n--{boundary}\r\nContent-Type: {mime}\r\n\r\n")
+                .as_bytes(),
+        );
+        body.extend_from_slice(content);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        let content_type = format!("multipart/related; boundary={boundary}");
+        let resp = self.send(
+            "POST",
+            "/upload/drive/v3/files",
+            &[("uploadType", "multipart"), ("fields", FILE_FIELDS)],
+            None,
+            Some((&content_type, &body)),
+        )?;
+        Self::json_response(resp)
+    }
+
+    /// ファイルの中身を置き換える。
+    pub fn update_file(
+        &self,
+        id: &str,
+        mime: &str,
+        content: &[u8],
+    ) -> Result<DriveFile, DriveError> {
+        let resp = self.send(
+            "PATCH",
+            &format!("/upload/drive/v3/files/{id}"),
+            &[("uploadType", "media"), ("fields", FILE_FIELDS)],
+            None,
+            Some((mime, content)),
+        )?;
+        Self::json_response(resp)
+    }
+
+    /// ファイルの中身をすべて取得する。
+    pub fn download(&self, id: &str) -> Result<Vec<u8>, DriveError> {
+        let resp = self.get(&format!("/drive/v3/files/{id}"), &[("alt", "media")], None)?;
+        let mut buf = Vec::new();
+        resp.into_reader()
+            .read_to_end(&mut buf)
+            .map_err(|e| DriveError::Network(e.to_string()))?;
+        Ok(buf)
+    }
+
+    /// ファイルをゴミ箱に移す（Drive のゴミ箱から戻せる）。
+    pub fn trash(&self, id: &str) -> Result<(), DriveError> {
+        let body = serde_json::json!({ "trashed": true }).to_string();
+        self.send(
+            "PATCH",
+            &format!("/drive/v3/files/{id}"),
+            &[("fields", "id")],
+            None,
+            Some(("application/json; charset=UTF-8", body.as_bytes())),
+        )?;
+        Ok(())
+    }
+
+    /// フォルダの直下の、名前が `name` のファイル（フォルダは除く）。
+    pub fn find_file(&self, parent_id: &str, name: &str) -> Result<Option<DriveFile>, DriveError> {
+        let q = format!(
+            "'{}' in parents and name = '{}' and mimeType != '{FOLDER_MIME}' and trashed = false",
+            escape(parent_id),
+            escape(name)
+        );
+        Ok(self.search(&q)?.into_iter().next())
     }
 
     fn get_json<T: serde::de::DeserializeOwned>(
@@ -260,6 +377,38 @@ mod tests {
             c.folder_by_path("music/ない"),
             Err(DriveError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn creates_updates_downloads_and_trashes_files() {
+        let mock = MockDrive::start();
+        let c = client(&mock);
+        let folder = c.create_folder("root", "cyanomelody").unwrap();
+        assert!(folder.is_folder());
+        assert_eq!(
+            c.find_folder("root", "cyanomelody").unwrap().unwrap().id,
+            folder.id
+        );
+        let file = c
+            .create_file(
+                &folder.id,
+                "a.json",
+                "application/json",
+                "{\"名前\":1}".as_bytes(),
+            )
+            .unwrap();
+        assert_eq!(c.download(&file.id).unwrap(), "{\"名前\":1}".as_bytes());
+        c.update_file(&file.id, "application/json", b"{}").unwrap();
+        assert_eq!(c.download(&file.id).unwrap(), b"{}");
+        assert_eq!(
+            c.find_file(&folder.id, "a.json").unwrap().unwrap().id,
+            file.id
+        );
+        c.trash(&file.id).unwrap();
+        assert!(
+            c.find_file(&folder.id, "a.json").unwrap().is_none(),
+            "ゴミ箱のものは見えない"
+        );
     }
 
     #[test]

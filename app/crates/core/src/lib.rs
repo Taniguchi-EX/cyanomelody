@@ -7,6 +7,7 @@ pub mod drive;
 pub mod library;
 pub mod playback;
 pub mod source;
+pub mod sync;
 
 /// 中核のバージョン。
 pub fn version() -> &'static str {
