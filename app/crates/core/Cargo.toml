@@ -6,4 +6,22 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+default = ["cpal-output"]
+# cpal で実際の出力先に音を出す。単体テストでは使わない
+cpal-output = ["dep:cpal"]
+
 [dependencies]
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4", "wav", "pcm"] }
+rubato = "0.16"
+fastrand = "2"
+thiserror = "2"
+log = "0.4"
+cpal = { version = "0.16", optional = true }
+
+[dev-dependencies]
+env_logger = "0.11"
+
+[[example]]
+name = "play"
+required-features = ["cpal-output"]
