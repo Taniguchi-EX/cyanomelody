@@ -1,6 +1,6 @@
 # prototypes
 
-技術選定のための試作。検証項目は `docs/01_進行中のタスク/技術選定/試作検証項目.md`、結果は同じフォルダの `試作結果.md` を参照。
+技術選定のための試作。検証項目は `docs/02_完了したタスク/0002_技術選定/試作検証項目.md`、結果は同じフォルダの `試作結果.md` を参照。
 
 ## android_env
 
@@ -37,6 +37,17 @@ docker run --rm --network cm-net -v "$PWD:/work" -w /work rust:1-bookworm sh -c 
 ```
 
 取得単位は環境変数 `CHUNK_KB`（既定 256）で変えられる。
+
+## drive_probe
+
+本物の Google Drive で、ログイン、フォルダの一覧、タグの読み込み、ストリーミング再生とシークを行い、通信の回数と時間を測る（C-1、C-3〜C-6）。Windows で直接実行する。
+
+```sh
+cargo run --release -- music/cyanomelody_test
+```
+
+- OAuth クライアントの情報は `secrets/google_oauth_desktop.sec.json`（Git の管理外）から読む
+- 初回はブラウザでログインする。得たリフレッシュトークンは `secrets/google_token.sec.json` に保存し、2 回目以降はそれを使う。ログインが 7 日で切れないか（C-2）も、この試作で確かめる
 
 ## play_local
 
