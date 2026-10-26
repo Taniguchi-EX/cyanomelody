@@ -93,6 +93,15 @@ class PlaybackService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val playing = RustBridge.playing
     val title = RustBridge.title
+    updateSession(title, playing)
+    startForeground(NOTIFICATION_ID, buildNotification(title, playing), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+    if (playing) requestFocus()
+    Log.i(TAG, "通知を更新: $title / 再生中=$playing")
+    return START_NOT_STICKY
+  }
+
+  /** ロック画面などに出す曲名と、受け付ける操作。 */
+  private fun updateSession(title: String, playing: Boolean) {
     session.setMetadata(
       MediaMetadata.Builder()
         .putString(MediaMetadata.METADATA_KEY_TITLE, title)
@@ -112,10 +121,14 @@ class PlaybackService : Service() {
         )
         .build()
     )
+  }
+
+  /** 通知。押すとアプリを開き、再生中は消せないようにする。 */
+  private fun buildNotification(title: String, playing: Boolean): Notification {
     val openApp = PendingIntent.getActivity(
       this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
     )
-    val notification = Notification.Builder(this, CHANNEL_ID)
+    return Notification.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_media_play)
       .setContentTitle(title)
       .setContentText("cyanomelody")
@@ -123,10 +136,6 @@ class PlaybackService : Service() {
       .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken))
       .setOngoing(playing)
       .build()
-    startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
-    if (playing) requestFocus()
-    Log.i(TAG, "通知を更新: $title / 再生中=$playing")
-    return START_NOT_STICKY
   }
 
   private fun requestFocus() {

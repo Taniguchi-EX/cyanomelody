@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -86,8 +86,8 @@ pub struct LoopbackLogin {
 
 impl LoopbackLogin {
     pub fn start(client: &OAuthClient) -> Result<Self, DriveError> {
-        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| DriveError::Network(e.to_string()))?;
-        let port = listener.local_addr().map_err(|e| DriveError::Network(e.to_string()))?.port();
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let port = listener.local_addr()?.port();
         let redirect_uri = format!("http://127.0.0.1:{port}");
         let verifier = random_b64(48);
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -105,35 +105,11 @@ impl LoopbackLogin {
 
     /// ブラウザから戻ってくるのを `timeout` まで待ち、リフレッシュトークンを返す。
     pub fn finish(self, timeout: Duration) -> Result<String, DriveError> {
-        let deadline = Instant::now() + timeout;
-        self.listener.set_nonblocking(true).map_err(|e| DriveError::Network(e.to_string()))?;
-        let (mut stream, _) = loop {
-            match self.listener.accept() {
-                Ok(conn) => break conn,
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    if Instant::now() > deadline {
-                        return Err(DriveError::Auth("ログインが時間内に終わらなかった".into()));
-                    }
-                    std::thread::sleep(Duration::from_millis(100));
-                }
-                Err(e) => return Err(DriveError::Network(e.to_string())),
-            }
-        };
-        stream.set_nonblocking(false).ok();
+        let mut stream = accept_until(&self.listener, Instant::now() + timeout)?;
         let mut line = String::new();
-        BufReader::new(&stream).read_line(&mut line).map_err(|e| DriveError::Network(e.to_string()))?;
+        BufReader::new(&stream).read_line(&mut line)?;
         let params = parse_query(&line);
-        let ok = params.contains_key("code") && params.get("state") == Some(&self.state);
-        let body = if ok {
-            "ログインできました。このタブを閉じて、cyanomelody に戻ってください。"
-        } else {
-            "ログインできませんでした。cyanomelody に戻って、もう一度お試しください。"
-        };
-        let _ = write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
+        reply(&mut stream, params.contains_key("code") && params.get("state") == Some(&self.state));
         if params.get("state") != Some(&self.state) {
             return Err(DriveError::Auth("ログインの応答が一致しない".into()));
         }
@@ -156,6 +132,40 @@ impl LoopbackLogin {
         )?;
         token.refresh_token.ok_or_else(|| DriveError::Auth("リフレッシュトークンが返らなかった".into()))
     }
+}
+
+/// ブラウザからの接続を `deadline` まで待つ。
+fn accept_until(listener: &TcpListener, deadline: Instant) -> Result<TcpStream, DriveError> {
+    listener.set_nonblocking(true)?;
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                stream.set_nonblocking(false)?;
+                return Ok(stream);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() > deadline {
+                    return Err(DriveError::Auth("ログインが時間内に終わらなかった".into()));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
+/// ブラウザのタブに、ログインできたかどうかを表示する。
+fn reply(stream: &mut TcpStream, ok: bool) {
+    let body = if ok {
+        "ログインできました。このタブを閉じて、cyanomelody に戻ってください。"
+    } else {
+        "ログインできませんでした。cyanomelody に戻って、もう一度お試しください。"
+    };
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
 }
 
 /// `GET /?code=...&state=... HTTP/1.1` の問い合わせ部分を読む。

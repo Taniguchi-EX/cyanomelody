@@ -40,6 +40,13 @@ pub enum DriveError {
     NotFound(String),
 }
 
+/// 読み書きの失敗は、通信できないものとして扱う。
+impl From<std::io::Error> for DriveError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Network(e.to_string())
+    }
+}
+
 impl DriveError {
     pub fn is_offline(&self) -> bool {
         matches!(self, Self::Network(_))

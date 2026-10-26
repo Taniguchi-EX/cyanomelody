@@ -329,12 +329,7 @@ impl Worker {
                 self.queue = PlayQueue::new(self.tracks.len(), start, shuffle, repeat);
                 self.failures = 0;
                 match self.queue.current() {
-                    Some(index) => {
-                        if self.ensure_output() {
-                            self.set_state(PlayState::Playing);
-                            self.start_track(index);
-                        }
-                    }
+                    Some(index) => self.play_from(index),
                     None => self.stop(),
                 }
             }
@@ -345,11 +340,8 @@ impl Worker {
                     }
                 }
                 PlayState::Stopped => {
-                    if let Some(index) = self.queue.current()
-                        && self.ensure_output()
-                    {
-                        self.set_state(PlayState::Playing);
-                        self.start_track(index);
+                    if let Some(index) = self.queue.current() {
+                        self.play_from(index);
                     }
                 }
                 PlayState::Playing => {}
@@ -362,28 +354,13 @@ impl Worker {
                 }
             }
             Command::Stop => self.stop(),
-            Command::Next => {
-                if self.state() != PlayState::Stopped {
-                    self.play_next();
-                }
-            }
-            Command::Prev => {
-                if self.state() != PlayState::Stopped {
-                    let position = self.position();
-                    if position > RESTART_THRESHOLD_SECONDS {
-                        self.seek(0.0);
-                    } else if let Some(index) = self.queue.go_back() {
-                        self.start_track(index);
-                    }
-                }
-            }
+            Command::Next if self.state() != PlayState::Stopped => self.play_next(),
+            Command::Prev if self.state() != PlayState::Stopped => self.play_prev(),
+            Command::Next | Command::Prev => {}
             Command::JumpTo(index) => {
-                if self.queue.jump_to(index).is_some() && self.ensure_output() {
+                if self.queue.jump_to(index).is_some() {
                     self.failures = 0;
-                    if self.state() != PlayState::Playing {
-                        self.set_state(PlayState::Playing);
-                    }
-                    self.start_track(index);
+                    self.play_from(index);
                 }
             }
             Command::Seek(seconds) => self.seek(seconds),
@@ -396,6 +373,23 @@ impl Worker {
                 self.status.lock().unwrap().status.repeat = repeat;
             }
             Command::Shutdown => {}
+        }
+    }
+
+    /// 出力先を開いて、`index` の曲から再生する。
+    fn play_from(&mut self, index: usize) {
+        if self.ensure_output() {
+            self.set_state(PlayState::Playing);
+            self.start_track(index);
+        }
+    }
+
+    /// 曲の始めから少し進んでいれば頭に戻し、そうでなければ前の曲へ。
+    fn play_prev(&mut self) {
+        if self.position() > RESTART_THRESHOLD_SECONDS {
+            self.seek(0.0);
+        } else if let Some(index) = self.queue.go_back() {
+            self.start_track(index);
         }
     }
 

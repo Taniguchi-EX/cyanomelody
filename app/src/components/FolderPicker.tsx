@@ -24,11 +24,14 @@ export default function FolderPicker({ rootLabel, loadChildren, allowRoot, onCho
   const { busy } = useShared();
   const [path, setPath] = useState<FolderNode[]>([]);
   const [children, setChildren] = useState<FolderNode[] | null>(null);
+  const [opening, setOpening] = useState(false);
 
+  // 読めなかったときは、今のフォルダのままにする
   const open = useCallback(
     async (next: FolderNode[]) => {
-      setChildren(null);
+      setOpening(true);
       const loaded = await loadChildren(next);
+      setOpening(false);
       if (loaded) {
         setPath(next);
         setChildren(loaded);
@@ -41,7 +44,7 @@ export default function FolderPicker({ rootLabel, loadChildren, allowRoot, onCho
   }, [open]);
 
   // 読み込み中は操作させない（読み込む前の親のフォルダを選んでしまわないため）
-  const loading = busy !== null || children === null;
+  const loading = busy !== null || opening || children === null;
   const label = [rootLabel, ...path.map((f) => f.name)].join("/");
 
   return (
@@ -63,7 +66,7 @@ export default function FolderPicker({ rootLabel, loadChildren, allowRoot, onCho
           </li>
         ))}
         {children?.length === 0 && <li className="dim">サブフォルダはありません</li>}
-        {children === null && <li className="dim">読み込んでいます…</li>}
+        {opening && <li className="dim">読み込んでいます…</li>}
       </ul>
     </div>
   );

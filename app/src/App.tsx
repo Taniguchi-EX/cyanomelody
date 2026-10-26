@@ -20,6 +20,11 @@ function Shell() {
   }, []);
   useEffect(reloadInfo, [reloadInfo]);
 
+  const openPlaylist = (id: string | null) => {
+    setTab("playlists");
+    setOpenId(id);
+  };
+
   return (
     <div className="app">
       <header className="topbar">
@@ -27,11 +32,8 @@ function Shell() {
         <nav>
           <button
             className={tab === "playlists" ? "tab active" : "tab"}
-            onClick={() => {
-              // タブを押したら、プレイリストの一覧に戻る
-              setTab("playlists");
-              setOpenId(null);
-            }}
+            // タブを押したら、プレイリストの一覧に戻る
+            onClick={() => openPlaylist(null)}
           >
             プレイリスト
           </button>
@@ -59,10 +61,7 @@ function Shell() {
           <PlaylistList onOpen={setOpenId} />
         )}
       </main>
-      <PlayerBar showVolume={info?.platform === "desktop"} onOpenPlaylist={(id) => {
-        setTab("playlists");
-        setOpenId(id);
-      }} />
+      <PlayerBar showVolume={info?.platform === "desktop"} onOpenPlaylist={openPlaylist} />
     </div>
   );
 }

@@ -174,7 +174,7 @@ impl DriveClient {
     pub fn download(&self, id: &str) -> Result<Vec<u8>, DriveError> {
         let resp = self.get(&format!("/drive/v3/files/{id}"), &[("alt", "media")], None)?;
         let mut buf = Vec::new();
-        resp.into_reader().read_to_end(&mut buf).map_err(|e| DriveError::Network(e.to_string()))?;
+        resp.into_reader().read_to_end(&mut buf)?;
         Ok(buf)
     }
 
@@ -286,7 +286,7 @@ impl DriveClient {
             });
         }
         let mut buf = Vec::with_capacity((end - start + 1) as usize);
-        resp.into_reader().read_to_end(&mut buf).map_err(|e| DriveError::Network(e.to_string()))?;
+        resp.into_reader().read_to_end(&mut buf)?;
         Ok(buf)
     }
 }

@@ -1,7 +1,6 @@
 //! 曲の一覧（ライブラリ）の手動更新と、フォルダをたどる画面。
 
 use cyanomelody_core::library::RefreshReport;
-use cyanomelody_core::source::SourceKind;
 use serde::Serialize;
 use tauri::Emitter;
 
@@ -19,22 +18,8 @@ struct LibraryProgress {
 #[derive(Serialize)]
 pub struct UiReport {
     source: &'static str,
-    added: usize,
-    updated: usize,
-    unchanged: usize,
-    missing: usize,
-}
-
-impl UiReport {
-    fn new(kind: SourceKind, r: RefreshReport) -> Self {
-        Self {
-            source: kind.as_str(),
-            added: r.added,
-            updated: r.updated,
-            unchanged: r.unchanged,
-            missing: r.missing,
-        }
-    }
+    #[serde(flatten)]
+    report: RefreshReport,
 }
 
 /// 指定フォルダの曲を読み直す（手動更新）。進み具合は `library-progress` イベントで知らせる。
@@ -45,7 +30,7 @@ pub async fn refresh_library(app: tauri::AppHandle) -> UiResult<Vec<UiReport>> {
         let reports = c.refresh_library(&|kind, done, total| {
             let _ = emitter.emit("library-progress", LibraryProgress { source: kind.as_str(), done, total });
         })?;
-        Ok(reports.into_iter().map(|(kind, r)| UiReport::new(kind, r)).collect())
+        Ok(reports.into_iter().map(|(kind, r)| UiReport { source: kind.as_str(), report: r }).collect())
     })
     .await
 }

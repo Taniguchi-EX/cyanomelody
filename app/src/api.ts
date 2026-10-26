@@ -69,6 +69,8 @@ export interface Report {
   updated: number;
   unchanged: number;
   missing: number;
+  /** タグを読めなかった曲（ファイル名を曲名にした） */
+  tag_failures: number;
 }
 
 export interface Summary {

@@ -51,6 +51,10 @@ fn open_track(sources: &RwLock<Sources>, track: &TrackRef) -> Result<Box<dyn Med
     source.open(key).map_err(|e| PlaybackError::Open(e.to_string()))
 }
 
+fn cannot_login() -> UiError {
+    UiError::new("login", "Google Drive にログインできない端末です")
+}
+
 fn source_kind(s: &str) -> UiResult<SourceKind> {
     SourceKind::parse(s).ok_or_else(|| UiError::error(format!("知らない音楽ソース: {s}")))
 }
@@ -110,13 +114,11 @@ impl AppCore {
     }
 
     fn sync(&self) -> UiResult<&SyncStore> {
-        self.sync.as_ref().ok_or_else(|| UiError::new("login", "Google Drive にログインできない端末です"))
+        self.sync.as_ref().ok_or_else(cannot_login)
     }
 
     pub fn drive_client(&self) -> UiResult<&DriveClient> {
-        self.drive_client
-            .as_ref()
-            .ok_or_else(|| UiError::new("login", "Google Drive にログインできない端末です"))
+        self.drive_client.as_ref().ok_or_else(cannot_login)
     }
 
     pub fn local_config(&self) -> LocalConfig {
@@ -254,7 +256,7 @@ impl AppCore {
         let songs = match (folder, key) {
             (Some(folder), _) => self.library.songs_under(kind, folder)?,
             (None, Some(key)) => self.library.song(kind, key)?.into_iter().collect(),
-            (None, None) => Vec::new(),
+            (None, None) => return Err(UiError::error("追加するフォルダか曲を指定してください")),
         };
         Ok(songs.iter().map(|s| PlaylistItem::from_song(s, &self.device_id)).collect())
     }

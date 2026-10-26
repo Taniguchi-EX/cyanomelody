@@ -36,6 +36,12 @@ export default function PlayerBar({ showVolume, onOpenPlaylist }: Props) {
     return () => window.clearInterval(timer);
   }, [playing, refresh]);
 
+  // シークバーを動かし終えたら、その位置へ移る
+  const commitSeek = () => {
+    if (dragging !== null) api.seek(dragging);
+    setDragging(null);
+  };
+
   if (!status) return null;
   const duration = status.duration ?? 0;
   const position = dragging ?? status.position;
@@ -61,14 +67,8 @@ export default function PlayerBar({ showVolume, onOpenPlaylist }: Props) {
           value={Math.min(position, Math.max(duration, 1))}
           disabled={status.state === "stopped" || duration === 0}
           onChange={(e) => setDragging(Number(e.target.value))}
-          onPointerUp={() => {
-            if (dragging !== null) api.seek(dragging);
-            setDragging(null);
-          }}
-          onKeyUp={() => {
-            if (dragging !== null) api.seek(dragging);
-            setDragging(null);
-          }}
+          onPointerUp={commitSeek}
+          onKeyUp={commitSeek}
         />
         <span className="time">{formatTime(status.duration)}</span>
       </div>

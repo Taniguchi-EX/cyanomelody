@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::Serialize;
 
 use crate::parallel::map_parallel;
 use crate::source::{FileEntry, MusicSource, SourceError, SourceKind, Tags, extension_of};
@@ -66,7 +67,7 @@ impl Song {
 }
 
 /// 手動更新の結果。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct RefreshReport {
     /// 新しく見つかった曲
     pub added: usize,

@@ -6,7 +6,7 @@ use symphonia::core::io::MediaSource;
 
 use super::{FileEntry, MusicSource, SourceError, SourceKind, Tags, is_audio, tags};
 use crate::cache::{CacheFile, SongCache};
-use crate::drive::{DriveClient, DriveError, RangeReader, parse_time};
+use crate::drive::{DriveClient, DriveError, DriveFile, RangeReader, parse_time};
 use crate::parallel::map_parallel;
 
 /// タグを読むときの取得の単位。タグは先頭か末尾の小さな範囲にあることが多い。
@@ -69,6 +69,15 @@ fn source_error(e: DriveError, open: bool) -> SourceError {
     }
 }
 
+fn file_entry(file: DriveFile, relative_path: String) -> FileEntry {
+    FileEntry {
+        modified: file.modified_time.as_deref().and_then(parse_time),
+        size: file.size.unwrap_or(0),
+        key: file.id,
+        relative_path,
+    }
+}
+
 impl MusicSource for DriveSource {
     fn kind(&self) -> SourceKind {
         SourceKind::Drive
@@ -88,12 +97,7 @@ impl MusicSource for DriveSource {
                     if file.is_folder() {
                         next.push((file.id, format!("{relative}/")));
                     } else if is_audio(&file.name) {
-                        out.push(FileEntry {
-                            key: file.id,
-                            relative_path: relative,
-                            size: file.size.unwrap_or(0),
-                            modified: file.modified_time.as_deref().and_then(parse_time),
-                        });
+                        out.push(file_entry(file, relative));
                     }
                 }
             }

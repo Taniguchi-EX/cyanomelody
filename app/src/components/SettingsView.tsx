@@ -31,7 +31,7 @@ export default function SettingsView({ info, onLoginChanged }: { info: AppInfo |
     onLoginChanged();
   };
   const logout = async () => {
-    await api.logout();
+    await run("ログアウト", api.logout);
     setSettings(null);
     setAccount(null);
     onLoginChanged();
@@ -187,6 +187,7 @@ function LibrarySection() {
           {reports.map((r) => (
             <li key={r.source}>
               {sourceLabel(r.source)}：追加 {r.added}、変更 {r.updated}、変わらず {r.unchanged}、見つからない {r.missing}
+              {r.tag_failures > 0 && `（タグを読めず、ファイル名を曲名にした曲 ${r.tag_failures}）`}
             </li>
           ))}
         </ul>
