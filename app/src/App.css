@@ -1,22 +1,301 @@
 :root {
   --bg: #f6f7f9;
+  --panel: #ffffff;
   --fg: #1d2330;
-  font-family: system-ui, sans-serif;
+  --dim: #6b7385;
+  --line: #dde1e8;
+  --accent: #1f8a9e;
+  --accent-fg: #ffffff;
+  --warn: #b5562b;
+  font-family: system-ui, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 15px;
   color: var(--fg);
   background-color: var(--bg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #15181f;
+    --bg: #14171d;
+    --panel: #1c2028;
     --fg: #e6e9ef;
+    --dim: #9aa3b5;
+    --line: #2d333f;
+    --accent: #37b3c8;
+    --accent-fg: #0e1116;
+    --warn: #e08a5e;
   }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
 }
 
-.container {
-  padding: 16px;
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar h1 {
+  font-size: 18px;
+  margin: 0;
+  color: var(--accent);
+}
+
+.topbar nav {
+  display: flex;
+  gap: 4px;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+h2 {
+  font-size: 16px;
+  margin: 16px 0 8px;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+button.icon {
+  padding: 4px 8px;
+  min-width: 32px;
+}
+
+button.tab {
+  border: none;
+  background: transparent;
+  color: var(--dim);
+}
+
+button.tab.active {
+  color: var(--accent);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+  border-radius: 0;
+}
+
+button.star {
+  color: var(--dim);
+}
+
+button.star.on,
+.star {
+  color: #e0a800;
+}
+
+button.toggle.on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+input,
+select {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 6px;
+  padding: 6px 8px;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.empty {
+  color: var(--dim);
+  padding: 24px 0;
+  text-align: center;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+ol.list {
+  counter-reset: item;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.list li:last-child {
+  border-bottom: none;
+}
+
+.list li.unavailable {
+  opacity: 0.45;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.tag {
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 6px;
+  color: var(--dim);
+}
+
+.banner {
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+.banner.offline {
+  background: var(--warn);
+  color: #fff;
+}
+
+.banner.notice {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+}
+
+.banner.busy {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.field {
+  margin-bottom: 12px;
+}
+
+.field .label {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.picker {
+  margin-top: 6px;
+}
+
+.path {
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
+.player {
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  padding: 8px 16px 12px;
+}
+
+.player .now {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player .title {
+  font-weight: 600;
+}
+
+.player .seek {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player .seek input {
+  flex: 1;
+}
+
+.player .time {
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  width: 40px;
+  text-align: center;
+}
+
+.player .controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.player .big {
+  font-size: 20px;
+  padding: 6px 18px;
+}
+
+.player .volume {
+  width: 100px;
 }

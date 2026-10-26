@@ -28,3 +28,6 @@ dist-ssr
 
 # Android の APK の出力先（スキル cyanomelody-android-test のビルドスクリプト）
 /out/
+
+# 画面の自動操作の撮影結果
+/e2e/screenshots/
