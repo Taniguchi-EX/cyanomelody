@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyanomelody 試作</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>cyanomelody 試作</h1>
+      <p id="state">未起動</p>
+
+      <div class="row">
+        <button id="chime-button" type="button">チャイムを鳴らす</button>
+        <button id="playlist-button" type="button">プレイリスト再生</button>
+      </div>
+      <div class="row">
+        <button class="command" data-cmd="prev" type="button">前の曲</button>
+        <button class="command" data-cmd="pause" type="button">一時停止</button>
+        <button class="command" data-cmd="play" type="button">再開</button>
+        <button class="command" data-cmd="next" type="button">次の曲</button>
+        <button class="command" data-cmd="stop" type="button">停止</button>
+      </div>
+
+      <div class="row">
+        <input id="dir-input" value="/storage/emulated/0/Music" />
+        <button id="list-button" type="button">曲の一覧</button>
+      </div>
+      <ul id="music-list"></ul>
+
+      <div class="row">
+        <button id="id-button" type="button">端末ID</button>
+      </div>
+
+      <p id="msg"></p>
+    </main>
+  </body>
+</html>
