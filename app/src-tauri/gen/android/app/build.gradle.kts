@@ -14,8 +14,25 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// リリース版の署名鍵。リポジトリには入れず、環境変数 CYANOMELODY_ANDROID_SIGNING で
+// secrets/android_signing.sec.properties の場所を渡す。なければ署名しない版を作る
+val signing: Pair<File, Properties>? = System.getenv("CYANOMELODY_ANDROID_SIGNING")
+    ?.let { file(it) }
+    ?.takeIf { it.isFile }
+    ?.let { f -> f to Properties().apply { f.inputStream().use { load(it) } } }
+
 android {
     compileSdk = 37
+    signingConfigs {
+        signing?.let { (f, props) ->
+            create("release") {
+                storeFile = File(f.parentFile, props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
     namespace = "dev.cyanomelody.app"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
@@ -39,6 +56,9 @@ android {
             }
         }
         getByName("release") {
+            if (signing != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

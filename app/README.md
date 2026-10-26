@@ -59,4 +59,16 @@ bash ~/.claude/skills/cyanomelody-android-test/resources/build-apk.sh "$(pwd)"  
 ```
 
 - デバッグ用の署名鍵は Docker のボリューム `cm-android-home` に保存して使い回す。消すと上書きインストールできなくなる
+
+## 配布用のビルド
+
+| 対象 | コマンド | できるもの |
+|---|---|---|
+| Windows | `npx tauri build` | `target/release/bundle/nsis/cyanomelody_<版>_x64-setup.exe`、`target/release/bundle/msi/cyanomelody_<版>_x64_en-US.msi` |
+| Ubuntu | `bash scripts/build-release.sh linux` | `out/cyanomelody_<版>_amd64.deb` |
+| Android | `bash scripts/build-release.sh android` | `out/cyanomelody-<版>-release.apk`（本番用の鍵で署名） |
+
+- Ubuntu と Android は Docker でビルドする（イメージは `../prototypes/android_env/`）
+- Android の本番用の署名鍵は `../secrets/android_release.sec.jks`、パスワードは `../secrets/android_signing.sec.properties`（どちらも Git の管理外）。なくすと、入れたアプリに上書きインストールできなくなるため、別の場所にもバックアップしておく
+- Google Drive のデスクトップ用の OAuth クライアントは、ビルド時に `../secrets/google_oauth_desktop.sec.json` から埋め込む
 - 実機での確認の手順は、Claude Code のスキル `cyanomelody-android-test` にまとめてある

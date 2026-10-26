@@ -291,8 +291,13 @@ ol.list {
   gap: 10px;
 }
 
+.player .controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .player .big {
-  font-size: 20px;
   padding: 6px 18px;
 }
 

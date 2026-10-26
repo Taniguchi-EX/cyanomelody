@@ -19,3 +19,5 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Rust から JNI で名前を指定して呼ぶため、RustBridge の名前を変えない
+-keep class dev.cyanomelody.app.RustBridge { *; }

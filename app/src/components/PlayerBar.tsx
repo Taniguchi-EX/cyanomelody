@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api, formatTime, type AppInfo, type PlayerEvent, type Status } from "../api";
+import Icon from "./Icon";
 
 export default function PlayerBar({ onOpenPlaylist }: { onOpenPlaylist: (id: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -65,19 +66,19 @@ export default function PlayerBar({ onOpenPlaylist }: { onOpenPlaylist: (id: str
       </div>
       <div className="controls">
         <button className={status.shuffle ? "toggle on" : "toggle"} title="シャッフル" onClick={() => api.shuffle(!status.shuffle)}>
-          ⇄
+          <Icon name="shuffle" />
         </button>
         <button title="前の曲" onClick={() => api.command("prev")}>
-          ⏮
+          <Icon name="prev" />
         </button>
         <button className="primary big" title={playing ? "一時停止" : "再生"} onClick={() => api.command(playing ? "pause" : "play")}>
-          {playing ? "⏸" : "▶"}
+          <Icon name={playing ? "pause" : "play"} size={26} />
         </button>
         <button title="次の曲" onClick={() => api.command("next")}>
-          ⏭
+          <Icon name="next" />
         </button>
         <button className={status.repeat ? "toggle on" : "toggle"} title="リピート" onClick={() => api.repeat(!status.repeat)}>
-          ⟳
+          <Icon name="repeat" />
         </button>
         {/* Android では OS の音量を使うため、アプリ内の音量は出さない */}
         {info?.platform === "desktop" && (

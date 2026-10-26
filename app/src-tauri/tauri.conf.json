@@ -33,6 +33,13 @@
     ],
     "android": {
       "minSdkVersion": 37
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libasound2t64 | libasound2"
+        ]
+      }
     }
   }
 }
