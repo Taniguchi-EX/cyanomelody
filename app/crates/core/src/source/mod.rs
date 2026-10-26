@@ -64,11 +64,7 @@ impl FileEntry {
 
     /// ファイル名から拡張子を除いたもの。タグに曲名がないときの曲名にする。
     pub fn file_stem(&self) -> &str {
-        let name = self
-            .relative_path
-            .rsplit('/')
-            .next()
-            .unwrap_or(&self.relative_path);
+        let name = self.relative_path.rsplit('/').next().unwrap_or(&self.relative_path);
         name.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(name)
     }
 }
@@ -76,9 +72,7 @@ impl FileEntry {
 /// パスの拡張子（小文字）。
 pub fn extension_of(path: &str) -> String {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    name.rsplit_once('.')
-        .map(|(_, ext)| ext.to_ascii_lowercase())
-        .unwrap_or_default()
+    name.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase()).unwrap_or_default()
 }
 
 /// 対応する音声形式か。

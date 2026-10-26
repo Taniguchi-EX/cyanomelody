@@ -34,14 +34,11 @@ impl AudioOutput for CpalOutput {
         self.close();
         let err = |e: &dyn std::fmt::Display| PlaybackError::Output(e.to_string());
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| PlaybackError::Output("出力先がない".into()))?;
+        let device =
+            host.default_output_device().ok_or_else(|| PlaybackError::Output("出力先がない".into()))?;
         let config = device.default_output_config().map_err(|e| err(&e))?;
-        let format = OutputFormat {
-            sample_rate: config.sample_rate().0,
-            channels: config.channels() as usize,
-        };
+        let format =
+            OutputFormat { sample_rate: config.sample_rate().0, channels: config.channels() as usize };
         log::info!(
             "出力先を開く: {:?} / {:?} / {}Hz {}ch {:?}",
             host.id(),
@@ -76,9 +73,7 @@ impl AudioOutput for CpalOutput {
                 )
             }
             other => {
-                return Err(PlaybackError::Output(format!(
-                    "対応していない出力の形式: {other:?}"
-                )));
+                return Err(PlaybackError::Output(format!("対応していない出力の形式: {other:?}")));
             }
         }
         .map_err(|e| err(&e))?;

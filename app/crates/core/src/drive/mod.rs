@@ -18,10 +18,8 @@ pub use reader::RangeReader;
 pub const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 
 /// アプリが求める権限。
-pub const SCOPES: [&str; 2] = [
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
-];
+pub const SCOPES: [&str; 2] =
+    ["https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.file"];
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DriveError {
@@ -74,10 +72,7 @@ pub fn parse_time(s: &str) -> Option<i64> {
     let time = time.trim_end_matches('Z');
     let time = time.split(['+', '-']).next()?;
     let mut t = time.split(':');
-    let (h, min) = (
-        t.next()?.parse::<i64>().ok()?,
-        t.next()?.parse::<i64>().ok()?,
-    );
+    let (h, min) = (t.next()?.parse::<i64>().ok()?, t.next()?.parse::<i64>().ok()?);
     let sec = t.next()?.split('.').next()?.parse::<i64>().ok()?;
     // 1970-01-01 からの日数（Howard Hinnant の days_from_civil）
     let y = if m <= 2 { y - 1 } else { y };

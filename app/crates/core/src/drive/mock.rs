@@ -68,10 +68,7 @@ impl MockDrive {
     pub fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let state = Arc::new(Mutex::new(State {
-            page_size: 1000,
-            ..Default::default()
-        }));
+        let state = Arc::new(Mutex::new(State { page_size: 1000, ..Default::default() }));
         let media_requests = Arc::new(AtomicUsize::new(0));
         let (s, r) = (state.clone(), media_requests.clone());
         std::thread::spawn(move || {
@@ -80,11 +77,7 @@ impl MockDrive {
                 std::thread::spawn(move || handle(stream, &s, &r));
             }
         });
-        Self {
-            port,
-            state,
-            media_requests,
-        }
+        Self { port, state, media_requests }
     }
 
     pub fn base_url(&self) -> String {
@@ -92,19 +85,11 @@ impl MockDrive {
     }
 
     pub fn add_folder(&self, parent: &str, name: &str) -> String {
-        self.state
-            .lock()
-            .unwrap()
-            .add(parent, name, FOLDER_MIME, Vec::new())
-            .id
+        self.state.lock().unwrap().add(parent, name, FOLDER_MIME, Vec::new()).id
     }
 
     pub fn add_file(&self, parent: &str, name: &str, data: Vec<u8>) -> String {
-        self.state
-            .lock()
-            .unwrap()
-            .add(parent, name, "audio/mpeg", data)
-            .id
+        self.state.lock().unwrap().add(parent, name, "audio/mpeg", data).id
     }
 
     pub fn remove(&self, id: &str) {
@@ -114,12 +99,8 @@ impl MockDrive {
     /// `parent` の直下の、ゴミ箱にないものの名前。
     pub fn names(&self, parent: &str) -> Vec<String> {
         let st = self.state.lock().unwrap();
-        let mut names: Vec<String> = st
-            .nodes
-            .iter()
-            .filter(|n| n.parent == parent && !n.trashed)
-            .map(|n| n.name.clone())
-            .collect();
+        let mut names: Vec<String> =
+            st.nodes.iter().filter(|n| n.parent == parent && !n.trashed).map(|n| n.name.clone()).collect();
         names.sort();
         names
     }
@@ -154,10 +135,7 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
         }
     }
     let mut body = Vec::new();
-    if let Some(len) = headers
-        .get("content-length")
-        .and_then(|v| v.parse::<usize>().ok())
-    {
+    if let Some(len) = headers.get("content-length").and_then(|v| v.parse::<usize>().ok()) {
         body.resize(len, 0);
         reader.read_exact(&mut body).ok()?;
     }
@@ -169,21 +147,10 @@ fn read_request(stream: &TcpStream) -> Option<Request> {
         .split('&')
         .filter_map(|kv| kv.split_once('='))
         .map(|(k, v)| {
-            (
-                k.to_string(),
-                urlencoding::decode(&v.replace('+', " "))
-                    .unwrap_or_default()
-                    .into_owned(),
-            )
+            (k.to_string(), urlencoding::decode(&v.replace('+', " ")).unwrap_or_default().into_owned())
         })
         .collect();
-    Some(Request {
-        method,
-        path: path.to_string(),
-        params,
-        headers,
-        body,
-    })
+    Some(Request { method, path: path.to_string(), params, headers, body })
 }
 
 fn handle(stream: TcpStream, state: &Mutex<State>, media_requests: &AtomicUsize) {
@@ -213,11 +180,7 @@ fn ok_json(v: Value) -> (u16, Vec<u8>, String) {
     (200, v.to_string().into_bytes(), JSON.into())
 }
 
-fn respond(
-    state: &Mutex<State>,
-    req: &Request,
-    media_requests: &AtomicUsize,
-) -> (u16, Vec<u8>, String) {
+fn respond(state: &Mutex<State>, req: &Request, media_requests: &AtomicUsize) -> (u16, Vec<u8>, String) {
     let mut st = state.lock().unwrap();
     if st.reject > 0 {
         st.reject -= 1;
@@ -225,9 +188,7 @@ fn respond(
     }
     let not_found = (404, b"{\"error\":\"not found\"}".to_vec(), JSON.to_string());
     match (req.method.as_str(), req.path.as_str()) {
-        ("GET", "/drive/v3/about") => {
-            ok_json(json!({ "user": { "emailAddress": "test@example.com" } }))
-        }
+        ("GET", "/drive/v3/about") => ok_json(json!({ "user": { "emailAddress": "test@example.com" } })),
         ("GET", "/drive/v3/files") => {
             let q = req.params.get("q").cloned().unwrap_or_default();
             let parent = between(&q, "'", "' in parents").unwrap_or_default();
@@ -242,13 +203,10 @@ fn respond(
                 .filter(|n| !folders_only || n.mime == FOLDER_MIME)
                 .filter(|n| !files_only || n.mime != FOLDER_MIME)
                 .collect();
-            let start: usize = req
-                .params
-                .get("pageToken")
-                .and_then(|t| t.parse().ok())
-                .unwrap_or(0);
+            let start: usize = req.params.get("pageToken").and_then(|t| t.parse().ok()).unwrap_or(0);
             let end = (start + st.page_size).min(matches.len());
-            let mut body = json!({ "files": matches[start..end].iter().map(|n| node_json(n)).collect::<Vec<_>>() });
+            let mut body =
+                json!({ "files": matches[start..end].iter().map(|n| node_json(n)).collect::<Vec<_>>() });
             if end < matches.len() {
                 body["nextPageToken"] = json!(end.to_string());
             }
@@ -259,27 +217,19 @@ fn respond(
             let node = st.add(
                 meta["parents"][0].as_str().unwrap_or("root"),
                 meta["name"].as_str().unwrap_or(""),
-                meta["mimeType"]
-                    .as_str()
-                    .unwrap_or("application/octet-stream"),
+                meta["mimeType"].as_str().unwrap_or("application/octet-stream"),
                 Vec::new(),
             );
             ok_json(node_json(&node))
         }
         ("POST", "/upload/drive/v3/files") => {
             let content_type = req.headers.get("content-type").cloned().unwrap_or_default();
-            let boundary = content_type
-                .split("boundary=")
-                .nth(1)
-                .unwrap_or("")
-                .to_string();
+            let boundary = content_type.split("boundary=").nth(1).unwrap_or("").to_string();
             let (meta, data) = parse_multipart(&req.body, &boundary);
             let node = st.add(
                 meta["parents"][0].as_str().unwrap_or("root"),
                 meta["name"].as_str().unwrap_or(""),
-                meta["mimeType"]
-                    .as_str()
-                    .unwrap_or("application/octet-stream"),
+                meta["mimeType"].as_str().unwrap_or("application/octet-stream"),
                 data,
             );
             ok_json(node_json(&node))
@@ -326,19 +276,10 @@ fn respond(
                 .get("range")
                 .and_then(|r| r.strip_prefix("bytes="))
                 .and_then(|r| r.split_once('-'))
-                .map(|(s, e)| {
-                    (
-                        s.parse().unwrap_or(0),
-                        e.parse().unwrap_or(len - 1).min(len - 1),
-                    )
-                })
+                .map(|(s, e)| (s.parse().unwrap_or(0), e.parse().unwrap_or(len - 1).min(len - 1)))
                 .unwrap_or((0, len - 1));
             let body = node.data[start as usize..=end as usize].to_vec();
-            (
-                206,
-                body,
-                format!("Content-Range: bytes {start}-{end}/{len}\r\n"),
-            )
+            (206, body, format!("Content-Range: bytes {start}-{end}/{len}\r\n"))
         }
         _ => not_found,
     }
@@ -363,10 +304,7 @@ fn parse_multipart(body: &[u8], boundary: &str) -> (Value, Vec<u8>) {
         }
         rest = &rest[end..];
     }
-    let meta = parts
-        .first()
-        .and_then(|m| serde_json::from_slice(m).ok())
-        .unwrap_or_default();
+    let meta = parts.first().and_then(|m| serde_json::from_slice(m).ok()).unwrap_or_default();
     (meta, parts.get(1).cloned().unwrap_or_default())
 }
 
@@ -378,8 +316,7 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 fn node_json(n: &Node) -> Value {
-    let mut v =
-        json!({ "id": n.id, "name": n.name, "mimeType": n.mime, "modifiedTime": n.modified });
+    let mut v = json!({ "id": n.id, "name": n.name, "mimeType": n.mime, "modifiedTime": n.modified });
     if n.mime != FOLDER_MIME {
         v["size"] = json!(n.data.len().to_string());
     }

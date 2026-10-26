@@ -5,6 +5,7 @@ pub mod cache;
 pub mod device;
 pub mod drive;
 pub mod library;
+pub mod parallel;
 pub mod playback;
 pub mod source;
 pub mod sync;

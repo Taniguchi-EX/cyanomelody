@@ -25,11 +25,7 @@ pub struct DriveSource {
 impl DriveSource {
     /// `folder_id` のフォルダを指定フォルダにする。
     pub fn new(client: DriveClient, folder_id: impl Into<String>) -> Self {
-        Self {
-            client,
-            folder_id: folder_id.into(),
-            cache: None,
-        }
+        Self { client, folder_id: folder_id.into(), cache: None }
     }
 
     /// 再生した曲を `cache` に保存し、次からはそこから再生する。
@@ -52,9 +48,7 @@ fn fill_in_background(client: DriveClient, key: String, file: Arc<CacheFile>) {
                 match client.read_range(&key, pos, last) {
                     Ok(data) => file.write(pos, &data),
                     Err(e) => {
-                        log::warn!(
-                            "{key} のキャッシュを埋められない（次に再生したときにやり直す）: {e}"
-                        );
+                        log::warn!("{key} のキャッシュを埋められない（次に再生したときにやり直す）: {e}");
                         return;
                     }
                 }
@@ -81,11 +75,7 @@ impl MusicSource for DriveSource {
         let mut out = Vec::new();
         let mut folders = vec![(self.folder_id.clone(), String::new())];
         while let Some((id, prefix)) = folders.pop() {
-            for file in self
-                .client
-                .list_children(&id)
-                .map_err(|e| source_error(e, false))?
-            {
+            for file in self.client.list_children(&id).map_err(|e| source_error(e, false))? {
                 let relative = format!("{prefix}{}", file.name);
                 if file.is_folder() {
                     folders.push((file.id, format!("{relative}/")));
@@ -104,12 +94,7 @@ impl MusicSource for DriveSource {
     }
 
     fn read_tags(&self, entry: &FileEntry) -> Result<Tags, SourceError> {
-        tags::read_tags(RangeReader::new(
-            self.client.clone(),
-            &entry.key,
-            entry.size,
-            TAG_CHUNK,
-        ))
+        tags::read_tags(RangeReader::new(self.client.clone(), &entry.key, entry.size, TAG_CHUNK))
     }
 
     fn open(&self, key: &str) -> Result<Box<dyn MediaSource>, SourceError> {
@@ -117,9 +102,7 @@ impl MusicSource for DriveSource {
             return Ok(Box::new(file));
         }
         let file = self.client.file(key).map_err(|e| source_error(e, true))?;
-        let len = file
-            .size
-            .ok_or_else(|| SourceError::Open(format!("{key} の大きさが分からない")))?;
+        let len = file.size.ok_or_else(|| SourceError::Open(format!("{key} の大きさが分からない")))?;
         let reader = match &self.cache {
             Some(cache) => match cache.begin(key, len) {
                 Ok(cache_file) => {
@@ -160,17 +143,9 @@ mod tests {
         let b = mock.add_file(&sub, "深い曲.m4a", vec![0; 7]);
         mock.add_file(&root, "メモ.txt", vec![0; 1]);
         let entries = source(&mock, &root).list().unwrap();
-        let got: Vec<(&str, &str, u64)> = entries
-            .iter()
-            .map(|e| (e.key.as_str(), e.relative_path.as_str(), e.size))
-            .collect();
-        assert_eq!(
-            got,
-            vec![
-                (b.as_str(), "サブフォルダ/深い曲.m4a", 7),
-                (a.as_str(), "曲.mp3", 5)
-            ]
-        );
+        let got: Vec<(&str, &str, u64)> =
+            entries.iter().map(|e| (e.key.as_str(), e.relative_path.as_str(), e.size)).collect();
+        assert_eq!(got, vec![(b.as_str(), "サブフォルダ/深い曲.m4a", 7), (a.as_str(), "曲.mp3", 5)]);
         assert!(entries[0].modified.is_some());
     }
 
@@ -223,10 +198,7 @@ mod tests {
         )
         .with_cache(cache.clone());
         assert!(offline.open(&played).is_ok());
-        assert!(matches!(
-            offline.open(&unplayed),
-            Err(SourceError::Offline(_))
-        ));
+        assert!(matches!(offline.open(&unplayed), Err(SourceError::Offline(_))));
     }
 
     #[test]
@@ -248,9 +220,6 @@ mod tests {
 
         mock.remove(&id);
         lib.refresh(&source(&mock, "root"), 4, &|_, _| {}).unwrap();
-        assert!(
-            lib.song(SourceKind::Drive, &id).unwrap().unwrap().missing,
-            "消えた曲に印が付く"
-        );
+        assert!(lib.song(SourceKind::Drive, &id).unwrap().unwrap().missing, "消えた曲に印が付く");
     }
 }

@@ -59,23 +59,15 @@ fn random_b64(len: usize) -> String {
 }
 
 fn token_request(client: &OAuthClient, form: &[(&str, &str)]) -> Result<TokenResponse, DriveError> {
-    match ureq::post(&client.token_uri)
-        .timeout(Duration::from_secs(30))
-        .send_form(form)
-    {
-        Ok(resp) => resp
-            .into_json()
-            .map_err(|e| DriveError::Parse(e.to_string())),
+    match ureq::post(&client.token_uri).timeout(Duration::from_secs(30)).send_form(form) {
+        Ok(resp) => resp.into_json().map_err(|e| DriveError::Parse(e.to_string())),
         Err(ureq::Error::Status(status, resp)) => {
             let body = resp.into_string().unwrap_or_default();
             // invalid_grant はリフレッシュトークンが失効した（取り消された、期限が切れた）
             if status == 400 || status == 401 {
                 Err(DriveError::Auth(body))
             } else {
-                Err(DriveError::Http {
-                    status,
-                    message: body,
-                })
+                Err(DriveError::Http { status, message: body })
             }
         }
         Err(ureq::Error::Transport(t)) => Err(DriveError::Network(t.to_string())),
@@ -94,12 +86,8 @@ pub struct LoopbackLogin {
 
 impl LoopbackLogin {
     pub fn start(client: &OAuthClient) -> Result<Self, DriveError> {
-        let listener =
-            TcpListener::bind("127.0.0.1:0").map_err(|e| DriveError::Network(e.to_string()))?;
-        let port = listener
-            .local_addr()
-            .map_err(|e| DriveError::Network(e.to_string()))?
-            .port();
+        let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| DriveError::Network(e.to_string()))?;
+        let port = listener.local_addr().map_err(|e| DriveError::Network(e.to_string()))?.port();
         let redirect_uri = format!("http://127.0.0.1:{port}");
         let verifier = random_b64(48);
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -112,22 +100,13 @@ impl LoopbackLogin {
             urlencoding::encode(&redirect_uri),
             urlencoding::encode(&SCOPES.join(" ")),
         );
-        Ok(Self {
-            client: client.clone(),
-            listener,
-            redirect_uri,
-            verifier,
-            state,
-            url,
-        })
+        Ok(Self { client: client.clone(), listener, redirect_uri, verifier, state, url })
     }
 
     /// ブラウザから戻ってくるのを `timeout` まで待ち、リフレッシュトークンを返す。
     pub fn finish(self, timeout: Duration) -> Result<String, DriveError> {
         let deadline = Instant::now() + timeout;
-        self.listener
-            .set_nonblocking(true)
-            .map_err(|e| DriveError::Network(e.to_string()))?;
+        self.listener.set_nonblocking(true).map_err(|e| DriveError::Network(e.to_string()))?;
         let (mut stream, _) = loop {
             match self.listener.accept() {
                 Ok(conn) => break conn,
@@ -142,9 +121,7 @@ impl LoopbackLogin {
         };
         stream.set_nonblocking(false).ok();
         let mut line = String::new();
-        BufReader::new(&stream)
-            .read_line(&mut line)
-            .map_err(|e| DriveError::Network(e.to_string()))?;
+        BufReader::new(&stream).read_line(&mut line).map_err(|e| DriveError::Network(e.to_string()))?;
         let params = parse_query(&line);
         let ok = params.contains_key("code") && params.get("state") == Some(&self.state);
         let body = if ok {
@@ -177,9 +154,7 @@ impl LoopbackLogin {
                 ("code_verifier", &self.verifier),
             ],
         )?;
-        token
-            .refresh_token
-            .ok_or_else(|| DriveError::Auth("リフレッシュトークンが返らなかった".into()))
+        token.refresh_token.ok_or_else(|| DriveError::Auth("リフレッシュトークンが返らなかった".into()))
     }
 }
 
@@ -193,12 +168,7 @@ fn parse_query(request_line: &str) -> HashMap<String, String> {
         .unwrap_or("")
         .split('&')
         .filter_map(|kv| kv.split_once('='))
-        .map(|(k, v)| {
-            (
-                k.to_string(),
-                urlencoding::decode(v).unwrap_or_default().into_owned(),
-            )
-        })
+        .map(|(k, v)| (k.to_string(), urlencoding::decode(v).unwrap_or_default().into_owned()))
         .collect()
 }
 
@@ -211,11 +181,7 @@ pub struct RefreshingToken {
 
 impl RefreshingToken {
     pub fn new(client: OAuthClient, store: Arc<dyn TokenStore>) -> Self {
-        Self {
-            client,
-            store,
-            cached: Mutex::new(None),
-        }
+        Self { client, store, cached: Mutex::new(None) }
     }
 
     pub fn is_logged_in(&self) -> bool {
@@ -231,10 +197,7 @@ impl TokenProvider for RefreshingToken {
         {
             return Ok(token.clone());
         }
-        let refresh = self
-            .store
-            .load()
-            .ok_or_else(|| DriveError::Auth("ログインしていない".into()))?;
+        let refresh = self.store.load().ok_or_else(|| DriveError::Auth("ログインしていない".into()))?;
         let resp = token_request(
             &self.client,
             &[
@@ -255,10 +218,7 @@ impl TokenProvider for RefreshingToken {
             Err(e) => return Err(e),
         };
         let ttl = token.expires_in.unwrap_or(3600).saturating_sub(60);
-        *cached = Some((
-            token.access_token.clone(),
-            Instant::now() + Duration::from_secs(ttl),
-        ));
+        *cached = Some((token.access_token.clone(), Instant::now() + Duration::from_secs(ttl)));
         Ok(token.access_token)
     }
 
@@ -276,10 +236,7 @@ mod tests {
         let json = r#"{"installed":{"client_id":"id","project_id":"p","auth_uri":"https://a","token_uri":"https://t",
             "client_secret":"s","redirect_uris":["http://localhost"]}}"#;
         let c = OAuthClient::from_json(json).unwrap();
-        assert_eq!(
-            (c.client_id.as_str(), c.client_secret.as_str()),
-            ("id", "s")
-        );
+        assert_eq!((c.client_id.as_str(), c.client_secret.as_str()), ("id", "s"));
         assert!(OAuthClient::from_json("{}").is_err());
     }
 
@@ -292,13 +249,9 @@ mod tests {
             token_uri: "https://accounts.example/token".into(),
         };
         let login = LoopbackLogin::start(&client).unwrap();
-        for part in [
-            "code_challenge_method=S256",
-            "access_type=offline",
-            "drive.readonly",
-            "drive.file",
-            "127.0.0.1",
-        ] {
+        for part in
+            ["code_challenge_method=S256", "access_type=offline", "drive.readonly", "drive.file", "127.0.0.1"]
+        {
             assert!(login.url.contains(part), "{part} がない: {}", login.url);
         }
     }

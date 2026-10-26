@@ -1,16 +1,13 @@
 //! Google Drive へのログイン（Windows と Ubuntu）。リフレッシュトークンは OS の資格情報の保管庫に保存する。
-//! Android のログインは `android.rs`（Kotlin の Google Identity Services）で行うため、ここはデスクトップだけで使う。
-#![cfg_attr(mobile, allow(dead_code))]
+//! Android のログインは `android.rs`（Kotlin の Google Identity Services）で行う。
 
 use std::sync::Arc;
 
-use cyanomelody_core::drive::DriveError;
 use cyanomelody_core::drive::auth::{OAuthClient, RefreshingToken, TokenStore};
+use cyanomelody_core::drive::{DriveError, TokenProvider};
 
 /// 資格情報の保管庫での名前。
-#[cfg(desktop)]
 const SERVICE: &str = "dev.cyanomelody.app";
-#[cfg(desktop)]
 const ACCOUNT: &str = "google-drive-refresh-token";
 
 /// ビルド時に埋め込んだ OAuth クライアント。
@@ -21,25 +18,21 @@ pub fn oauth_client() -> Result<OAuthClient, DriveError> {
 }
 
 /// OS の資格情報の保管庫（Windows の資格情報マネージャー、Ubuntu の Secret Service）。
-#[cfg(desktop)]
 pub struct KeyringStore {
     entry: keyring::Entry,
 }
 
-#[cfg(desktop)]
 impl KeyringStore {
     pub fn new() -> Result<Self, DriveError> {
         Self::with_account(ACCOUNT)
     }
 
     fn with_account(account: &str) -> Result<Self, DriveError> {
-        let entry =
-            keyring::Entry::new(SERVICE, account).map_err(|e| DriveError::Auth(e.to_string()))?;
+        let entry = keyring::Entry::new(SERVICE, account).map_err(|e| DriveError::Auth(e.to_string()))?;
         Ok(Self { entry })
     }
 }
 
-#[cfg(desktop)]
 impl TokenStore for KeyringStore {
     fn load(&self) -> Option<String> {
         match self.entry.get_password() {
@@ -74,37 +67,26 @@ pub struct DriveAuth {
 }
 
 impl DriveAuth {
-    #[cfg(desktop)]
     pub fn new() -> Result<Self, DriveError> {
         let client = oauth_client()?;
         let store: Arc<dyn TokenStore> = Arc::new(KeyringStore::new()?);
         let tokens = Arc::new(RefreshingToken::new(client.clone(), store.clone()));
-        Ok(Self {
-            client,
-            store,
-            tokens,
-        })
+        Ok(Self { client, store, tokens })
     }
 
     /// ブラウザでログインし、リフレッシュトークンを保存する。`open_url` でブラウザを開く。
-    #[cfg(desktop)]
-    pub fn login(
-        &self,
-        open_url: impl FnOnce(&str) -> Result<(), String>,
-    ) -> Result<(), DriveError> {
+    pub fn login(&self, open_url: impl FnOnce(&str) -> Result<(), String>) -> Result<(), DriveError> {
         use cyanomelody_core::drive::auth::LoopbackLogin;
         let login = LoopbackLogin::start(&self.client)?;
         open_url(&login.url).map_err(DriveError::Auth)?;
         let refresh = login.finish(std::time::Duration::from_secs(300))?;
         self.store.save(&refresh)?;
-        use cyanomelody_core::drive::TokenProvider;
         self.tokens.invalidate();
         Ok(())
     }
 
     pub fn logout(&self) {
         self.store.clear();
-        use cyanomelody_core::drive::TokenProvider;
         self.tokens.invalidate();
     }
 
@@ -113,7 +95,7 @@ impl DriveAuth {
     }
 }
 
-#[cfg(all(test, desktop))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -133,12 +115,7 @@ mod tests {
     #[test]
     fn embedded_client_is_readable_when_present() {
         if option_env!("CYANOMELODY_OAUTH_DESKTOP").is_some() {
-            assert!(
-                oauth_client()
-                    .unwrap()
-                    .client_id
-                    .ends_with(".apps.googleusercontent.com")
-            );
+            assert!(oauth_client().unwrap().client_id.ends_with(".apps.googleusercontent.com"));
         } else {
             assert!(oauth_client().is_err());
         }

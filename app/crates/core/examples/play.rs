@@ -55,11 +55,7 @@ fn main() {
             Err(_) => {
                 let s = player.status();
                 if s.state == PlayState::Playing {
-                    println!(
-                        "  位置 {:.1}秒 / 長さ {:.1}秒",
-                        s.position,
-                        s.duration.unwrap_or(0.0)
-                    );
+                    println!("  位置 {:.1}秒 / 長さ {:.1}秒", s.position, s.duration.unwrap_or(0.0));
                 }
             }
         }

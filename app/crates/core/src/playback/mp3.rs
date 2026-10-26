@@ -29,9 +29,7 @@ struct FrameHeader {
     xing_offset: usize,
 }
 
-const BITRATES_V1: [u32; 15] = [
-    0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
-];
+const BITRATES_V1: [u32; 15] = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
 const BITRATES_V2: [u32; 15] = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
 
 /// MPEG Audio Layer III のフレームのヘッダを読む。
@@ -53,11 +51,7 @@ fn parse_header(b: &[u8]) -> Option<FrameHeader> {
         2 => base_rate / 2,
         _ => base_rate / 4,
     };
-    let bitrate = if mpeg1 {
-        BITRATES_V1[bitrate_idx]
-    } else {
-        BITRATES_V2[bitrate_idx]
-    };
+    let bitrate = if mpeg1 { BITRATES_V1[bitrate_idx] } else { BITRATES_V2[bitrate_idx] };
     let samples_per_frame = if mpeg1 { 1152 } else { 576 };
     let padding = ((b[2] >> 1) & 1) as usize;
     let frame_len = (samples_per_frame / 8 * bitrate * 1000 / sample_rate) as usize + padding;
@@ -68,13 +62,7 @@ fn parse_header(b: &[u8]) -> Option<FrameHeader> {
         (false, false) => 17,
         (false, true) => 9,
     };
-    Some(FrameHeader {
-        sample_rate,
-        bitrate,
-        samples_per_frame,
-        frame_len,
-        xing_offset: 4 + side_info,
-    })
+    Some(FrameHeader { sample_rate, bitrate, samples_per_frame, frame_len, xing_offset: 4 + side_info })
 }
 
 fn be32(b: &[u8]) -> u32 {
@@ -89,9 +77,7 @@ impl Mp3Index {
         reader.read_exact(&mut head).ok()?;
         let mut data_start = 0u64;
         if &head[..3] == b"ID3" {
-            let size = head[6..10]
-                .iter()
-                .fold(0u64, |acc, b| (acc << 7) | (*b & 0x7F) as u64);
+            let size = head[6..10].iter().fold(0u64, |acc, b| (acc << 7) | (*b & 0x7F) as u64);
             let footer = if head[5] & 0x10 != 0 { 10 } else { 0 };
             data_start = 10 + size + footer;
         }
@@ -121,8 +107,7 @@ impl Mp3Index {
             let mut p = 8;
             if flags & 1 != 0 {
                 let frames = be32(&x[p..p + 4]);
-                duration =
-                    frames as f64 * header.samples_per_frame as f64 / header.sample_rate as f64;
+                duration = frames as f64 * header.samples_per_frame as f64 / header.sample_rate as f64;
                 p += 4;
             }
             if flags & 2 != 0 {
@@ -135,12 +120,7 @@ impl Mp3Index {
                 toc = Some(t);
             }
         }
-        Some(Self {
-            data_start,
-            data_len: xing_bytes.unwrap_or(data_len).min(data_len),
-            duration,
-            toc,
-        })
+        Some(Self { data_start, data_len: xing_bytes.unwrap_or(data_len).min(data_len), duration, toc })
     }
 
     /// `seconds` 秒の音があるファイル上の位置。
@@ -194,36 +174,23 @@ pub(crate) mod tests {
     use std::io::Cursor;
 
     pub(crate) fn fixture(name: &str) -> Vec<u8> {
-        std::fs::read(format!(
-            "{}/tests/fixtures/{name}",
-            env!("CARGO_MANIFEST_DIR")
-        ))
-        .unwrap()
+        std::fs::read(format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))).unwrap()
     }
 
     #[test]
     fn probes_fixtures() {
-        for (name, has_toc) in [
-            ("steps_cbr.mp3", true),
-            ("steps_vbr.mp3", true),
-            ("steps_vbr_noxing.mp3", false),
-        ] {
+        for (name, has_toc) in
+            [("steps_cbr.mp3", true), ("steps_vbr.mp3", true), ("steps_vbr_noxing.mp3", false)]
+        {
             let data = fixture(name);
             let index = Mp3Index::probe(&mut Cursor::new(&data), data.len() as u64).unwrap();
             assert!(index.data_start > 10, "{name}: ID3 タグを飛ばす");
             assert_eq!(index.toc.is_some(), has_toc, "{name}");
             if has_toc {
-                assert!(
-                    (index.duration - 20.0).abs() < 0.1,
-                    "{name}: 長さ {}",
-                    index.duration
-                );
+                assert!((index.duration - 20.0).abs() < 0.1, "{name}: 長さ {}", index.duration);
             }
             assert_eq!(index.byte_for(0.0), index.data_start);
-            assert!(
-                index.byte_for(10.0) > index.byte_for(5.0),
-                "{name}: {index:?}"
-            );
+            assert!(index.byte_for(10.0) > index.byte_for(5.0), "{name}: {index:?}");
         }
     }
 

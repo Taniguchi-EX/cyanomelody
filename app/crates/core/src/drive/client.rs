@@ -63,11 +63,7 @@ impl DriveClient {
             .timeout_connect(Duration::from_secs(10))
             .timeout_read(Duration::from_secs(30))
             .build();
-        Self {
-            agent,
-            base: base.trim_end_matches('/').into(),
-            tokens,
-        }
+        Self { agent, base: base.trim_end_matches('/').into(), tokens }
     }
 
     /// 呼び出す。Drive に拒否された（401）ときは、アクセストークンを更新して 1 回だけやり直す。
@@ -92,9 +88,7 @@ impl DriveClient {
                 req = req.set("Range", &format!("bytes={start}-{end}"));
             }
             let result = match body {
-                Some((content_type, bytes)) => {
-                    req.set("Content-Type", content_type).send_bytes(bytes)
-                }
+                Some((content_type, bytes)) => req.set("Content-Type", content_type).send_bytes(bytes),
                 None => req.call(),
             };
             match result {
@@ -106,9 +100,7 @@ impl DriveClient {
                 Err(e) => return Err(http_error(e)),
             }
         }
-        Err(DriveError::Auth(
-            "アクセストークンを更新しても拒否された".into(),
-        ))
+        Err(DriveError::Auth("アクセストークンを更新しても拒否された".into()))
     }
 
     fn get(
@@ -120,17 +112,13 @@ impl DriveClient {
         self.send("GET", path, query, range, None)
     }
 
-    fn json_response<T: serde::de::DeserializeOwned>(
-        resp: ureq::Response,
-    ) -> Result<T, DriveError> {
-        resp.into_json()
-            .map_err(|e| DriveError::Parse(e.to_string()))
+    fn json_response<T: serde::de::DeserializeOwned>(resp: ureq::Response) -> Result<T, DriveError> {
+        resp.into_json().map_err(|e| DriveError::Parse(e.to_string()))
     }
 
     /// フォルダを作る。
     pub fn create_folder(&self, parent_id: &str, name: &str) -> Result<DriveFile, DriveError> {
-        let meta =
-            serde_json::json!({ "name": name, "mimeType": FOLDER_MIME, "parents": [parent_id] });
+        let meta = serde_json::json!({ "name": name, "mimeType": FOLDER_MIME, "parents": [parent_id] });
         let body = meta.to_string();
         let resp = self.send(
             "POST",
@@ -171,12 +159,7 @@ impl DriveClient {
     }
 
     /// ファイルの中身を置き換える。
-    pub fn update_file(
-        &self,
-        id: &str,
-        mime: &str,
-        content: &[u8],
-    ) -> Result<DriveFile, DriveError> {
+    pub fn update_file(&self, id: &str, mime: &str, content: &[u8]) -> Result<DriveFile, DriveError> {
         let resp = self.send(
             "PATCH",
             &format!("/upload/drive/v3/files/{id}"),
@@ -191,9 +174,7 @@ impl DriveClient {
     pub fn download(&self, id: &str) -> Result<Vec<u8>, DriveError> {
         let resp = self.get(&format!("/drive/v3/files/{id}"), &[("alt", "media")], None)?;
         let mut buf = Vec::new();
-        resp.into_reader()
-            .read_to_end(&mut buf)
-            .map_err(|e| DriveError::Network(e.to_string()))?;
+        resp.into_reader().read_to_end(&mut buf).map_err(|e| DriveError::Network(e.to_string()))?;
         Ok(buf)
     }
 
@@ -225,9 +206,7 @@ impl DriveClient {
         path: &str,
         query: &[(&str, &str)],
     ) -> Result<T, DriveError> {
-        self.get(path, query, None)?
-            .into_json()
-            .map_err(|e| DriveError::Parse(e.to_string()))
+        self.get(path, query, None)?.into_json().map_err(|e| DriveError::Parse(e.to_string()))
     }
 
     /// ログインしているアカウントのメールアドレス。通信できるかの確認にも使う
@@ -258,11 +237,7 @@ impl DriveClient {
         let mut out = Vec::new();
         let mut page = String::new();
         loop {
-            let mut params = vec![
-                ("q", query),
-                ("fields", fields.as_str()),
-                ("pageSize", "1000"),
-            ];
+            let mut params = vec![("q", query), ("fields", fields.as_str()), ("pageSize", "1000")];
             if !page.is_empty() {
                 params.push(("pageToken", page.as_str()));
             }
@@ -277,18 +252,11 @@ impl DriveClient {
 
     /// フォルダの直下のファイルとフォルダ（ゴミ箱のものは除く）。
     pub fn list_children(&self, folder_id: &str) -> Result<Vec<DriveFile>, DriveError> {
-        self.search(&format!(
-            "'{}' in parents and trashed = false",
-            escape(folder_id)
-        ))
+        self.search(&format!("'{}' in parents and trashed = false", escape(folder_id)))
     }
 
     /// フォルダの直下の、名前が `name` のフォルダ。
-    pub fn find_folder(
-        &self,
-        parent_id: &str,
-        name: &str,
-    ) -> Result<Option<DriveFile>, DriveError> {
+    pub fn find_folder(&self, parent_id: &str, name: &str) -> Result<Option<DriveFile>, DriveError> {
         let q = format!(
             "'{}' in parents and name = '{}' and mimeType = '{FOLDER_MIME}' and trashed = false",
             escape(parent_id),
@@ -311,21 +279,14 @@ impl DriveClient {
 
     /// ファイルの `start` から `end`（含む）までのバイトを取得する。
     pub fn read_range(&self, id: &str, start: u64, end: u64) -> Result<Vec<u8>, DriveError> {
-        let resp = self.get(
-            &format!("/drive/v3/files/{id}"),
-            &[("alt", "media")],
-            Some((start, end)),
-        )?;
+        let resp = self.get(&format!("/drive/v3/files/{id}"), &[("alt", "media")], Some((start, end)))?;
         if resp.status() != 206 && resp.status() != 200 {
             return Err(DriveError::Http {
-                status: resp.status(),
-                message: "部分取得できない".into(),
+                status: resp.status(), message: "部分取得できない".into()
             });
         }
         let mut buf = Vec::with_capacity((end - start + 1) as usize);
-        resp.into_reader()
-            .read_to_end(&mut buf)
-            .map_err(|e| DriveError::Network(e.to_string()))?;
+        resp.into_reader().read_to_end(&mut buf).map_err(|e| DriveError::Network(e.to_string()))?;
         Ok(buf)
     }
 }
@@ -338,13 +299,10 @@ fn escape(s: &str) -> String {
 fn http_error(e: ureq::Error) -> DriveError {
     match e {
         ureq::Error::Status(401, _) => DriveError::Auth("Google Drive に拒否された".into()),
-        ureq::Error::Status(404, resp) => {
-            DriveError::NotFound(resp.into_string().unwrap_or_default())
+        ureq::Error::Status(404, resp) => DriveError::NotFound(resp.into_string().unwrap_or_default()),
+        ureq::Error::Status(status, resp) => {
+            DriveError::Http { status, message: resp.into_string().unwrap_or_default() }
         }
-        ureq::Error::Status(status, resp) => DriveError::Http {
-            status,
-            message: resp.into_string().unwrap_or_default(),
-        },
         ureq::Error::Transport(t) => DriveError::Network(t.to_string()),
     }
 }
@@ -373,10 +331,7 @@ mod tests {
         let children = c.list_children(&test).unwrap();
         assert_eq!(children.len(), 5, "ページをまたいで全部取る");
         assert_eq!(children[0].size, Some(10));
-        assert!(matches!(
-            c.folder_by_path("music/ない"),
-            Err(DriveError::NotFound(_))
-        ));
+        assert!(matches!(c.folder_by_path("music/ない"), Err(DriveError::NotFound(_))));
     }
 
     #[test]
@@ -385,30 +340,15 @@ mod tests {
         let c = client(&mock);
         let folder = c.create_folder("root", "cyanomelody").unwrap();
         assert!(folder.is_folder());
-        assert_eq!(
-            c.find_folder("root", "cyanomelody").unwrap().unwrap().id,
-            folder.id
-        );
-        let file = c
-            .create_file(
-                &folder.id,
-                "a.json",
-                "application/json",
-                "{\"名前\":1}".as_bytes(),
-            )
-            .unwrap();
+        assert_eq!(c.find_folder("root", "cyanomelody").unwrap().unwrap().id, folder.id);
+        let file =
+            c.create_file(&folder.id, "a.json", "application/json", "{\"名前\":1}".as_bytes()).unwrap();
         assert_eq!(c.download(&file.id).unwrap(), "{\"名前\":1}".as_bytes());
         c.update_file(&file.id, "application/json", b"{}").unwrap();
         assert_eq!(c.download(&file.id).unwrap(), b"{}");
-        assert_eq!(
-            c.find_file(&folder.id, "a.json").unwrap().unwrap().id,
-            file.id
-        );
+        assert_eq!(c.find_file(&folder.id, "a.json").unwrap().unwrap().id, file.id);
         c.trash(&file.id).unwrap();
-        assert!(
-            c.find_file(&folder.id, "a.json").unwrap().is_none(),
-            "ゴミ箱のものは見えない"
-        );
+        assert!(c.find_file(&folder.id, "a.json").unwrap().is_none(), "ゴミ箱のものは見えない");
     }
 
     #[test]
@@ -426,13 +366,8 @@ mod tests {
         let id = mock.add_file("root", "a.wav", vec![1, 2, 3]);
         mock.reject_next_requests(1);
         let c = client(&mock);
-        assert_eq!(
-            c.read_range(&id, 0, 2).unwrap(),
-            vec![1, 2, 3],
-            "1 回拒否されても、やり直して読める"
-        );
-        let offline =
-            DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into())));
+        assert_eq!(c.read_range(&id, 0, 2).unwrap(), vec![1, 2, 3], "1 回拒否されても、やり直して読める");
+        let offline = DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into())));
         assert!(offline.list_children("root").unwrap_err().is_offline());
         assert!(offline.account_email().unwrap_err().is_offline());
         assert_eq!(c.account_email().unwrap(), "test@example.com");

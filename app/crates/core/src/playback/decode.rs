@@ -48,36 +48,20 @@ fn open_parts(source: Box<dyn MediaSource>, extension: &str) -> Result<Opened, P
     let mut hint = Hint::new();
     hint.with_extension(extension);
     let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
         .map_err(decode_error)?;
     let format = probed.format;
-    let track = format
-        .default_track()
-        .ok_or_else(|| PlaybackError::Decode("音声のトラックがない".into()))?;
+    let track = format.default_track().ok_or_else(|| PlaybackError::Decode("音声のトラックがない".into()))?;
     let params = track.codec_params.clone();
-    let decoder = symphonia::default::get_codecs()
-        .make(&params, &DecoderOptions::default())
-        .map_err(decode_error)?;
-    let sample_rate = params
-        .sample_rate
-        .ok_or_else(|| PlaybackError::Decode("サンプルレートが分からない".into()))?;
+    let decoder =
+        symphonia::default::get_codecs().make(&params, &DecoderOptions::default()).map_err(decode_error)?;
+    let sample_rate =
+        params.sample_rate.ok_or_else(|| PlaybackError::Decode("サンプルレートが分からない".into()))?;
     let duration = match (params.time_base, params.n_frames) {
         (Some(tb), Some(n)) => Some(to_seconds(tb.calc_time(n))),
         _ => None,
     };
-    Ok(Opened {
-        track_id: track.id,
-        format,
-        decoder,
-        time_base: params.time_base,
-        sample_rate,
-        duration,
-    })
+    Ok(Opened { track_id: track.id, format, decoder, time_base: params.time_base, sample_rate, duration })
 }
 
 impl TrackDecoder {
@@ -166,10 +150,7 @@ impl TrackDecoder {
         if let Some(m) = &self.mp3 {
             let seconds = seconds.min(m.index.duration);
             let byte = m.index.byte_for(seconds);
-            let opened = open_parts(
-                Box::new(SharedMedia::new(m.media.clone(), byte, m.len)),
-                "mp3",
-            )?;
+            let opened = open_parts(Box::new(SharedMedia::new(m.media.clone(), byte, m.len)), "mp3")?;
             self.format = opened.format;
             self.decoder = opened.decoder;
             self.track_id = opened.track_id;
@@ -180,17 +161,11 @@ impl TrackDecoder {
             .format
             .seek(
                 SeekMode::Accurate,
-                SeekTo::Time {
-                    time: Time::from(seconds),
-                    track_id: Some(self.track_id),
-                },
+                SeekTo::Time { time: Time::from(seconds), track_id: Some(self.track_id) },
             )
             .map_err(decode_error)?;
         self.decoder.reset();
-        Ok(self
-            .time_base
-            .map(|tb| to_seconds(tb.calc_time(seeked.actual_ts)))
-            .unwrap_or(seconds))
+        Ok(self.time_base.map(|tb| to_seconds(tb.calc_time(seeked.actual_ts))).unwrap_or(seconds))
     }
 }
 
@@ -204,12 +179,7 @@ struct SharedMedia {
 
 impl SharedMedia {
     fn new(inner: Arc<Mutex<Box<dyn MediaSource>>>, start: u64, len: u64) -> Self {
-        Self {
-            inner,
-            start: start.min(len),
-            pos: 0,
-            len,
-        }
+        Self { inner, start: start.min(len), pos: 0, len }
     }
 
     fn view_len(&self) -> u64 {
@@ -240,10 +210,7 @@ impl Seek for SharedMedia {
             SeekFrom::Current(d) => self.pos as i128 + d as i128,
         };
         if pos < 0 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "負の位置",
-            ));
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "負の位置"));
         }
         self.pos = pos as u64;
         Ok(self.pos)
@@ -295,8 +262,7 @@ pub(crate) mod tests {
         out.extend_from_slice(b"data");
         out.extend_from_slice(&data_len.to_le_bytes());
         for i in 0..frames {
-            let v = ((i as f64 * 440.0 * std::f64::consts::TAU / sample_rate as f64).sin() * 8000.0)
-                as i16;
+            let v = ((i as f64 * 440.0 * std::f64::consts::TAU / sample_rate as f64).sin() * 8000.0) as i16;
             out.extend_from_slice(&v.to_le_bytes());
             out.extend_from_slice(&v.to_le_bytes());
         }
@@ -328,10 +294,7 @@ pub(crate) mod tests {
         while let Some(frames) = d.next_frames().unwrap() {
             rest += frames.len() / 2;
         }
-        assert!(
-            (rest as f64 / 48000.0 - 1.5).abs() < 0.05,
-            "残り {rest} フレーム"
-        );
+        assert!((rest as f64 / 48000.0 - 1.5).abs() < 0.05, "残り {rest} フレーム");
     }
 
     /// 左のチャンネルの 0.2〜0.4 秒の、ゼロ交差の数から音の高さ（Hz）を求める。
@@ -339,17 +302,8 @@ pub(crate) mod tests {
     fn pitch(frames: &[f32], sample_rate: u32) -> f64 {
         let skip = (sample_rate as f64 * 0.2) as usize;
         let n = (sample_rate as f64 * 0.2) as usize;
-        let left: Vec<f32> = frames
-            .iter()
-            .step_by(2)
-            .skip(skip)
-            .take(n)
-            .copied()
-            .collect();
-        let crossings = left
-            .windows(2)
-            .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
-            .count();
+        let left: Vec<f32> = frames.iter().step_by(2).skip(skip).take(n).copied().collect();
+        let crossings = left.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count();
         crossings as f64 / 2.0 / (left.len() as f64 / sample_rate as f64)
     }
 
@@ -364,11 +318,7 @@ pub(crate) mod tests {
     #[test]
     fn mp3_seek_lands_near_target() {
         // 1 秒ごとに 100Hz ずつ上がる音。12.3 秒は 1400Hz
-        for (name, tolerance) in [
-            ("steps_cbr.mp3", 0),
-            ("steps_vbr.mp3", 0),
-            ("steps_vbr_noxing.mp3", 1),
-        ] {
+        for (name, tolerance) in [("steps_cbr.mp3", 0), ("steps_vbr.mp3", 0), ("steps_vbr_noxing.mp3", 1)] {
             let data = crate::playback::mp3::tests::fixture(name);
             let mut d = TrackDecoder::open(Box::new(Cursor::new(data)), "mp3").unwrap();
             assert!(d.mp3.is_some(), "{name}: 見積もりを使う");
@@ -376,10 +326,7 @@ pub(crate) mod tests {
             assert!((landed - 12.3).abs() < 1e-9);
             let hz = pitch(&decode_seconds(&mut d, 0.5), d.sample_rate());
             let second = ((hz - 200.0) / 100.0).round() as i64;
-            assert!(
-                (second - 12).abs() <= tolerance,
-                "{name}: {hz:.0}Hz（{second} 秒目）に着地"
-            );
+            assert!((second - 12).abs() <= tolerance, "{name}: {hz:.0}Hz（{second} 秒目）に着地");
         }
     }
 

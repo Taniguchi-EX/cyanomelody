@@ -19,8 +19,7 @@ struct FileStore(PathBuf);
 
 impl TokenStore for FileStore {
     fn load(&self) -> Option<String> {
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
         json["refresh_token"].as_str().map(String::from)
     }
 
@@ -36,10 +35,8 @@ fn store() -> SyncStore {
         &std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap(),
     )
     .unwrap();
-    let tokens = Arc::new(RefreshingToken::new(
-        oauth,
-        Arc::new(FileStore(secrets().join("google_token.sec.json"))),
-    ));
+    let tokens =
+        Arc::new(RefreshingToken::new(oauth, Arc::new(FileStore(secrets().join("google_token.sec.json")))));
     SyncStore::new(DriveClient::new(tokens))
 }
 
@@ -72,18 +69,9 @@ fn main() {
     );
     let t = Instant::now();
     let list = other.list().unwrap();
-    println!(
-        "一覧: {} 件 / {:.2}秒",
-        list.len(),
-        t.elapsed().as_secs_f64()
-    );
+    println!("一覧: {} 件 / {:.2}秒", list.len(), t.elapsed().as_secs_f64());
     for s in &list {
-        println!(
-            "  {}（{} 曲）{}",
-            s.name,
-            s.count,
-            if s.favorite { " ★" } else { "" }
-        );
+        println!("  {}（{} 曲）{}", s.name, s.count, if s.favorite { " ★" } else { "" });
     }
     other.delete(&p.id).unwrap();
     println!("ゴミ箱に移した。一覧: {} 件", pc.list().unwrap().len());

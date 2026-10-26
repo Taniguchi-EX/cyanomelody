@@ -39,9 +39,10 @@ try {
   // Drive の指定フォルダ
   await page.locator(".field").first().getByRole("button", { name: "選ぶ" }).click();
   await text("📁 music").click();
-  await page.locator(".picker .path .grow").filter({ hasText: /^\/music$/ }).waitFor({ timeout: 20000 });
+  await page.locator(".picker .path .grow").filter({ hasText: /\/music$/ }).waitFor({ timeout: 20000 });
   await text("📁 cyanomelody_test").click();
   await page.locator(".picker .path .grow").filter({ hasText: "/music/cyanomelody_test" }).waitFor({ timeout: 20000 });
+  await page.locator(".picker li", { hasText: "読み込んでいます" }).waitFor({ state: "detached", timeout: 20000 });
   await button("このフォルダにする").click();
   await page.locator(".field .row > span.grow").first().filter({ hasText: "/music/cyanomelody_test" }).waitFor({ timeout: 20000 });
   log("Drive の指定フォルダを設定した");

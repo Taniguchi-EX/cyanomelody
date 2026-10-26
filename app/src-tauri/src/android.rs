@@ -70,11 +70,7 @@ pub fn notify(title: &str, playing: bool, active: bool) {
             class,
             "onStateChanged",
             "(Ljava/lang/String;ZZ)V",
-            &[
-                JValue::Object(&title),
-                JValue::Bool(playing.into()),
-                JValue::Bool(active.into()),
-            ],
+            &[JValue::Object(&title), JValue::Bool(playing.into()), JValue::Bool(active.into())],
         )?;
         Ok(())
     });
@@ -110,10 +106,7 @@ pub struct AndroidToken {
 
 impl AndroidToken {
     pub fn new(data_dir: &std::path::Path) -> Self {
-        Self {
-            cached: Mutex::new(None),
-            marker: data_dir.join("android_logged_in"),
-        }
+        Self { cached: Mutex::new(None), marker: data_dir.join("android_logged_in") }
     }
 
     pub fn is_logged_in(&self) -> bool {
@@ -146,8 +139,8 @@ impl TokenProvider for AndroidToken {
         if !self.is_logged_in() {
             return Err(DriveError::Auth("ログインしていない".into()));
         }
-        let token = call_access_token(false)
-            .ok_or_else(|| DriveError::Auth("ログインし直してください".into()))?;
+        let token =
+            call_access_token(false).ok_or_else(|| DriveError::Auth("ログインし直してください".into()))?;
         *cached = Some((token.clone(), Instant::now() + Duration::from_secs(50 * 60)));
         Ok(token)
     }

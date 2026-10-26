@@ -33,8 +33,7 @@ pub struct TrackRef {
 }
 
 /// 曲を開く関数。音楽ソースの層が用意する。
-pub type TrackOpener =
-    Arc<dyn Fn(&TrackRef) -> Result<Box<dyn MediaSource>, PlaybackError> + Send + Sync>;
+pub type TrackOpener = Arc<dyn Fn(&TrackRef) -> Result<Box<dyn MediaSource>, PlaybackError> + Send + Sync>;
 
 /// 再生の状態の変化を受け取る関数。ワーカーのスレッドから呼ばれる。
 pub type EventHandler = Arc<dyn Fn(PlayerEvent) + Send + Sync>;
@@ -167,12 +166,7 @@ impl Player {
                 })
                 .expect("再生のスレッドを起動できない")
         };
-        Self {
-            tx,
-            shared,
-            status,
-            worker: Some(worker),
-        }
+        Self { tx, shared, status, worker: Some(worker) }
     }
 
     /// プレイリストを読み込み、`start` 番目の曲から再生する。
@@ -221,9 +215,7 @@ impl Player {
     /// アプリ内の音量（0.0〜1.0）。Android では OS の音量を使うため、1.0 のままにする。
     pub fn set_volume(&self, volume: f32) {
         let volume = volume.clamp(0.0, 1.0);
-        self.shared
-            .volume
-            .store(volume.to_bits(), Ordering::Relaxed);
+        self.shared.volume.store(volume.to_bits(), Ordering::Relaxed);
         self.status.lock().unwrap().status.volume = volume;
     }
 
@@ -231,8 +223,8 @@ impl Player {
         let ws = self.status.lock().unwrap().clone();
         let mut status = ws.status;
         if ws.sample_rate > 0 && status.index.is_some() {
-            status.position = ws.base
-                + self.shared.rendered.load(Ordering::Relaxed) as f64 / ws.sample_rate as f64;
+            status.position =
+                ws.base + self.shared.rendered.load(Ordering::Relaxed) as f64 / ws.sample_rate as f64;
             if let Some(d) = status.duration {
                 status.position = status.position.min(d);
             }
@@ -365,10 +357,7 @@ impl Worker {
             Command::Stop => self.stop(),
             Command::Next => {
                 if self.state() != PlayState::Stopped {
-                    match self.queue.advance() {
-                        Some(index) => self.start_track(index),
-                        None => self.finish(),
-                    }
+                    self.play_next();
                 }
             }
             Command::Prev => {
@@ -409,14 +398,10 @@ impl Worker {
             return true;
         }
         let shared = self.shared.clone();
-        let render =
-            Box::new(move |out: &mut [f32], channels: usize| render(&shared, out, channels));
+        let render = Box::new(move |out: &mut [f32], channels: usize| render(&shared, out, channels));
         match self.output.open(render) {
             Ok(format) => {
-                if self
-                    .format
-                    .is_some_and(|f| f.sample_rate != format.sample_rate)
-                {
+                if self.format.is_some_and(|f| f.sample_rate != format.sample_rate) {
                     // 出力先のサンプルレートが変わったら、今の位置からデコードし直す
                     let position = self.position();
                     self.format = Some(format);
@@ -464,24 +449,37 @@ impl Worker {
             (self.events)(PlayerEvent::TrackChanged { index });
             match self.open(index) {
                 Ok(()) => return,
-                Err(error) => {
-                    log::warn!("{} 番目の曲を再生できない: {error}", index);
-                    (self.events)(PlayerEvent::TrackFailed { index, error });
-                    self.failures += 1;
-                    if self.failures >= self.queue.len() {
-                        log::warn!("どの曲も再生できないため止める");
-                        self.finish();
-                        return;
-                    }
-                    match self.queue.advance() {
-                        Some(next) => index = next,
-                        None => {
-                            self.finish();
-                            return;
-                        }
-                    }
-                }
+                Err(error) => match self.skip_failed(index, error) {
+                    Some(next) => index = next,
+                    None => return,
+                },
             }
+        }
+    }
+
+    /// 曲を再生できなかった（開けない、途中で読めなくなった）。知らせて次の曲に進み、その位置を返す。
+    /// 続けて全曲が再生できなかったとき（リピート中でも）と、最後の曲だったときは止めて `None` を返す。
+    fn skip_failed(&mut self, index: usize, error: PlaybackError) -> Option<usize> {
+        log::warn!("{index} 番目の曲を再生できない: {error}");
+        (self.events)(PlayerEvent::TrackFailed { index, error });
+        self.failures += 1;
+        let next = if self.failures >= self.queue.len() {
+            log::warn!("どの曲も再生できないため止める");
+            None
+        } else {
+            self.queue.advance()
+        };
+        if next.is_none() {
+            self.finish();
+        }
+        next
+    }
+
+    /// 次の曲を再生する。最後の曲の次がなければ（リピートしないとき）終える。
+    fn play_next(&mut self) {
+        match self.queue.advance() {
+            Some(index) => self.start_track(index),
+            None => self.finish(),
         }
     }
 
@@ -489,10 +487,7 @@ impl Worker {
         let track = &self.tracks[index];
         let source = (self.opener)(track)?;
         let decoder = TrackDecoder::open(source, &track.extension)?;
-        let out_rate = self
-            .format
-            .map(|f| f.sample_rate)
-            .unwrap_or(decoder.sample_rate());
+        let out_rate = self.format.map(|f| f.sample_rate).unwrap_or(decoder.sample_rate());
         self.resampler = Some(StereoResampler::new(decoder.sample_rate(), out_rate)?);
         self.status.lock().unwrap().status.duration = decoder.duration();
         self.decoder = Some(decoder);
@@ -524,20 +519,16 @@ impl Worker {
         loop {
             let buffered = self.shared.buffer.lock().unwrap().len();
             if self.draining {
+                // 曲を最後まで鳴らし終えたら次の曲へ
                 if buffered == 0 {
-                    // 曲を最後まで鳴らし終えた
-                    match self.queue.advance() {
-                        Some(index) => self.start_track(index),
-                        None => self.finish(),
-                    }
+                    self.play_next();
                 }
                 return;
             }
             if buffered >= target {
                 return;
             }
-            let (Some(decoder), Some(resampler)) = (self.decoder.as_mut(), self.resampler.as_mut())
-            else {
+            let (Some(decoder), Some(resampler)) = (self.decoder.as_mut(), self.resampler.as_mut()) else {
                 return;
             };
             match decoder.next_frames() {
@@ -554,16 +545,8 @@ impl Worker {
                 Err(error) => {
                     // 途中で読めなくなった曲（通信が切れたなど）は飛ばす
                     let index = self.queue.current().unwrap_or_default();
-                    log::warn!("{index} 番目の曲の途中で読めなくなった: {error}");
-                    (self.events)(PlayerEvent::TrackFailed { index, error });
-                    self.failures += 1;
-                    if self.failures >= self.queue.len() {
-                        self.finish();
-                        return;
-                    }
-                    match self.queue.advance() {
-                        Some(next) => self.start_track(next),
-                        None => self.finish(),
+                    if let Some(next) = self.skip_failed(index, error) {
+                        self.start_track(next);
                     }
                     return;
                 }
@@ -643,18 +626,12 @@ mod tests {
                 let mut buf = vec![0.0f32; 2048];
                 while !s.load(Ordering::Relaxed) {
                     render(&mut buf, 2);
-                    rendered.fetch_add(
-                        buf.iter().filter(|v| **v != 0.0).count() as u64,
-                        Ordering::Relaxed,
-                    );
+                    rendered.fetch_add(buf.iter().filter(|v| **v != 0.0).count() as u64, Ordering::Relaxed);
                     std::thread::sleep(Duration::from_millis(1));
                 }
             });
             self.running = Some((stop, handle));
-            Ok(OutputFormat {
-                sample_rate: self.sample_rate,
-                channels: 2,
-            })
+            Ok(OutputFormat { sample_rate: self.sample_rate, channels: 2 })
         }
 
         fn close(&mut self) {
@@ -701,20 +678,11 @@ mod tests {
             opener,
             handler,
         );
-        Harness {
-            player,
-            events,
-            opens,
-        }
+        Harness { player, events, opens }
     }
 
     fn tracks(keys: &[&str]) -> Vec<TrackRef> {
-        keys.iter()
-            .map(|k| TrackRef {
-                key: k.to_string(),
-                extension: "wav".into(),
-            })
-            .collect()
+        keys.iter().map(|k| TrackRef { key: k.to_string(), extension: "wav".into() }).collect()
     }
 
     fn wait_for(h: &Harness, what: &str, cond: impl Fn(&[PlayerEvent]) -> bool) {
@@ -742,15 +710,10 @@ mod tests {
     fn plays_tracks_in_order_and_finishes() {
         let h = harness(48000);
         h.player.load(tracks(&["ok0.2", "ok0.2", "ok0.2"]), 0);
-        wait_for(&h, "最後まで再生", |e| {
-            e.contains(&PlayerEvent::Finished)
-        });
+        wait_for(&h, "最後まで再生", |e| e.contains(&PlayerEvent::Finished));
         let events = h.events.lock().unwrap();
         assert_eq!(changed(&events), vec![0, 1, 2]);
-        assert_eq!(
-            events.first(),
-            Some(&PlayerEvent::StateChanged(PlayState::Playing))
-        );
+        assert_eq!(events.first(), Some(&PlayerEvent::StateChanged(PlayState::Playing)));
         assert!(events.contains(&PlayerEvent::StateChanged(PlayState::Stopped)));
         assert_eq!(h.player.status().state, PlayState::Stopped);
     }
@@ -759,16 +722,10 @@ mod tests {
     fn skips_tracks_that_cannot_be_opened() {
         let h = harness(44100);
         h.player.load(tracks(&["ok0.1", "bad1", "ok0.1"]), 0);
-        wait_for(&h, "最後まで再生", |e| {
-            e.contains(&PlayerEvent::Finished)
-        });
+        wait_for(&h, "最後まで再生", |e| e.contains(&PlayerEvent::Finished));
         let events = h.events.lock().unwrap();
         assert_eq!(changed(&events), vec![0, 1, 2]);
-        assert!(
-            events
-                .iter()
-                .any(|e| matches!(e, PlayerEvent::TrackFailed { index: 1, .. }))
-        );
+        assert!(events.iter().any(|e| matches!(e, PlayerEvent::TrackFailed { index: 1, .. })));
     }
 
     #[test]
@@ -778,10 +735,7 @@ mod tests {
         h.player.load(tracks(&["bad1", "bad2", "bad3"]), 1);
         wait_for(&h, "止まる", |e| e.contains(&PlayerEvent::Finished));
         let events = h.events.lock().unwrap();
-        let failed = events
-            .iter()
-            .filter(|e| matches!(e, PlayerEvent::TrackFailed { .. }))
-            .count();
+        let failed = events.iter().filter(|e| matches!(e, PlayerEvent::TrackFailed { .. })).count();
         assert_eq!(failed, 3, "一周だけ試して止まる");
     }
 
@@ -799,20 +753,12 @@ mod tests {
     fn pause_closes_output_and_play_reopens() {
         let h = harness(44100);
         h.player.load(tracks(&["ok5"]), 0);
-        wait_for(&h, "再生", |e| {
-            e.contains(&PlayerEvent::StateChanged(PlayState::Playing))
-        });
+        wait_for(&h, "再生", |e| e.contains(&PlayerEvent::StateChanged(PlayState::Playing)));
         h.player.pause();
-        wait_for(&h, "一時停止", |e| {
-            e.contains(&PlayerEvent::StateChanged(PlayState::Paused))
-        });
+        wait_for(&h, "一時停止", |e| e.contains(&PlayerEvent::StateChanged(PlayState::Paused)));
         let paused_at = h.player.status().position;
         std::thread::sleep(Duration::from_millis(100));
-        assert_eq!(
-            h.player.status().position,
-            paused_at,
-            "止めている間は進まない"
-        );
+        assert_eq!(h.player.status().position, paused_at, "止めている間は進まない");
         h.player.play();
         std::thread::sleep(Duration::from_millis(200));
         assert_eq!(h.opens.load(Ordering::Relaxed), 2, "再開で出力先を開き直す");
@@ -823,18 +769,12 @@ mod tests {
     fn seek_moves_position() {
         let h = harness(44100);
         h.player.load(tracks(&["ok5"]), 0);
-        wait_for(&h, "再生", |e| {
-            e.contains(&PlayerEvent::StateChanged(PlayState::Playing))
-        });
+        wait_for(&h, "再生", |e| e.contains(&PlayerEvent::StateChanged(PlayState::Playing)));
         h.player.pause();
         h.player.seek(3.0);
         std::thread::sleep(Duration::from_millis(100));
         let status = h.player.status();
-        assert!(
-            (status.position - 3.0).abs() < 0.1,
-            "位置 {}",
-            status.position
-        );
+        assert!((status.position - 3.0).abs() < 0.1, "位置 {}", status.position);
         assert!((status.duration.unwrap() - 5.0).abs() < 0.01);
     }
 

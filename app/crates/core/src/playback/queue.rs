@@ -20,13 +20,7 @@ impl PlayQueue {
     }
 
     /// 乱数の種を指定して作る（テスト用）。
-    pub fn with_rng(
-        len: usize,
-        start: usize,
-        shuffle: bool,
-        repeat: bool,
-        rng: fastrand::Rng,
-    ) -> Self {
+    pub fn with_rng(len: usize, start: usize, shuffle: bool, repeat: bool, rng: fastrand::Rng) -> Self {
         let mut queue = Self {
             len,
             order: (0..len).collect(),
@@ -171,11 +165,7 @@ mod tests {
         }
         let mut sorted = played.clone();
         sorted.sort();
-        assert_eq!(
-            sorted,
-            (0..10).collect::<Vec<_>>(),
-            "全曲が一度ずつ出る: {played:?}"
-        );
+        assert_eq!(sorted, (0..10).collect::<Vec<_>>(), "全曲が一度ずつ出る: {played:?}");
         assert_ne!(played, (0..10).collect::<Vec<_>>(), "順が混ざっている");
     }
 

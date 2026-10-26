@@ -27,12 +27,7 @@ pub fn read_tags<R: Read + Seek>(reader: R) -> Result<Tags, SourceError> {
     let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else {
         return Ok(Tags::default());
     };
-    let text = |v: Option<std::borrow::Cow<'_, str>>| {
-        v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-    };
-    Ok(Tags {
-        title: text(tag.title()),
-        artist: text(tag.artist()),
-        album: text(tag.album()),
-    })
+    let text =
+        |v: Option<std::borrow::Cow<'_, str>>| v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    Ok(Tags { title: text(tag.title()), artist: text(tag.artist()), album: text(tag.album()) })
 }

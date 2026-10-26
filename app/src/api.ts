@@ -111,13 +111,6 @@ export interface Status {
   artist: string | null;
 }
 
-export interface PlayerEvent {
-  kind: "track" | "state" | "failed" | "finished";
-  index: number | null;
-  state: PlayState | null;
-  error: string | null;
-}
-
 export interface LibraryProgress {
   source: SourceName;
   done: number;

@@ -12,19 +12,21 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::drive::{DriveClient, DriveError};
 use crate::library::{Library, Song};
+use crate::parallel::map_parallel;
 use crate::source::SourceKind;
 
 pub const APP_FOLDER: &str = "cyanomelody";
 pub const PLAYLIST_FOLDER: &str = "playlists";
 pub const SETTINGS_FILE: &str = "settings.json";
 const JSON_MIME: &str = "application/json";
+/// プレイリストを並行して読む数。
+const PARALLELISM: usize = 8;
 /// JSON の形式の版。形を変えるときに上げ、古い版も読めるようにする。
 pub const FORMAT_VERSION: u32 = 1;
 
@@ -33,10 +35,7 @@ fn format_version() -> u32 {
 }
 
 fn now_millis() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 fn new_id() -> String {
@@ -168,6 +167,17 @@ pub struct PlaylistSummary {
     pub count: usize,
 }
 
+impl From<&Playlist> for PlaylistSummary {
+    fn from(p: &Playlist) -> Self {
+        Self { id: p.id.clone(), name: p.name.clone(), favorite: p.favorite, count: p.items.len() }
+    }
+}
+
+/// 一覧の順（お気に入りを先に、それぞれ名前の順）に並べる。
+pub fn sort_summaries(list: &mut [PlaylistSummary]) {
+    list.sort_by(|a, b| b.favorite.cmp(&a.favorite).then_with(|| a.name.cmp(&b.name)));
+}
+
 /// Drive の指定フォルダ（全端末で共通）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriveFolder {
@@ -231,11 +241,7 @@ fn to_json<T: Serialize>(value: &T) -> Vec<u8> {
 
 impl SyncStore {
     pub fn new(client: DriveClient) -> Self {
-        Self {
-            client,
-            folders: Mutex::new(None),
-            file_ids: Mutex::new(HashMap::new()),
-        }
+        Self { client, folders: Mutex::new(None), file_ids: Mutex::new(HashMap::new()) }
     }
 
     /// `cyanomelody` と `playlists` のフォルダ。なければ作る。
@@ -270,10 +276,7 @@ impl SyncStore {
             .client
             .find_file(&folders.playlists, &Self::file_name(id))?
             .ok_or_else(|| SyncError::NotFound(id.to_string()))?;
-        self.file_ids
-            .lock()
-            .unwrap()
-            .insert(id.to_string(), file.id.clone());
+        self.file_ids.lock().unwrap().insert(id.to_string(), file.id.clone());
         Ok(file.id)
     }
 
@@ -287,50 +290,25 @@ impl SyncStore {
             .filter(|f| f.name.ends_with(".json"))
             .collect();
         // 1 ファイルずつ読むと遅いため、並行して読む
-        let next = AtomicUsize::new(0);
-        let results: Vec<Mutex<Option<Result<Playlist, SyncError>>>> =
-            files.iter().map(|_| Mutex::new(None)).collect();
-        std::thread::scope(|scope| {
-            for _ in 0..files.len().min(8) {
-                scope.spawn(|| {
-                    loop {
-                        let i = next.fetch_add(1, Ordering::Relaxed);
-                        if i >= files.len() {
-                            break;
-                        }
-                        let result = self
-                            .client
-                            .download(&files[i].id)
-                            .map_err(SyncError::from)
-                            .and_then(|b| parse(&b));
-                        *results[i].lock().unwrap() = Some(result);
-                    }
-                });
-            }
-        });
+        let results = map_parallel(
+            &files,
+            PARALLELISM,
+            |f| self.client.download(&f.id).map_err(SyncError::from).and_then(|b| parse::<Playlist>(&b)),
+            |_, _| {},
+        );
         let mut out = Vec::new();
         let mut ids = self.file_ids.lock().unwrap();
         for (file, result) in files.iter().zip(results) {
-            match result.into_inner().unwrap() {
-                Some(Ok(p)) => {
+            match result {
+                Ok(p) => {
                     ids.insert(p.id.clone(), file.id.clone());
-                    out.push(PlaylistSummary {
-                        id: p.id,
-                        name: p.name,
-                        favorite: p.favorite,
-                        count: p.items.len(),
-                    });
+                    out.push(PlaylistSummary::from(&p));
                 }
-                Some(Err(SyncError::Offline(m))) => return Err(SyncError::Offline(m)),
-                Some(Err(e)) => log::warn!("プレイリスト {} を読めない: {e}", file.name),
-                None => {}
+                Err(SyncError::Offline(m)) => return Err(SyncError::Offline(m)),
+                Err(e) => log::warn!("プレイリスト {} を読めない: {e}", file.name),
             }
         }
-        out.sort_by(|a, b| {
-            b.favorite
-                .cmp(&a.favorite)
-                .then_with(|| a.name.cmp(&b.name))
-        });
+        sort_summaries(&mut out);
         Ok(out)
     }
 
@@ -356,10 +334,7 @@ impl SyncStore {
             JSON_MIME,
             &to_json(&playlist),
         )?;
-        self.file_ids
-            .lock()
-            .unwrap()
-            .insert(playlist.id.clone(), file.id);
+        self.file_ids.lock().unwrap().insert(playlist.id.clone(), file.id);
         Ok(playlist)
     }
 
@@ -369,8 +344,7 @@ impl SyncStore {
         edit(&mut playlist);
         playlist.version = FORMAT_VERSION;
         playlist.updated_at = now_millis();
-        self.client
-            .update_file(&self.file_id(id)?, JSON_MIME, &to_json(&playlist))?;
+        self.client.update_file(&self.file_id(id)?, JSON_MIME, &to_json(&playlist))?;
         Ok(playlist)
     }
 
@@ -387,10 +361,7 @@ impl SyncStore {
         let folders = self.folders()?;
         match self.client.find_file(&folders.app, SETTINGS_FILE)? {
             Some(f) => parse(&self.client.download(&f.id)?),
-            None => Ok(Settings {
-                version: FORMAT_VERSION,
-                ..Default::default()
-            }),
+            None => Ok(Settings { version: FORMAT_VERSION, ..Default::default() }),
         }
     }
 
@@ -407,9 +378,7 @@ impl SyncStore {
         let json = to_json(&settings);
         match existing {
             Some(f) => self.client.update_file(&f.id, JSON_MIME, &json)?,
-            None => self
-                .client
-                .create_file(&folders.app, SETTINGS_FILE, JSON_MIME, &json)?,
+            None => self.client.create_file(&folders.app, SETTINGS_FILE, JSON_MIME, &json)?,
         };
         Ok(settings)
     }
@@ -425,10 +394,7 @@ mod tests {
     use std::sync::Arc;
 
     fn store(mock: &MockDrive) -> SyncStore {
-        SyncStore::new(DriveClient::with_base(
-            &mock.base_url(),
-            Arc::new(StaticToken("t".into())),
-        ))
+        SyncStore::new(DriveClient::with_base(&mock.base_url(), Arc::new(StaticToken("t".into()))))
     }
 
     fn item(key: &str) -> PlaylistItem {
@@ -451,11 +417,7 @@ mod tests {
         s.edit(&z.id, |p| p.favorite = true).unwrap();
         assert_eq!(mock.names("root"), vec![APP_FOLDER]);
         let names: Vec<String> = s.list().unwrap().into_iter().map(|p| p.name).collect();
-        assert_eq!(
-            names,
-            vec!["Z のリスト", "A のリスト", "B のリスト"],
-            "お気に入りが先、あとは名前の順"
-        );
+        assert_eq!(names, vec!["Z のリスト", "A のリスト", "B のリスト"], "お気に入りが先、あとは名前の順");
         let _ = (a, b);
     }
 
@@ -465,19 +427,12 @@ mod tests {
         let pc = store(&mock);
         let phone = store(&mock);
         let p = pc.create("通勤").unwrap();
-        pc.edit(&p.id, |p| p.add([item("x"), item("y"), item("x")]))
-            .unwrap();
+        pc.edit(&p.id, |p| p.add([item("x"), item("y"), item("x")])).unwrap();
         let seen = phone.get(&p.id).unwrap();
-        assert_eq!(
-            seen.items.len(),
-            3,
-            "別の端末からも見える。同じ曲を複数回入れられる"
-        );
+        assert_eq!(seen.items.len(), 3, "別の端末からも見える。同じ曲を複数回入れられる");
 
         // 別々の端末で順に編集しても、編集の直前に読み直すので両方の変更が残る
-        phone
-            .edit(&p.id, |p| p.move_item(2, 0).then_some(()).unwrap())
-            .unwrap();
+        phone.edit(&p.id, |p| p.move_item(2, 0).then_some(()).unwrap()).unwrap();
         pc.edit(&p.id, |p| p.name = "通勤（改）".into()).unwrap();
         let latest = phone.get(&p.id).unwrap();
         assert_eq!(latest.name, "通勤（改）");
@@ -485,9 +440,7 @@ mod tests {
 
         // 同時に編集した場合は、後から保存した方になる
         let mut stale = pc.get(&p.id).unwrap();
-        phone
-            .edit(&p.id, |p| p.name = "スマホで変えた".into())
-            .unwrap();
+        phone.edit(&p.id, |p| p.name = "スマホで変えた".into()).unwrap();
         stale.name = "PC で変えた".into();
         pc.edit(&p.id, |p| *p = stale.clone()).unwrap();
         assert_eq!(phone.get(&p.id).unwrap().name, "PC で変えた");
@@ -500,10 +453,7 @@ mod tests {
         let p = s.create("消す").unwrap();
         s.delete(&p.id).unwrap();
         assert!(s.list().unwrap().is_empty());
-        assert!(matches!(
-            store(&mock).get(&p.id),
-            Err(SyncError::NotFound(_))
-        ));
+        assert!(matches!(store(&mock).get(&p.id), Err(SyncError::NotFound(_))));
     }
 
     #[test]
@@ -511,45 +461,24 @@ mod tests {
         let mock = MockDrive::start();
         let pc = store(&mock);
         let phone = store(&mock);
-        assert_eq!(
-            pc.settings().unwrap(),
-            Settings {
-                version: FORMAT_VERSION,
-                ..Default::default()
-            }
-        );
+        assert_eq!(pc.settings().unwrap(), Settings { version: FORMAT_VERSION, ..Default::default() });
         pc.edit_settings(|s| {
-            s.drive_folder = Some(DriveFolder {
-                id: "f1".into(),
-                path: "music".into(),
-            });
-            s.set_local_folder(
-                "pc",
-                LocalFolder {
-                    path: "C:\\Music".into(),
-                    device_name: "PC".into(),
-                },
-            );
+            s.drive_folder = Some(DriveFolder { id: "f1".into(), path: "music".into() });
+            s.set_local_folder("pc", LocalFolder { path: "C:\\Music".into(), device_name: "PC".into() });
         })
         .unwrap();
         phone
             .edit_settings(|s| {
                 s.set_local_folder(
                     "phone",
-                    LocalFolder {
-                        path: "/storage/emulated/0/Music".into(),
-                        device_name: "Pixel".into(),
-                    },
+                    LocalFolder { path: "/storage/emulated/0/Music".into(), device_name: "Pixel".into() },
                 )
             })
             .unwrap();
         let settings = pc.settings().unwrap();
         assert_eq!(settings.drive_folder.as_ref().unwrap().path, "music");
         assert_eq!(settings.local_folder("pc").unwrap().path, "C:\\Music");
-        assert_eq!(
-            settings.local_folder("phone").unwrap().path,
-            "/storage/emulated/0/Music"
-        );
+        assert_eq!(settings.local_folder("phone").unwrap().path, "/storage/emulated/0/Music");
     }
 
     #[test]
@@ -567,10 +496,8 @@ mod tests {
 
     #[test]
     fn offline_is_reported() {
-        let s = SyncStore::new(DriveClient::with_base(
-            "http://127.0.0.1:9",
-            Arc::new(StaticToken("t".into())),
-        ));
+        let s =
+            SyncStore::new(DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into()))));
         assert!(matches!(s.list(), Err(SyncError::Offline(_))));
         assert!(matches!(s.create("x"), Err(SyncError::Offline(_))));
     }
@@ -580,25 +507,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         put_song(dir.path(), "a.wav", None);
         let library = Library::open_in_memory().unwrap();
-        library
-            .refresh(&LocalSource::new(dir.path()), 1, &|_, _| {})
-            .unwrap();
+        library.refresh(&LocalSource::new(dir.path()), 1, &|_, _| {}).unwrap();
         let song = library.song(SourceKind::Local, "a.wav").unwrap().unwrap();
         let mine = PlaylistItem::from_song(&song, "pc");
         assert_eq!(mine.device.as_deref(), Some("pc"));
         assert!(mine.is_available("pc", &library));
-        assert!(
-            !mine.is_available("phone", &library),
-            "ほかの端末のローカルの曲はグレーアウト"
-        );
+        assert!(!mine.is_available("phone", &library), "ほかの端末のローカルの曲はグレーアウト");
         std::fs::remove_file(dir.path().join("a.wav")).unwrap();
-        library
-            .refresh(&LocalSource::new(dir.path()), 1, &|_, _| {})
-            .unwrap();
-        assert!(
-            !mine.is_available("pc", &library),
-            "見つからなくなった曲はグレーアウト"
-        );
+        library.refresh(&LocalSource::new(dir.path()), 1, &|_, _| {}).unwrap();
+        assert!(!mine.is_available("pc", &library), "見つからなくなった曲はグレーアウト");
         assert!(!item("drive-unknown").is_available("pc", &library));
     }
 }

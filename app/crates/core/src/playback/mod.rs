@@ -14,6 +14,8 @@ pub mod queue;
 pub mod resample;
 
 pub use engine::{EventHandler, PlayState, Player, PlayerEvent, Status, TrackOpener, TrackRef};
+/// 曲の読み込み口（音楽ソースが返し、再生エンジンがデコードする）。
+pub use symphonia::core::io::MediaSource;
 
 /// 再生まわりのエラー。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]

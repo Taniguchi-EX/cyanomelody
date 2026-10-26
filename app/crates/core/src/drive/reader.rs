@@ -56,11 +56,7 @@ impl RangeReader {
                 file_id: file_id.into(),
                 len,
                 chunk: chunk.max(1),
-                state: Mutex::new(State {
-                    next_idx: u64::MAX,
-                    burst: 1,
-                    ..Default::default()
-                }),
+                state: Mutex::new(State { next_idx: u64::MAX, burst: 1, ..Default::default() }),
                 fetched: Condvar::new(),
                 cache: None,
             }),
@@ -77,9 +73,7 @@ impl RangeReader {
         cache: Arc<CacheFile>,
     ) -> Self {
         let mut reader = Self::new(client, file_id, len, chunk);
-        Arc::get_mut(&mut reader.shared)
-            .expect("作った直後なので共有されていない")
-            .cache = Some(cache);
+        Arc::get_mut(&mut reader.shared).expect("作った直後なので共有されていない").cache = Some(cache);
         reader
     }
 
@@ -110,11 +104,8 @@ impl Shared {
                 st = self.fetched.wait(st).unwrap();
                 continue;
             }
-            let count = if idx == st.next_idx {
-                (st.burst * 2).min(MAX_BURST_BYTES / self.chunk).max(1)
-            } else {
-                1
-            };
+            let count =
+                if idx == st.next_idx { (st.burst * 2).min(MAX_BURST_BYTES / self.chunk).max(1) } else { 1 };
             drop(st);
             self.fetch(idx, count)?;
             st = self.state.lock().unwrap();
@@ -175,9 +166,7 @@ impl Shared {
         let outcome = match result {
             Ok(data) => {
                 for (i, part) in data.chunks(self.chunk as usize).enumerate() {
-                    st.chunks
-                        .entry(idx + i as u64)
-                        .or_insert_with(|| Arc::new(part.to_vec()));
+                    st.chunks.entry(idx + i as u64).or_insert_with(|| Arc::new(part.to_vec()));
                 }
                 st.burst = end - idx;
                 st.next_idx = end;
@@ -228,10 +217,7 @@ impl Seek for RangeReader {
             SeekFrom::Current(d) => self.pos as i128 + d as i128,
         };
         if pos < 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "負の位置にはシークできない",
-            ));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "負の位置にはシークできない"));
         }
         self.pos = pos as u64;
         Ok(self.pos)
@@ -322,10 +308,7 @@ mod tests {
         let mut r = reader(&mock, vec![1u8; 1000], 100);
         mock.reject_next_requests(2);
         let mut buf = [0u8; 10];
-        assert!(
-            r.read_exact(&mut buf).is_err(),
-            "やり直しても拒否されたらエラー"
-        );
+        assert!(r.read_exact(&mut buf).is_err(), "やり直しても拒否されたらエラー");
         r.seek(SeekFrom::Start(0)).unwrap();
         r.read_exact(&mut buf).unwrap();
         assert_eq!(buf, [1u8; 10], "次は取り直して読める");

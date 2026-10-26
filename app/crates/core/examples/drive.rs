@@ -28,16 +28,12 @@ struct FileStore(PathBuf);
 
 impl TokenStore for FileStore {
     fn load(&self) -> Option<String> {
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&self.0).ok()?).ok()?;
         json["refresh_token"].as_str().map(String::from)
     }
 
     fn save(&self, refresh_token: &str) -> Result<(), cyanomelody_core::drive::DriveError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         let json = serde_json::json!({ "refresh_token": refresh_token, "obtained_at": now });
         std::fs::write(&self.0, json.to_string())
             .map_err(|e| cyanomelody_core::drive::DriveError::Auth(e.to_string()))
@@ -51,33 +47,20 @@ impl TokenStore for FileStore {
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let folder = args
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "music/cyanomelody_test".into());
-    let play_seconds: Option<u64> = args
-        .iter()
-        .position(|a| a == "--play")
-        .map(|i| args[i + 1].parse().unwrap());
+    let folder = args.first().cloned().unwrap_or_else(|| "music/cyanomelody_test".into());
+    let play_seconds: Option<u64> =
+        args.iter().position(|a| a == "--play").map(|i| args[i + 1].parse().unwrap());
 
-    let cache_dir: Option<PathBuf> = args
-        .iter()
-        .position(|a| a == "--cache")
-        .map(|i| PathBuf::from(&args[i + 1]));
+    let cache_dir: Option<PathBuf> =
+        args.iter().position(|a| a == "--cache").map(|i| PathBuf::from(&args[i + 1]));
 
-    let client_json =
-        std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap();
+    let client_json = std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap();
     let oauth = OAuthClient::from_json(&client_json).unwrap();
     let store = Arc::new(FileStore(secrets().join("google_token.sec.json")));
     if store.load().is_none() {
         let login = LoopbackLogin::start(&oauth).unwrap();
-        println!(
-            "ブラウザで次の URL を開いてログインしてください:\n{}",
-            login.url
-        );
-        store
-            .save(&login.finish(Duration::from_secs(300)).unwrap())
-            .unwrap();
+        println!("ブラウザで次の URL を開いてログインしてください:\n{}", login.url);
+        store.save(&login.finish(Duration::from_secs(300)).unwrap()).unwrap();
     }
     let tokens = Arc::new(RefreshingToken::new(oauth, store));
     let client = DriveClient::new(tokens);
@@ -93,9 +76,7 @@ fn main() {
     let source = Arc::new(source);
     let library = Library::open_in_memory().unwrap();
     let report = library
-        .refresh(source.as_ref(), DEFAULT_PARALLELISM, &|done, total| {
-            println!("  タグ {done}/{total}")
-        })
+        .refresh(source.as_ref(), DEFAULT_PARALLELISM, &|done, total| println!("  タグ {done}/{total}"))
         .unwrap();
     println!("手動更新: {report:?} / {:?}", t.elapsed());
     let songs = library.songs(SourceKind::Drive).unwrap();
@@ -106,23 +87,13 @@ fn main() {
     let Some(seconds) = play_seconds else { return };
     let src = source.clone();
     let opener: TrackOpener = Arc::new(move |track: &TrackRef| {
-        src.open(&track.key)
-            .map_err(|e| PlaybackError::Open(e.to_string()))
+        src.open(&track.key).map_err(|e| PlaybackError::Open(e.to_string()))
     });
     let (tx, rx) = mpsc::channel();
-    let player = Player::new(
-        || Box::new(CpalOutput::default()),
-        opener,
-        Arc::new(move |e| drop(tx.send(e))),
-    );
+    let player = Player::new(|| Box::new(CpalOutput::default()), opener, Arc::new(move |e| drop(tx.send(e))));
     player.set_volume(0.3);
-    let tracks: Vec<TrackRef> = songs
-        .iter()
-        .map(|s| TrackRef {
-            key: s.key.clone(),
-            extension: s.extension(),
-        })
-        .collect();
+    let tracks: Vec<TrackRef> =
+        songs.iter().map(|s| TrackRef { key: s.key.clone(), extension: s.extension() }).collect();
     for (i, song) in songs.iter().enumerate() {
         let t = Instant::now();
         player.jump_to(i);
@@ -162,20 +133,14 @@ fn main() {
     player.stop();
     if let Some(cache) = cache {
         let t = Instant::now();
-        while songs.iter().any(|s| !cache.is_cached(&s.key))
-            && t.elapsed() < Duration::from_secs(120)
-        {
+        while songs.iter().any(|s| !cache.is_cached(&s.key)) && t.elapsed() < Duration::from_secs(120) {
             std::thread::sleep(Duration::from_millis(200));
         }
         for s in &songs {
             println!(
                 "キャッシュ: {} / {}",
                 s.title,
-                if cache.is_cached(&s.key) {
-                    "保存済み"
-                } else {
-                    "未保存"
-                }
+                if cache.is_cached(&s.key) { "保存済み" } else { "未保存" }
             );
         }
         println!(

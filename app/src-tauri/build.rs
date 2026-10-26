@@ -10,8 +10,8 @@ fn embed_oauth_client() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
         return;
     }
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../secrets/google_oauth_desktop.sec.json");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../secrets/google_oauth_desktop.sec.json");
     println!("cargo:rerun-if-changed={}", path.display());
     match std::fs::read_to_string(&path) {
         Ok(json) => {

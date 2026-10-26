@@ -3,165 +3,21 @@
 //! 曲を見分ける値は、再生エンジンとの間では頭に `drive:` か `local:` を付け、
 //! どちらの音楽ソースから開くかを見分ける。
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 
-use cyanomelody_core::cache::{DEFAULT_MAX_BYTES, SongCache};
-use cyanomelody_core::drive::{DriveClient, DriveError, TokenProvider};
-use cyanomelody_core::library::{DEFAULT_PARALLELISM, FolderListing, Library, RefreshReport, Song};
+use cyanomelody_core::cache::SongCache;
+use cyanomelody_core::drive::{DriveClient, TokenProvider};
+use cyanomelody_core::library::{DEFAULT_PARALLELISM, Library, RefreshReport};
 use cyanomelody_core::playback::output::CpalOutput;
-use cyanomelody_core::playback::{EventHandler, PlaybackError, Player, TrackOpener, TrackRef};
+use cyanomelody_core::playback::{EventHandler, MediaSource, PlaybackError, Player, TrackOpener, TrackRef};
 use cyanomelody_core::source::drive::DriveSource;
 use cyanomelody_core::source::local::LocalSource;
-use cyanomelody_core::source::{MusicSource, SourceKind};
-use cyanomelody_core::sync::{
-    Playlist, PlaylistItem, PlaylistSummary, Settings, SyncError, SyncStore,
-};
-use serde::{Deserialize, Serialize};
+use cyanomelody_core::source::{MusicSource, SourceKind, extension_of};
+use cyanomelody_core::sync::{Playlist, PlaylistItem, PlaylistSummary, Settings, SyncStore};
 
-/// 画面に返すエラー。`kind` で画面の出し分けをする（`offline` ならオフラインの表示にする）。
-#[derive(Debug, Clone, Serialize)]
-pub struct UiError {
-    pub kind: &'static str,
-    pub message: String,
-    /// オフラインのとき、代わりに表示できる端末に保存した内容
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached: Option<serde_json::Value>,
-}
-
-impl UiError {
-    pub fn new(kind: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            kind,
-            message: message.into(),
-            cached: None,
-        }
-    }
-
-    /// オフラインのエラーに、端末に保存した内容を添える。
-    pub fn with_cached(mut self, cached: &impl Serialize) -> Self {
-        if self.kind == "offline" {
-            self.cached = serde_json::to_value(cached).ok();
-        }
-        self
-    }
-}
-
-impl From<SyncError> for UiError {
-    fn from(e: SyncError) -> Self {
-        let kind = match &e {
-            SyncError::Offline(_) => "offline",
-            SyncError::Drive(DriveError::Auth(_)) => "login",
-            SyncError::NotFound(_) => "not_found",
-            _ => "error",
-        };
-        Self::new(kind, e.to_string())
-    }
-}
-
-impl From<DriveError> for UiError {
-    fn from(e: DriveError) -> Self {
-        let kind = match &e {
-            DriveError::Network(_) => "offline",
-            DriveError::Auth(_) => "login",
-            _ => "error",
-        };
-        Self::new(kind, e.to_string())
-    }
-}
-
-pub type UiResult<T> = Result<T, UiError>;
-
-/// 最後に読んだプレイリスト。オフラインでも開いて再生できるよう、端末にも保存する。
-struct PlaylistCache {
-    path: PathBuf,
-    items: Mutex<HashMap<String, Playlist>>,
-}
-
-impl PlaylistCache {
-    fn load(path: PathBuf) -> Self {
-        let items = std::fs::read(&path)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
-        Self {
-            path,
-            items: Mutex::new(items),
-        }
-    }
-
-    fn save(&self, items: &HashMap<String, Playlist>) {
-        let json = serde_json::to_vec(items).expect("JSON にできない値はない");
-        if let Err(e) = std::fs::write(&self.path, json) {
-            log::warn!("プレイリストを端末に保存できない: {e}");
-        }
-    }
-
-    fn get(&self, id: &str) -> Option<Playlist> {
-        self.items.lock().unwrap().get(id).cloned()
-    }
-
-    fn put(&self, p: &Playlist) {
-        let mut items = self.items.lock().unwrap();
-        items.insert(p.id.clone(), p.clone());
-        self.save(&items);
-    }
-
-    fn remove(&self, id: &str) {
-        let mut items = self.items.lock().unwrap();
-        if items.remove(id).is_some() {
-            self.save(&items);
-        }
-    }
-
-    /// Drive の一覧にないもの（ほかの端末で削除されたもの）を捨てる。
-    fn keep_only(&self, ids: &[&str]) {
-        let mut items = self.items.lock().unwrap();
-        let before = items.len();
-        items.retain(|id, _| ids.contains(&id.as_str()));
-        if items.len() != before {
-            self.save(&items);
-        }
-    }
-
-    fn summaries(&self) -> Vec<PlaylistSummary> {
-        let mut list: Vec<PlaylistSummary> = self
-            .items
-            .lock()
-            .unwrap()
-            .values()
-            .map(|p| PlaylistSummary {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                favorite: p.favorite,
-                count: p.items.len(),
-            })
-            .collect();
-        list.sort_by(|a, b| {
-            b.favorite
-                .cmp(&a.favorite)
-                .then_with(|| a.name.cmp(&b.name))
-        });
-        list
-    }
-}
-
-/// 端末だけで持つ設定（Drive で共有しないもの）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocalConfig {
-    pub cache_max_bytes: u64,
-    pub volume: f32,
-}
-
-impl Default for LocalConfig {
-    fn default() -> Self {
-        Self {
-            cache_max_bytes: DEFAULT_MAX_BYTES,
-            volume: 0.8,
-        }
-    }
-}
+use crate::local_store::{LocalConfig, LocalStore};
+use crate::ui::{UiError, UiItem, UiListing, UiPlaylist, UiResult};
 
 /// 再生エンジンが開く音楽ソース。設定が変わったら差し替える。
 #[derive(Default)]
@@ -170,66 +26,37 @@ struct Sources {
     local: Option<Arc<LocalSource>>,
 }
 
-/// 画面に返すプレイリストの曲。
-#[derive(Debug, Clone, Serialize)]
-pub struct UiItem {
-    pub source: String,
-    pub key: String,
-    pub title: String,
-    pub artist: Option<String>,
-    /// この端末で再生できる（できなければグレーアウト）
-    pub available: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct UiPlaylist {
-    pub id: String,
-    pub name: String,
-    pub favorite: bool,
-    pub items: Vec<UiItem>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct UiSong {
-    pub source: String,
-    pub key: String,
-    pub relative_path: String,
-    pub title: String,
-    pub artist: Option<String>,
-    pub album: Option<String>,
-}
-
-impl From<&Song> for UiSong {
-    fn from(s: &Song) -> Self {
-        Self {
-            source: s.source.as_str().into(),
-            key: s.key.clone(),
-            relative_path: s.relative_path.clone(),
-            title: s.title.clone(),
-            artist: s.artist.clone(),
-            album: s.album.clone(),
+impl Sources {
+    fn get(&self, kind: SourceKind) -> Option<Arc<dyn MusicSource>> {
+        match kind {
+            SourceKind::Drive => self.drive.clone().map(|s| s as Arc<dyn MusicSource>),
+            SourceKind::Local => self.local.clone().map(|s| s as Arc<dyn MusicSource>),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct UiListing {
-    pub folders: Vec<String>,
-    pub songs: Vec<UiSong>,
+/// 再生エンジンの曲（`drive:<ID>` や `local:<相対パス>`）を開く。
+fn open_track(sources: &RwLock<Sources>, track: &TrackRef) -> Result<Box<dyn MediaSource>, PlaybackError> {
+    let (kind, key) = track
+        .key
+        .split_once(':')
+        .and_then(|(kind, key)| Some((SourceKind::parse(kind)?, key)))
+        .ok_or_else(|| PlaybackError::Open(format!("曲を見分ける値が正しくない: {}", track.key)))?;
+    // 曲を開く間（Drive では通信を待つ）に設定を変えられるよう、音楽ソースを取り出してから開く
+    let source = sources
+        .read()
+        .unwrap()
+        .get(kind)
+        .ok_or_else(|| PlaybackError::Open(format!("{kind} の指定フォルダが設定されていない")))?;
+    source.open(key).map_err(|e| PlaybackError::Open(e.to_string()))
 }
 
-impl From<FolderListing> for UiListing {
-    fn from(l: FolderListing) -> Self {
-        Self {
-            folders: l.folders,
-            songs: l.songs.iter().map(UiSong::from).collect(),
-        }
-    }
+fn source_kind(s: &str) -> UiResult<SourceKind> {
+    SourceKind::parse(s).ok_or_else(|| UiError::error(format!("知らない音楽ソース: {s}")))
 }
 
 pub struct AppCore {
     pub device_id: String,
-    data_dir: PathBuf,
     pub library: Arc<Library>,
     pub cache: Arc<SongCache>,
     pub player: Player,
@@ -237,17 +64,10 @@ pub struct AppCore {
     /// Drive の呼び出し口（ログインできる端末だけ）
     drive_client: Option<DriveClient>,
     sync: Option<SyncStore>,
-    /// 最後に読んだプレイリスト（再生するときに使う。通信を減らすため）
-    playlists: PlaylistCache,
+    /// 端末に保存するもの（端末の設定、最後に読んだ設定とプレイリスト）
+    store: LocalStore,
     /// 再生中のプレイリスト
     pub playing: Mutex<Option<Playlist>>,
-    local_config: Mutex<LocalConfig>,
-    /// 最後に読んだ設定の保存先。オフラインで起動しても指定フォルダの曲を開けるようにする
-    settings_path: PathBuf,
-}
-
-fn source_kind(s: &str) -> UiResult<SourceKind> {
-    SourceKind::parse(s).ok_or_else(|| UiError::new("error", format!("知らない音楽ソース: {s}")))
 }
 
 impl AppCore {
@@ -257,75 +77,40 @@ impl AppCore {
         tokens: Option<Arc<dyn TokenProvider>>,
         events: EventHandler,
     ) -> Result<Self, String> {
-        let device_id =
-            cyanomelody_core::device::load_or_create(data_dir).map_err(|e| e.to_string())?;
-        let library =
-            Arc::new(Library::open(&data_dir.join("library.sqlite")).map_err(|e| e.to_string())?);
-        let local_config: LocalConfig = std::fs::read(data_dir.join("local.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
-        let cache =
-            SongCache::open(cache_dir, local_config.cache_max_bytes).map_err(|e| e.to_string())?;
+        let device_id = cyanomelody_core::device::load_or_create(data_dir).map_err(|e| e.to_string())?;
+        let library = Arc::new(Library::open(&data_dir.join("library.sqlite")).map_err(|e| e.to_string())?);
+        let store = LocalStore::open(data_dir);
+        let config = store.config();
+        let cache = SongCache::open(cache_dir, config.cache_max_bytes).map_err(|e| e.to_string())?;
         let sources: Arc<RwLock<Sources>> = Arc::default();
         let opener_sources = sources.clone();
-        let opener: TrackOpener = Arc::new(move |track: &TrackRef| {
-            let sources = opener_sources.read().unwrap();
-            let (kind, key) = track
-                .key
-                .split_once(':')
-                .ok_or_else(|| PlaybackError::Open(track.key.clone()))?;
-            let source: Arc<dyn MusicSource> = match kind {
-                "drive" => sources.drive.clone().map(|s| s as Arc<dyn MusicSource>),
-                "local" => sources.local.clone().map(|s| s as Arc<dyn MusicSource>),
-                _ => None,
-            }
-            .ok_or_else(|| {
-                PlaybackError::Open(format!("{kind} の指定フォルダが設定されていない"))
-            })?;
-            drop(sources);
-            source
-                .open(key)
-                .map_err(|e| PlaybackError::Open(e.to_string()))
-        });
+        let opener: TrackOpener = Arc::new(move |track: &TrackRef| open_track(&opener_sources, track));
         let player = Player::new(|| Box::new(CpalOutput::default()), opener, events);
         // Android では OS の音量を使うため、アプリ内の音量は変えない
         if cfg!(desktop) {
-            player.set_volume(local_config.volume);
+            player.set_volume(config.volume);
         }
         let drive_client = tokens.map(DriveClient::new);
-        let sync = drive_client.clone().map(SyncStore::new);
         let core = Self {
             device_id,
-            data_dir: data_dir.to_path_buf(),
             library,
             cache,
             player,
             sources,
+            sync: drive_client.clone().map(SyncStore::new),
             drive_client,
-            sync,
-            playlists: PlaylistCache::load(data_dir.join("playlists.json")),
+            store,
             playing: Mutex::default(),
-            local_config: Mutex::new(local_config),
-            settings_path: data_dir.join("settings.json"),
         };
-        if let Some(settings) = core.cached_settings() {
+        // オフラインで起動しても指定フォルダの曲を開けるよう、最後に読んだ設定を当てておく
+        if let Some(settings) = core.store.settings() {
             core.apply_settings(&settings);
         }
         Ok(core)
     }
 
-    /// 最後に読んだ設定（端末に保存したもの）。
-    pub fn cached_settings(&self) -> Option<Settings> {
-        std::fs::read(&self.settings_path)
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-    }
-
     fn sync(&self) -> UiResult<&SyncStore> {
-        self.sync
-            .as_ref()
-            .ok_or_else(|| UiError::new("login", "Google Drive にログインできない端末です"))
+        self.sync.as_ref().ok_or_else(|| UiError::new("login", "Google Drive にログインできない端末です"))
     }
 
     pub fn drive_client(&self) -> UiResult<&DriveClient> {
@@ -335,33 +120,23 @@ impl AppCore {
     }
 
     pub fn local_config(&self) -> LocalConfig {
-        self.local_config.lock().unwrap().clone()
-    }
-
-    fn save_local_config(&self, config: &LocalConfig) {
-        if let Err(e) = std::fs::write(
-            self.data_dir.join("local.json"),
-            serde_json::to_vec_pretty(config).unwrap(),
-        ) {
-            log::warn!("端末の設定を保存できない: {e}");
-        }
+        self.store.config()
     }
 
     pub fn set_volume(&self, volume: f32) {
         self.player.set_volume(volume);
-        let mut config = self.local_config.lock().unwrap();
-        config.volume = volume;
-        self.save_local_config(&config);
+        self.store.edit_config(|c| c.volume = volume);
     }
 
     pub fn set_cache_max(&self, bytes: u64) -> UiResult<()> {
-        self.cache
-            .set_max_bytes(bytes)
-            .map_err(|e| UiError::new("error", e.to_string()))?;
-        let mut config = self.local_config.lock().unwrap();
-        config.cache_max_bytes = bytes;
-        self.save_local_config(&config);
+        self.cache.set_max_bytes(bytes)?;
+        self.store.edit_config(|c| c.cache_max_bytes = bytes);
         Ok(())
+    }
+
+    /// 最後に読んだ設定（端末に保存したもの）。
+    pub fn cached_settings(&self) -> Option<Settings> {
+        self.store.settings()
     }
 
     /// 設定（Drive で共有）を読み、音楽ソースを差し替える。
@@ -371,95 +146,62 @@ impl AppCore {
         Ok(settings)
     }
 
-    /// 設定に合わせて音楽ソースを差し替え、端末にも保存する。
-    fn apply_settings(&self, settings: &Settings) {
-        if let Err(e) = std::fs::write(
-            &self.settings_path,
-            serde_json::to_vec(settings).expect("JSON にできない値はない"),
-        ) {
-            log::warn!("設定を端末に保存できない: {e}");
-        }
-        let mut sources = self.sources.write().unwrap();
-        sources.drive = match (&settings.drive_folder, &self.drive_client) {
-            (Some(folder), Some(client)) => Some(Arc::new(
-                DriveSource::new(client.clone(), folder.id.clone()).with_cache(self.cache.clone()),
-            )),
-            _ => None,
-        };
-        sources.local = settings
-            .local_folder(&self.device_id)
-            .map(|f| Arc::new(LocalSource::new(&f.path)));
-    }
-
     pub fn edit_settings(&self, edit: impl FnOnce(&mut Settings)) -> UiResult<Settings> {
         let settings = self.sync()?.edit_settings(edit)?;
         self.apply_settings(&settings);
         Ok(settings)
     }
 
+    /// 設定に合わせて音楽ソースを差し替え、端末にも保存する。
+    fn apply_settings(&self, settings: &Settings) {
+        self.store.save_settings(settings);
+        let drive = match (&settings.drive_folder, &self.drive_client) {
+            (Some(folder), Some(client)) => Some(Arc::new(
+                DriveSource::new(client.clone(), folder.id.clone()).with_cache(self.cache.clone()),
+            )),
+            _ => None,
+        };
+        let local = settings.local_folder(&self.device_id).map(|f| Arc::new(LocalSource::new(&f.path)));
+        *self.sources.write().unwrap() = Sources { drive, local };
+    }
+
     /// 指定フォルダの曲を読み直す（手動更新）。`progress` には (ソース, 読み終えた数, 合計) が渡される。
     pub fn refresh_library(
         &self,
-        progress: &(dyn Fn(&str, usize, usize) + Sync),
-    ) -> UiResult<Vec<(String, RefreshReport)>> {
-        let (drive, local) = {
-            let s = self.sources.read().unwrap();
-            (s.drive.clone(), s.local.clone())
-        };
+        progress: &(dyn Fn(SourceKind, usize, usize) + Sync),
+    ) -> UiResult<Vec<(SourceKind, RefreshReport)>> {
         let mut reports = Vec::new();
-        if let Some(local) = local {
-            let report = self
-                .library
-                .refresh(local.as_ref(), DEFAULT_PARALLELISM, &|d, t| {
-                    progress("local", d, t)
-                })
-                .map_err(|e| UiError::new("error", e.to_string()))?;
-            reports.push(("local".to_string(), report));
-        }
-        if let Some(drive) = drive {
-            let report = self
-                .library
-                .refresh(drive.as_ref(), DEFAULT_PARALLELISM, &|d, t| {
-                    progress("drive", d, t)
-                })
-                .map_err(|e| {
-                    let offline = e.to_string().contains("通信できない");
-                    UiError::new(if offline { "offline" } else { "error" }, e.to_string())
-                })?;
-            reports.push(("drive".to_string(), report));
+        for kind in [SourceKind::Local, SourceKind::Drive] {
+            let Some(source) = self.sources.read().unwrap().get(kind) else { continue };
+            let report =
+                self.library.refresh(source.as_ref(), DEFAULT_PARALLELISM, &|d, t| progress(kind, d, t))?;
+            reports.push((kind, report));
         }
         Ok(reports)
     }
 
     pub fn browse(&self, source: &str, folder: &str) -> UiResult<UiListing> {
-        let listing = self
-            .library
-            .browse(source_kind(source)?, folder)
-            .map_err(|e| UiError::new("error", e.to_string()))?;
-        Ok(listing.into())
+        Ok(self.library.browse(source_kind(source)?, folder)?.into())
     }
 
     fn ui_playlist(&self, p: &Playlist) -> UiPlaylist {
-        UiPlaylist {
-            id: p.id.clone(),
-            name: p.name.clone(),
-            favorite: p.favorite,
-            items: p
-                .items
-                .iter()
-                .map(|i| UiItem {
-                    source: i.source.clone(),
-                    key: i.key.clone(),
-                    title: i.title.clone(),
-                    artist: i.artist.clone(),
-                    available: i.is_available(&self.device_id, &self.library),
-                })
-                .collect(),
-        }
+        let items = p
+            .items
+            .iter()
+            .map(|i| UiItem {
+                source: i.source.clone(),
+                key: i.key.clone(),
+                title: i.title.clone(),
+                artist: i.artist.clone(),
+                available: i.is_available(&self.device_id, &self.library),
+            })
+            .collect();
+        UiPlaylist { id: p.id.clone(), name: p.name.clone(), favorite: p.favorite, items }
     }
 
+    /// Drive から読んだプレイリストを端末にも保存し、画面に返す形にする。
     fn remember(&self, p: &Playlist) -> UiPlaylist {
-        self.playlists.put(p);
+        self.store.save_playlist(p);
         self.ui_playlist(p)
     }
 
@@ -467,11 +209,10 @@ impl AppCore {
     pub fn list_playlists(&self) -> UiResult<Vec<PlaylistSummary>> {
         match self.sync()?.list() {
             Ok(list) => {
-                self.playlists
-                    .keep_only(&list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>());
+                self.store.keep_playlists(&list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>());
                 Ok(list)
             }
-            Err(e) => Err(UiError::from(e).with_cached(&self.playlists.summaries())),
+            Err(e) => Err(UiError::from(e).with_cached(&self.store.playlist_summaries())),
         }
     }
 
@@ -480,8 +221,7 @@ impl AppCore {
         match self.sync()?.get(id) {
             Ok(p) => Ok(self.remember(&p)),
             Err(e) => {
-                let cached = self.playlists.get(id).map(|p| self.ui_playlist(&p));
-                Err(UiError::from(e).with_cached(&cached))
+                Err(UiError::from(e).with_cached(&self.store.playlist(id).map(|p| self.ui_playlist(&p))))
             }
         }
     }
@@ -493,16 +233,12 @@ impl AppCore {
 
     pub fn delete_playlist(&self, id: &str) -> UiResult<()> {
         self.sync()?.delete(id)?;
-        self.playlists.remove(id);
+        self.store.remove_playlist(id);
         Ok(())
     }
 
     /// プレイリストを編集する（最新を読み直してから当てて保存する）。
-    pub fn edit_playlist(
-        &self,
-        id: &str,
-        edit: impl FnOnce(&mut Playlist),
-    ) -> UiResult<UiPlaylist> {
+    pub fn edit_playlist(&self, id: &str, edit: impl FnOnce(&mut Playlist)) -> UiResult<UiPlaylist> {
         let p = self.sync()?.edit(id, edit)?;
         Ok(self.remember(&p))
     }
@@ -515,26 +251,28 @@ impl AppCore {
         key: Option<&str>,
     ) -> UiResult<Vec<PlaylistItem>> {
         let kind = source_kind(source)?;
-        let err = |e: cyanomelody_core::library::LibraryError| UiError::new("error", e.to_string());
         let songs = match (folder, key) {
-            (Some(folder), _) => self.library.songs_under(kind, folder).map_err(err)?,
-            (None, Some(key)) => self
-                .library
-                .song(kind, key)
-                .map_err(err)?
-                .into_iter()
-                .collect(),
+            (Some(folder), _) => self.library.songs_under(kind, folder)?,
+            (None, Some(key)) => self.library.song(kind, key)?.into_iter().collect(),
             (None, None) => Vec::new(),
         };
-        Ok(songs
-            .iter()
-            .map(|s| PlaylistItem::from_song(s, &self.device_id))
-            .collect())
+        Ok(songs.iter().map(|s| PlaylistItem::from_song(s, &self.device_id)).collect())
     }
 
-    /// プレイリストを `start` 番目の曲から再生する。最後に読んだ内容を使う。
+    /// 形式の推定の手がかりにする拡張子。ライブラリの相対パスから求める。ライブラリにないときは、
+    /// ローカルの曲なら曲を見分ける値（相対パス）から求め、Drive の曲なら空にする（中身から推定させる）。
+    fn extension_of_item(&self, item: &PlaylistItem) -> String {
+        let kind = item.source_kind();
+        match kind.and_then(|k| self.library.song(k, &item.key).ok().flatten()) {
+            Some(song) => song.extension(),
+            None if kind == Some(SourceKind::Local) => extension_of(&item.key),
+            None => String::new(),
+        }
+    }
+
+    /// プレイリストを `start` 番目の曲から再生する。最後に読んだ内容を使う（オフラインでも再生できる）。
     pub fn play_playlist(&self, id: &str, start: usize) -> UiResult<()> {
-        let playlist = match self.playlists.get(id) {
+        let playlist = match self.store.playlist(id) {
             Some(p) => p,
             None => self.sync()?.get(id)?,
         };
@@ -543,28 +281,16 @@ impl AppCore {
             .iter()
             .map(|i| TrackRef {
                 key: format!("{}:{}", i.source, i.key),
-                extension: cyanomelody_core::source::extension_of(if i.source == "local" {
-                    &i.key
-                } else {
-                    &i.title
-                }),
-            })
-            .collect::<Vec<_>>();
-        // Drive の曲は曲名から拡張子が分からないことがあるため、ライブラリの相対パスから求める
-        let tracks = tracks
-            .into_iter()
-            .zip(&playlist.items)
-            .map(|(mut t, i)| {
-                if let Some(kind) = i.source_kind()
-                    && let Ok(Some(song)) = self.library.song(kind, &i.key)
-                {
-                    t.extension = song.extension();
-                }
-                t
+                extension: self.extension_of_item(i),
             })
             .collect();
         self.player.load(tracks, start);
         *self.playing.lock().unwrap() = Some(playlist);
         Ok(())
+    }
+
+    /// 再生中の曲（プレイリストの `index` 番目）の曲名とアーティスト。
+    pub fn playing_item(&self, index: Option<usize>) -> Option<PlaylistItem> {
+        self.playing.lock().unwrap().as_ref()?.items.get(index?).cloned()
     }
 }

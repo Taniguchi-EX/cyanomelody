@@ -26,16 +26,14 @@ impl LocalSource {
     fn resolve(&self, relative: &str) -> Result<PathBuf, SourceError> {
         let rel = Path::new(relative);
         if rel.components().any(|c| !matches!(c, Component::Normal(_))) {
-            return Err(SourceError::Open(format!(
-                "指定フォルダの外のパス: {relative}"
-            )));
+            return Err(SourceError::Open(format!("指定フォルダの外のパス: {relative}")));
         }
         Ok(self.root.join(rel))
     }
 
     fn walk(&self, dir: &Path, prefix: &str, out: &mut Vec<FileEntry>) -> Result<(), SourceError> {
-        let entries = std::fs::read_dir(dir)
-            .map_err(|e| SourceError::Folder(format!("{}: {e}", dir.display())))?;
+        let entries =
+            std::fs::read_dir(dir).map_err(|e| SourceError::Folder(format!("{}: {e}", dir.display())))?;
         for entry in entries {
             let entry = entry.map_err(|e| SourceError::Folder(e.to_string()))?;
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -80,14 +78,12 @@ impl MusicSource for LocalSource {
     }
 
     fn read_tags(&self, entry: &FileEntry) -> Result<Tags, SourceError> {
-        let file =
-            File::open(self.resolve(&entry.key)?).map_err(|e| SourceError::Open(e.to_string()))?;
+        let file = File::open(self.resolve(&entry.key)?).map_err(|e| SourceError::Open(e.to_string()))?;
         tags::read_tags(BufReader::new(file))
     }
 
     fn open(&self, key: &str) -> Result<Box<dyn MediaSource>, SourceError> {
-        let file =
-            File::open(self.resolve(key)?).map_err(|e| SourceError::Open(format!("{key}: {e}")))?;
+        let file = File::open(self.resolve(key)?).map_err(|e| SourceError::Open(format!("{key}: {e}")))?;
         Ok(Box::new(file))
     }
 }
@@ -130,11 +126,7 @@ pub(crate) mod tests {
     #[test]
     fn reads_tags_and_handles_missing_tags() {
         let dir = tempfile::tempdir().unwrap();
-        put_song(
-            dir.path(),
-            "a.wav",
-            Some(("叢", "虻瀬犬", "カルマーダルマ")),
-        );
+        put_song(dir.path(), "a.wav", Some(("叢", "虻瀬犬", "カルマーダルマ")));
         put_song(dir.path(), "b.wav", None);
         let source = LocalSource::new(dir.path());
         let entries = source.list().unwrap();

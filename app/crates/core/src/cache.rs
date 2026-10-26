@@ -40,10 +40,7 @@ impl From<rusqlite::Error> for CacheError {
 
 /// 今の日時（UNIX 時間のミリ秒）。同じ秒の中でも、再生した順が分かるようにする。
 fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
 pub struct SongCache {
@@ -89,10 +86,8 @@ impl SongCache {
     /// 索引にあるのにファイルがないもの（手で消された）を、索引から除く。
     fn forget_missing_files(&self) -> Result<(), CacheError> {
         let conn = self.conn.lock().unwrap();
-        let keys: Vec<String> = conn
-            .prepare("SELECT key FROM songs")?
-            .query_map([], |r| r.get(0))?
-            .collect::<Result<_, _>>()?;
+        let keys: Vec<String> =
+            conn.prepare("SELECT key FROM songs")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
         for key in keys {
             if !self.path(&key).exists() {
                 conn.execute("DELETE FROM songs WHERE key = ?1", params![key])?;
@@ -105,9 +100,7 @@ impl SongCache {
     pub fn open_cached(&self, key: &str) -> Option<File> {
         let conn = self.conn.lock().unwrap();
         let size: Option<i64> = conn
-            .query_row("SELECT size FROM songs WHERE key = ?1", params![key], |r| {
-                r.get(0)
-            })
+            .query_row("SELECT size FROM songs WHERE key = ?1", params![key], |r| r.get(0))
             .optional()
             .ok()
             .flatten();
@@ -116,22 +109,17 @@ impl SongCache {
         if file.metadata().ok()?.len() != size as u64 {
             return None;
         }
-        let _ = conn.execute(
-            "UPDATE songs SET last_played = ?2 WHERE key = ?1",
-            params![key, now()],
-        );
+        let _ = conn.execute("UPDATE songs SET last_played = ?2 WHERE key = ?1", params![key, now()]);
         Some(file)
     }
 
     pub fn is_cached(&self, key: &str) -> bool {
         let conn = self.conn.lock().unwrap();
-        conn.query_row("SELECT 1 FROM songs WHERE key = ?1", params![key], |_| {
-            Ok(())
-        })
-        .optional()
-        .ok()
-        .flatten()
-        .is_some()
+        conn.query_row("SELECT 1 FROM songs WHERE key = ?1", params![key], |_| Ok(()))
+            .optional()
+            .ok()
+            .flatten()
+            .is_some()
     }
 
     /// 書き込みを始める。同じ曲を書き込み中なら、それを返す。
@@ -141,23 +129,14 @@ impl SongCache {
             return Ok(existing);
         }
         let part = self.dir.join(format!("{}.part", sanitize(key)));
-        let file = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .truncate(true)
-            .open(&part)?;
+        let file = OpenOptions::new().create(true).read(true).write(true).truncate(true).open(&part)?;
         file.set_len(len)?;
         let cf = Arc::new(CacheFile {
             cache: Arc::downgrade(self),
             key: key.to_string(),
             len,
             part,
-            inner: Mutex::new(Inner {
-                file,
-                covered: Vec::new(),
-                done: false,
-            }),
+            inner: Mutex::new(Inner { file, covered: Vec::new(), done: false }),
         });
         writing.insert(key.to_string(), Arc::downgrade(&cf));
         Ok(cf)
@@ -189,19 +168,14 @@ impl SongCache {
     /// キャッシュ済みの曲の合計の大きさ。
     pub fn used_bytes(&self) -> Result<u64, CacheError> {
         let conn = self.conn.lock().unwrap();
-        Ok(
-            conn.query_row("SELECT COALESCE(SUM(size), 0) FROM songs", [], |r| {
-                r.get::<_, i64>(0)
-            })? as u64,
-        )
+        Ok(conn.query_row("SELECT COALESCE(SUM(size), 0) FROM songs", [], |r| r.get::<_, i64>(0))? as u64)
     }
 
     /// 最大容量を超えていれば、最後に再生されてから最も時間がたった曲から消す。`keep` は消さない。
     fn evict(&self, keep: Option<&str>) -> Result<(), CacheError> {
         let max = self.max_bytes();
         let conn = self.conn.lock().unwrap();
-        let mut used: i64 =
-            conn.query_row("SELECT COALESCE(SUM(size), 0) FROM songs", [], |r| r.get(0))?;
+        let mut used: i64 = conn.query_row("SELECT COALESCE(SUM(size), 0) FROM songs", [], |r| r.get(0))?;
         let victims: Vec<(String, i64)> = conn
             .prepare("SELECT key, size FROM songs ORDER BY last_played ASC, rowid ASC")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -224,15 +198,7 @@ impl SongCache {
 
 /// ファイル名に使えない文字を置き換える（Drive のファイル ID は英数字と `-`、`_` だけだが、念のため）。
 fn sanitize(key: &str) -> String {
-    key.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    key.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect()
 }
 
 /// 書き込み中の 1 曲。取得した範囲を記録し、全体がそろったらキャッシュに登録する。
@@ -328,11 +294,7 @@ impl CacheFile {
         if !inner.covers(start, start + buf.len() as u64) {
             return false;
         }
-        inner
-            .file
-            .seek(SeekFrom::Start(start))
-            .and_then(|_| inner.file.read_exact(buf))
-            .is_ok()
+        inner.file.seek(SeekFrom::Start(start)).and_then(|_| inner.file.read_exact(buf)).is_ok()
     }
 
     /// まだ書いていない範囲（`[start, end)`）。
@@ -374,19 +336,12 @@ mod tests {
         let mut buf = [0u8; 100];
         assert!(cf.read(600, &mut buf), "書いた範囲は読める");
         assert_eq!(&buf[..], &data[600..700]);
-        assert!(
-            !cf.read(250, &mut buf),
-            "まだ書いていない範囲を含むと読めない"
-        );
+        assert!(!cf.read(250, &mut buf), "まだ書いていない範囲を含むと読めない");
         cf.write(300, &data[300..500]);
         cf.write(800, &data[800..1000]);
         assert!(cf.is_complete());
         let mut out = Vec::new();
-        cache
-            .open_cached("abc")
-            .unwrap()
-            .read_to_end(&mut out)
-            .unwrap();
+        cache.open_cached("abc").unwrap().read_to_end(&mut out).unwrap();
         assert_eq!(out, data);
     }
 
@@ -402,18 +357,11 @@ mod tests {
         cache.open_cached("a").unwrap();
         cache.begin("c", 1000).unwrap().write(0, &bytes(1000));
         assert!(cache.is_cached("a"));
-        assert!(
-            !cache.is_cached("b"),
-            "最後に再生されてから最も時間がたった曲が消える"
-        );
+        assert!(!cache.is_cached("b"), "最後に再生されてから最も時間がたった曲が消える");
         assert!(cache.is_cached("c"));
         assert_eq!(cache.used_bytes().unwrap(), 2000);
         cache.set_max_bytes(1000).unwrap();
-        assert_eq!(
-            cache.used_bytes().unwrap(),
-            1000,
-            "最大容量を下げると、超えたぶんを消す"
-        );
+        assert_eq!(cache.used_bytes().unwrap(), 1000, "最大容量を下げると、超えたぶんを消す");
     }
 
     #[test]

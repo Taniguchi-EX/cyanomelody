@@ -59,7 +59,7 @@ function Shell() {
           <PlaylistList onOpen={setOpenId} />
         )}
       </main>
-      <PlayerBar onOpenPlaylist={(id) => {
+      <PlayerBar showVolume={info?.platform === "desktop"} onOpenPlaylist={(id) => {
         setTab("playlists");
         setOpenId(id);
       }} />

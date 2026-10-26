@@ -4,11 +4,11 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::source::{FileEntry, MusicSource, SourceError, SourceKind, Tags, extension_of};
+use crate::parallel::map_parallel;
+use crate::source::{MusicSource, SourceError, SourceKind, Tags, extension_of};
 
 /// タグを並行して読む数の既定値。
 pub const DEFAULT_PARALLELISM: usize = 8;
@@ -108,9 +108,7 @@ impl Library {
 
     fn init(conn: Connection) -> Result<Self, LibraryError> {
         conn.execute_batch(SCHEMA)?;
-        Ok(Self {
-            conn: Mutex::new(conn),
-        })
+        Ok(Self { conn: Mutex::new(conn) })
     }
 
     /// 音楽ソースの曲を読み直す。新しい曲と変わった曲だけ、タグを `parallelism` 件ずつ並行して読む。
@@ -134,11 +132,7 @@ impl Library {
                     report.added += 1;
                     to_read.push(entry);
                 }
-                Some(k)
-                    if k.size != entry.size as i64
-                        || k.modified != entry.modified
-                        || !k.tags_read =>
-                {
+                Some(k) if k.size != entry.size as i64 || k.modified != entry.modified || !k.tags_read => {
                     report.updated += 1;
                     to_read.push(entry);
                 }
@@ -146,14 +140,11 @@ impl Library {
             }
         }
 
-        let tags = read_tags_parallel(source, &to_read, parallelism.max(1), progress);
+        let tags = map_parallel(&to_read, parallelism, |e| source.read_tags(e), progress);
 
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
-        tx.execute(
-            "UPDATE songs SET missing = 1 WHERE source = ?1",
-            params![kind.as_str()],
-        )?;
+        tx.execute("UPDATE songs SET missing = 1 WHERE source = ?1", params![kind.as_str()])?;
         for (entry, result) in to_read.iter().zip(tags) {
             let (tags, tags_read) = match result {
                 Ok(t) => (t, true),
@@ -185,10 +176,7 @@ impl Library {
         }
         // 変わらなかった曲は、相対パス（Drive ではフォルダの移動で変わる）だけ更新する
         let read_keys: HashSet<&str> = to_read.iter().map(|e| e.key.as_str()).collect();
-        for entry in entries
-            .iter()
-            .filter(|e| !read_keys.contains(e.key.as_str()))
-        {
+        for entry in entries.iter().filter(|e| !read_keys.contains(e.key.as_str())) {
             tx.execute(
                 "UPDATE songs SET missing = 0, relative_path = ?3 WHERE source = ?1 AND key = ?2",
                 params![kind.as_str(), entry.key, entry.relative_path],
@@ -205,27 +193,16 @@ impl Library {
 
     fn known(&self, kind: SourceKind) -> Result<HashMap<String, Known>, LibraryError> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt =
-            conn.prepare("SELECT key, size, modified, tags_read FROM songs WHERE source = ?1")?;
+        let mut stmt = conn.prepare("SELECT key, size, modified, tags_read FROM songs WHERE source = ?1")?;
         let rows = stmt.query_map(params![kind.as_str()], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                Known {
-                    size: r.get(1)?,
-                    modified: r.get(2)?,
-                    tags_read: r.get(3)?,
-                },
-            ))
+            Ok((r.get::<_, String>(0)?, Known { size: r.get(1)?, modified: r.get(2)?, tags_read: r.get(3)? }))
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     /// ソースの曲をすべて、相対パスの順に返す（見つからなくなった曲も含む）。
     pub fn songs(&self, kind: SourceKind) -> Result<Vec<Song>, LibraryError> {
-        self.query(
-            "WHERE source = ?1 ORDER BY relative_path",
-            params![kind.as_str()],
-        )
+        self.query("WHERE source = ?1 ORDER BY relative_path", params![kind.as_str()])
     }
 
     pub fn song(&self, kind: SourceKind, key: &str) -> Result<Option<Song>, LibraryError> {
@@ -245,38 +222,28 @@ impl Library {
         let prefix = folder_prefix(folder);
         let mut folders = BTreeSet::new();
         let mut songs = Vec::new();
-        for song in self.songs(kind)?.into_iter().filter(|s| !s.missing) {
-            let Some(rest) = song.relative_path.strip_prefix(&prefix) else {
-                continue;
-            };
-            match rest.split_once('/') {
+        for song in self.songs_under(kind, folder)? {
+            match song.relative_path[prefix.len()..].split_once('/') {
                 Some((sub, _)) => {
                     folders.insert(sub.to_string());
                 }
                 None => songs.push(song),
             }
         }
-        Ok(FolderListing {
-            folders: folders.into_iter().collect(),
-            songs,
-        })
+        Ok(FolderListing { folders: folders.into_iter().collect(), songs })
     }
 
     /// `folder` とそのサブフォルダの曲（フォルダ単位でプレイリストに追加するとき用）。見つからなくなった曲は含めない。
+    /// 絞り込みは SQLite で行い、ほかのフォルダの曲は読まない。
     pub fn songs_under(&self, kind: SourceKind, folder: &str) -> Result<Vec<Song>, LibraryError> {
         let prefix = folder_prefix(folder);
-        Ok(self
-            .songs(kind)?
-            .into_iter()
-            .filter(|s| !s.missing && s.relative_path.starts_with(&prefix))
-            .collect())
+        self.query(
+            "WHERE source = ?1 AND missing = 0 AND substr(relative_path, 1, length(?2)) = ?2 ORDER BY relative_path",
+            params![kind.as_str(), prefix],
+        )
     }
 
-    fn query(
-        &self,
-        clause: &str,
-        params: impl rusqlite::Params,
-    ) -> Result<Vec<Song>, LibraryError> {
+    fn query(&self, clause: &str, params: impl rusqlite::Params) -> Result<Vec<Song>, LibraryError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(&format!("{SELECT_SONG} {clause}"))?;
         let rows = stmt.query_map(params, row_to_song)?;
@@ -290,8 +257,7 @@ struct Known {
     tags_read: bool,
 }
 
-const SELECT_SONG: &str =
-    "SELECT source, key, relative_path, title, artist, album, missing FROM songs";
+const SELECT_SONG: &str = "SELECT source, key, relative_path, title, artist, album, missing FROM songs";
 
 fn row_to_song(r: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
     let source: String = r.get(0)?;
@@ -308,47 +274,7 @@ fn row_to_song(r: &rusqlite::Row<'_>) -> rusqlite::Result<Song> {
 
 fn folder_prefix(folder: &str) -> String {
     let folder = folder.trim_matches('/');
-    if folder.is_empty() {
-        String::new()
-    } else {
-        format!("{folder}/")
-    }
-}
-
-/// タグを並行して読む。結果は `entries` と同じ順に並ぶ。
-fn read_tags_parallel(
-    source: &dyn MusicSource,
-    entries: &[&FileEntry],
-    parallelism: usize,
-    progress: &(dyn Fn(usize, usize) + Sync),
-) -> Vec<Result<Tags, SourceError>> {
-    let total = entries.len();
-    let next = AtomicUsize::new(0);
-    let done = AtomicUsize::new(0);
-    let results: Vec<Mutex<Option<Result<Tags, SourceError>>>> =
-        (0..total).map(|_| Mutex::new(None)).collect();
-    std::thread::scope(|scope| {
-        for _ in 0..parallelism.min(total) {
-            scope.spawn(|| {
-                loop {
-                    let i = next.fetch_add(1, Ordering::Relaxed);
-                    if i >= total {
-                        break;
-                    }
-                    *results[i].lock().unwrap() = Some(source.read_tags(entries[i]));
-                    progress(done.fetch_add(1, Ordering::Relaxed) + 1, total);
-                }
-            });
-        }
-    });
-    results
-        .into_iter()
-        .map(|r| {
-            r.into_inner()
-                .unwrap()
-                .unwrap_or(Err(SourceError::Tags("読まれなかった".into())))
-        })
-        .collect()
+    if folder.is_empty() { String::new() } else { format!("{folder}/") }
 }
 
 #[cfg(test)]
@@ -356,30 +282,18 @@ mod tests {
     use super::*;
     use crate::source::local::LocalSource;
     use crate::source::local::tests::put_song;
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn no_progress(_: usize, _: usize) {}
 
     #[test]
     fn refresh_adds_songs_with_tags_or_file_names() {
         let dir = tempfile::tempdir().unwrap();
-        put_song(
-            dir.path(),
-            "a.wav",
-            Some(("叢", "虻瀬犬", "カルマーダルマ")),
-        );
+        put_song(dir.path(), "a.wav", Some(("叢", "虻瀬犬", "カルマーダルマ")));
         put_song(dir.path(), "サブ/タグなし.wav", None);
         let lib = Library::open_in_memory().unwrap();
-        let report = lib
-            .refresh(&LocalSource::new(dir.path()), 4, &no_progress)
-            .unwrap();
-        assert_eq!(
-            report,
-            RefreshReport {
-                added: 2,
-                ..Default::default()
-            }
-        );
+        let report = lib.refresh(&LocalSource::new(dir.path()), 4, &no_progress).unwrap();
+        assert_eq!(report, RefreshReport { added: 2, ..Default::default() });
         let songs = lib.songs(SourceKind::Local).unwrap();
         assert_eq!(songs[0].title, "叢");
         assert_eq!(songs[0].artist.as_deref(), Some("虻瀬犬"));
@@ -400,27 +314,14 @@ mod tests {
         std::fs::remove_file(dir.path().join("a.wav")).unwrap();
         put_song(dir.path(), "c.wav", None);
         let report = lib.refresh(&source, 2, &no_progress).unwrap();
-        assert_eq!(
-            report,
-            RefreshReport {
-                added: 1,
-                unchanged: 1,
-                missing: 1,
-                ..Default::default()
-            }
-        );
+        assert_eq!(report, RefreshReport { added: 1, unchanged: 1, missing: 1, ..Default::default() });
         let a = lib.song(SourceKind::Local, "a.wav").unwrap().unwrap();
         assert!(a.missing, "消えた曲に印が付く");
 
         // 戻ってきたら印が消える
         put_song(dir.path(), "a.wav", None);
         lib.refresh(&source, 2, &no_progress).unwrap();
-        assert!(
-            !lib.song(SourceKind::Local, "a.wav")
-                .unwrap()
-                .unwrap()
-                .missing
-        );
+        assert!(!lib.song(SourceKind::Local, "a.wav").unwrap().unwrap().missing);
     }
 
     #[test]
@@ -428,15 +329,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         put_song(dir.path(), "a.wav", None);
         let lib = Library::open_in_memory().unwrap();
-        lib.refresh(&LocalSource::new(dir.path()), 2, &no_progress)
-            .unwrap();
+        lib.refresh(&LocalSource::new(dir.path()), 2, &no_progress).unwrap();
         let missing_root = LocalSource::new(dir.path().join("なし"));
         assert!(lib.refresh(&missing_root, 2, &no_progress).is_err());
         assert!(
-            !lib.song(SourceKind::Local, "a.wav")
-                .unwrap()
-                .unwrap()
-                .missing,
+            !lib.song(SourceKind::Local, "a.wav").unwrap().unwrap().missing,
             "一覧を取れなければ変えない"
         );
     }
@@ -448,20 +345,15 @@ mod tests {
             put_song(dir.path(), p, None);
         }
         let lib = Library::open_in_memory().unwrap();
-        lib.refresh(&LocalSource::new(dir.path()), 2, &no_progress)
-            .unwrap();
+        lib.refresh(&LocalSource::new(dir.path()), 2, &no_progress).unwrap();
         let top = lib.browse(SourceKind::Local, "").unwrap();
         assert_eq!(top.folders, vec!["x", "z"]);
         assert_eq!(top.songs.len(), 1);
         let x = lib.browse(SourceKind::Local, "x/").unwrap();
         assert_eq!(x.folders, vec!["y"]);
         assert_eq!(x.songs[0].relative_path, "x/2.wav");
-        let under: Vec<String> = lib
-            .songs_under(SourceKind::Local, "x")
-            .unwrap()
-            .into_iter()
-            .map(|s| s.key)
-            .collect();
+        let under: Vec<String> =
+            lib.songs_under(SourceKind::Local, "x").unwrap().into_iter().map(|s| s.key).collect();
         assert_eq!(under, vec!["x/2.wav", "x/y/3.wav", "x/y/4.wav"]);
     }
 
@@ -475,22 +367,14 @@ mod tests {
         let calls = AtomicUsize::new(0);
         {
             let lib = Library::open(&db).unwrap();
-            lib.refresh(
-                &LocalSource::new(dir.path().join("曲")),
-                8,
-                &|done, total| {
-                    assert!(done <= total && total == 20);
-                    calls.fetch_add(1, Ordering::Relaxed);
-                },
-            )
+            lib.refresh(&LocalSource::new(dir.path().join("曲")), 8, &|done, total| {
+                assert!(done <= total && total == 20);
+                calls.fetch_add(1, Ordering::Relaxed);
+            })
             .unwrap();
         }
         assert_eq!(calls.load(Ordering::Relaxed), 20);
         let reopened = Library::open(&db).unwrap();
-        assert_eq!(
-            reopened.songs(SourceKind::Local).unwrap().len(),
-            20,
-            "開き直しても残る"
-        );
+        assert_eq!(reopened.songs(SourceKind::Local).unwrap().len(), 20, "開き直しても残る");
     }
 }

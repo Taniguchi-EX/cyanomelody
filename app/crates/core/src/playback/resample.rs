@@ -23,14 +23,9 @@ impl StereoResampler {
         if from == to {
             return Ok(Self::Passthrough);
         }
-        let inner =
-            FftFixedIn::<f32>::new(from as usize, to as usize, CHUNK, 2, 2).map_err(|e| {
-                PlaybackError::Output(format!("サンプルレートの変換を準備できない: {e}"))
-            })?;
-        Ok(Self::Fft {
-            inner: Box::new(inner),
-            pending: [Vec::new(), Vec::new()],
-        })
+        let inner = FftFixedIn::<f32>::new(from as usize, to as usize, CHUNK, 2, 2)
+            .map_err(|e| PlaybackError::Output(format!("サンプルレートの変換を準備できない: {e}")))?;
+        Ok(Self::Fft { inner: Box::new(inner), pending: [Vec::new(), Vec::new()] })
     }
 
     /// 入力を受け取り、変換できたぶんを返す。端数は次の呼び出しまで持ち越す。
