@@ -207,9 +207,13 @@ fn ui_settings(c: &AppCore, settings: &cyanomelody_core::sync::Settings) -> UiSe
 
 #[tauri::command]
 async fn get_settings(app: tauri::AppHandle) -> UiResult<UiSettings> {
-    blocking(app, |c| {
-        let settings = c.load_settings()?;
-        Ok(ui_settings(c, &settings))
+    blocking(app, |c| match c.load_settings() {
+        Ok(settings) => Ok(ui_settings(c, &settings)),
+        // オフラインのときは、端末に保存した設定を添える
+        Err(e) => Err(match c.cached_settings() {
+            Some(settings) => e.with_cached(&ui_settings(c, &settings)),
+            None => e,
+        }),
     })
     .await
 }
@@ -251,6 +255,21 @@ async fn set_local_folder(app: tauri::AppHandle, path: String) -> UiResult<UiSet
         Ok(ui_settings(c, &settings))
     })
     .await
+}
+
+/// この端末のフォルダを選ぶための、フォルダの直下のフォルダの名前（Android では入力の代わりにたどって選ぶ）。
+#[tauri::command]
+fn local_folders(path: String) -> UiResult<Vec<String>> {
+    let entries =
+        std::fs::read_dir(&path).map_err(|e| UiError::new("error", format!("{path}: {e}")))?;
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort();
+    Ok(names)
 }
 
 #[tauri::command]
@@ -308,34 +327,9 @@ fn browse(app: tauri::AppHandle, source: String, folder: String) -> UiResult<UiL
     core(&app)?.browse(&source, &folder)
 }
 
-#[derive(Serialize)]
-struct UiSummary {
-    id: String,
-    name: String,
-    favorite: bool,
-    count: usize,
-}
-
-impl From<PlaylistSummary> for UiSummary {
-    fn from(s: PlaylistSummary) -> Self {
-        Self {
-            id: s.id,
-            name: s.name,
-            favorite: s.favorite,
-            count: s.count,
-        }
-    }
-}
-
 #[tauri::command]
-async fn list_playlists(app: tauri::AppHandle) -> UiResult<Vec<UiSummary>> {
-    blocking(app, |c| {
-        Ok(c.list_playlists()?
-            .into_iter()
-            .map(UiSummary::from)
-            .collect())
-    })
-    .await
+async fn list_playlists(app: tauri::AppHandle) -> UiResult<Vec<PlaylistSummary>> {
+    blocking(app, |c| c.list_playlists()).await
 }
 
 #[tauri::command]
@@ -612,6 +606,7 @@ pub fn run() {
             set_drive_folder,
             set_local_folder,
             set_cache_max,
+            local_folders,
             refresh_library,
             browse,
             list_playlists,

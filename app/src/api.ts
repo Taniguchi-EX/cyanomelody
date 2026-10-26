@@ -6,6 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface UiError {
   kind: "offline" | "login" | "not_found" | "error";
   message: string;
+  /** オフラインのとき、代わりに表示できる端末に保存した内容 */
+  cached?: unknown;
 }
 
 export function isUiError(e: unknown): e is UiError {
@@ -132,6 +134,7 @@ export const api = {
   setDriveFolder: (id: string, path: string) => invoke<Settings>("set_drive_folder", { id, path }),
   setLocalFolder: (path: string) => invoke<Settings>("set_local_folder", { path }),
   setCacheMax: (bytes: number) => invoke<void>("set_cache_max", { bytes }),
+  localFolders: (path: string) => invoke<string[]>("local_folders", { path }),
   refreshLibrary: () => invoke<Report[]>("refresh_library"),
   browse: (source: SourceName, folder: string) => invoke<Listing>("browse", { source, folder }),
   listPlaylists: () => invoke<Summary[]>("list_playlists"),

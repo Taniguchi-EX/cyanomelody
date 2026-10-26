@@ -7,7 +7,10 @@ interface Shared {
   offline: boolean;
   busy: string | null;
   notice: string | null;
-  /** 通信を伴う操作を行う。保存中の表示を出し、オフラインになったら知らせる。失敗したら undefined を返す */
+  /**
+   * 通信を伴う操作を行う。保存中の表示を出し、オフラインになったら知らせる。
+   * オフラインで端末に保存した内容があればそれを返し、ほかの失敗では undefined を返す
+   */
   run: <T>(label: string, action: () => Promise<T>) => Promise<T | undefined>;
   setOffline: (offline: boolean) => void;
   notify: (message: string | null) => void;
@@ -30,6 +33,7 @@ export function SharedProvider({ children }: { children: ReactNode }) {
       if (isUiError(e) && e.kind === "offline") {
         setOffline(true);
         notify("通信できません。キャッシュ済みの曲とローカルの曲だけ再生でき、プレイリストは編集できません");
+        if (e.cached !== undefined && e.cached !== null) return e.cached as T;
       } else {
         notify(`${label}できませんでした: ${errorMessage(e)}`);
       }

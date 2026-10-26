@@ -160,7 +160,7 @@ impl Playlist {
 }
 
 /// 一覧に出すための、プレイリストの要約。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PlaylistSummary {
     pub id: String,
     pub name: String,

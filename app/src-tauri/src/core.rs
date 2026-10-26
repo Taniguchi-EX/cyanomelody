@@ -15,7 +15,9 @@ use cyanomelody_core::playback::{EventHandler, PlaybackError, Player, TrackOpene
 use cyanomelody_core::source::drive::DriveSource;
 use cyanomelody_core::source::local::LocalSource;
 use cyanomelody_core::source::{MusicSource, SourceKind};
-use cyanomelody_core::sync::{Playlist, PlaylistItem, Settings, SyncError, SyncStore};
+use cyanomelody_core::sync::{
+    Playlist, PlaylistItem, PlaylistSummary, Settings, SyncError, SyncStore,
+};
 use serde::{Deserialize, Serialize};
 
 /// 画面に返すエラー。`kind` で画面の出し分けをする（`offline` ならオフラインの表示にする）。
@@ -23,6 +25,9 @@ use serde::{Deserialize, Serialize};
 pub struct UiError {
     pub kind: &'static str,
     pub message: String,
+    /// オフラインのとき、代わりに表示できる端末に保存した内容
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached: Option<serde_json::Value>,
 }
 
 impl UiError {
@@ -30,7 +35,16 @@ impl UiError {
         Self {
             kind,
             message: message.into(),
+            cached: None,
         }
+    }
+
+    /// オフラインのエラーに、端末に保存した内容を添える。
+    pub fn with_cached(mut self, cached: &impl Serialize) -> Self {
+        if self.kind == "offline" {
+            self.cached = serde_json::to_value(cached).ok();
+        }
+        self
     }
 }
 
@@ -58,6 +72,80 @@ impl From<DriveError> for UiError {
 }
 
 pub type UiResult<T> = Result<T, UiError>;
+
+/// 最後に読んだプレイリスト。オフラインでも開いて再生できるよう、端末にも保存する。
+struct PlaylistCache {
+    path: PathBuf,
+    items: Mutex<HashMap<String, Playlist>>,
+}
+
+impl PlaylistCache {
+    fn load(path: PathBuf) -> Self {
+        let items = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default();
+        Self {
+            path,
+            items: Mutex::new(items),
+        }
+    }
+
+    fn save(&self, items: &HashMap<String, Playlist>) {
+        let json = serde_json::to_vec(items).expect("JSON にできない値はない");
+        if let Err(e) = std::fs::write(&self.path, json) {
+            log::warn!("プレイリストを端末に保存できない: {e}");
+        }
+    }
+
+    fn get(&self, id: &str) -> Option<Playlist> {
+        self.items.lock().unwrap().get(id).cloned()
+    }
+
+    fn put(&self, p: &Playlist) {
+        let mut items = self.items.lock().unwrap();
+        items.insert(p.id.clone(), p.clone());
+        self.save(&items);
+    }
+
+    fn remove(&self, id: &str) {
+        let mut items = self.items.lock().unwrap();
+        if items.remove(id).is_some() {
+            self.save(&items);
+        }
+    }
+
+    /// Drive の一覧にないもの（ほかの端末で削除されたもの）を捨てる。
+    fn keep_only(&self, ids: &[&str]) {
+        let mut items = self.items.lock().unwrap();
+        let before = items.len();
+        items.retain(|id, _| ids.contains(&id.as_str()));
+        if items.len() != before {
+            self.save(&items);
+        }
+    }
+
+    fn summaries(&self) -> Vec<PlaylistSummary> {
+        let mut list: Vec<PlaylistSummary> = self
+            .items
+            .lock()
+            .unwrap()
+            .values()
+            .map(|p| PlaylistSummary {
+                id: p.id.clone(),
+                name: p.name.clone(),
+                favorite: p.favorite,
+                count: p.items.len(),
+            })
+            .collect();
+        list.sort_by(|a, b| {
+            b.favorite
+                .cmp(&a.favorite)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        list
+    }
+}
 
 /// 端末だけで持つ設定（Drive で共有しないもの）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,10 +238,12 @@ pub struct AppCore {
     drive_client: Option<DriveClient>,
     sync: Option<SyncStore>,
     /// 最後に読んだプレイリスト（再生するときに使う。通信を減らすため）
-    playlists: Mutex<HashMap<String, Playlist>>,
+    playlists: PlaylistCache,
     /// 再生中のプレイリスト
     pub playing: Mutex<Option<Playlist>>,
     local_config: Mutex<LocalConfig>,
+    /// 最後に読んだ設定の保存先。オフラインで起動しても指定フォルダの曲を開けるようにする
+    settings_path: PathBuf,
 }
 
 fn source_kind(s: &str) -> UiResult<SourceKind> {
@@ -205,7 +295,7 @@ impl AppCore {
         }
         let drive_client = tokens.map(DriveClient::new);
         let sync = drive_client.clone().map(SyncStore::new);
-        Ok(Self {
+        let core = Self {
             device_id,
             data_dir: data_dir.to_path_buf(),
             library,
@@ -214,10 +304,22 @@ impl AppCore {
             sources,
             drive_client,
             sync,
-            playlists: Mutex::default(),
+            playlists: PlaylistCache::load(data_dir.join("playlists.json")),
             playing: Mutex::default(),
             local_config: Mutex::new(local_config),
-        })
+            settings_path: data_dir.join("settings.json"),
+        };
+        if let Some(settings) = core.cached_settings() {
+            core.apply_settings(&settings);
+        }
+        Ok(core)
+    }
+
+    /// 最後に読んだ設定（端末に保存したもの）。
+    pub fn cached_settings(&self) -> Option<Settings> {
+        std::fs::read(&self.settings_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
     }
 
     fn sync(&self) -> UiResult<&SyncStore> {
@@ -269,7 +371,14 @@ impl AppCore {
         Ok(settings)
     }
 
+    /// 設定に合わせて音楽ソースを差し替え、端末にも保存する。
     fn apply_settings(&self, settings: &Settings) {
+        if let Err(e) = std::fs::write(
+            &self.settings_path,
+            serde_json::to_vec(settings).expect("JSON にできない値はない"),
+        ) {
+            log::warn!("設定を端末に保存できない: {e}");
+        }
         let mut sources = self.sources.write().unwrap();
         sources.drive = match (&settings.drive_folder, &self.drive_client) {
             (Some(folder), Some(client)) => Some(Arc::new(
@@ -350,20 +459,31 @@ impl AppCore {
     }
 
     fn remember(&self, p: &Playlist) -> UiPlaylist {
-        self.playlists
-            .lock()
-            .unwrap()
-            .insert(p.id.clone(), p.clone());
+        self.playlists.put(p);
         self.ui_playlist(p)
     }
 
-    pub fn list_playlists(&self) -> UiResult<Vec<cyanomelody_core::sync::PlaylistSummary>> {
-        Ok(self.sync()?.list()?)
+    /// プレイリストの一覧。オフラインのときは、端末に保存したものをエラーに添える。
+    pub fn list_playlists(&self) -> UiResult<Vec<PlaylistSummary>> {
+        match self.sync()?.list() {
+            Ok(list) => {
+                self.playlists
+                    .keep_only(&list.iter().map(|p| p.id.as_str()).collect::<Vec<_>>());
+                Ok(list)
+            }
+            Err(e) => Err(UiError::from(e).with_cached(&self.playlists.summaries())),
+        }
     }
 
+    /// プレイリストを Drive から読む。オフラインのときは、端末に保存したものをエラーに添える。
     pub fn get_playlist(&self, id: &str) -> UiResult<UiPlaylist> {
-        let p = self.sync()?.get(id)?;
-        Ok(self.remember(&p))
+        match self.sync()?.get(id) {
+            Ok(p) => Ok(self.remember(&p)),
+            Err(e) => {
+                let cached = self.playlists.get(id).map(|p| self.ui_playlist(&p));
+                Err(UiError::from(e).with_cached(&cached))
+            }
+        }
     }
 
     pub fn create_playlist(&self, name: &str) -> UiResult<UiPlaylist> {
@@ -373,7 +493,7 @@ impl AppCore {
 
     pub fn delete_playlist(&self, id: &str) -> UiResult<()> {
         self.sync()?.delete(id)?;
-        self.playlists.lock().unwrap().remove(id);
+        self.playlists.remove(id);
         Ok(())
     }
 
@@ -414,7 +534,7 @@ impl AppCore {
 
     /// プレイリストを `start` 番目の曲から再生する。最後に読んだ内容を使う。
     pub fn play_playlist(&self, id: &str, start: usize) -> UiResult<()> {
-        let playlist = match self.playlists.lock().unwrap().get(id).cloned() {
+        let playlist = match self.playlists.get(id) {
             Some(p) => p,
             None => self.sync()?.get(id)?,
         };
