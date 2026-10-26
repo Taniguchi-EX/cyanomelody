@@ -176,6 +176,9 @@ impl SongCache {
         let max = self.max_bytes();
         let conn = self.conn.lock().unwrap();
         let mut used: i64 = conn.query_row("SELECT COALESCE(SUM(size), 0) FROM songs", [], |r| r.get(0))?;
+        if used as u64 <= max {
+            return Ok(());
+        }
         let victims: Vec<(String, i64)> = conn
             .prepare("SELECT key, size FROM songs ORDER BY last_played ASC, rowid ASC")?
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
