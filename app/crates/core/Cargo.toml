@@ -1,0 +1,9 @@
+[package]
+name = "cyanomelody-core"
+description = "cyanomelody の中核（OS に依存しない部分）"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
