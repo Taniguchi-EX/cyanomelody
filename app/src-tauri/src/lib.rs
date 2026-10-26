@@ -4,6 +4,8 @@
 //! - `core`：中核の部品をまとめた `AppCore`
 //! - このファイル：画面から呼ぶコマンドと、画面に知らせるイベント（`player`、`library-progress`）
 
+#[cfg(target_os = "android")]
+mod android;
 mod core;
 mod drive;
 
@@ -20,6 +22,25 @@ use crate::core::{AppCore, UiError, UiListing, UiPlaylist, UiResult};
 struct AppState {
     drive: Result<drive::DriveAuth, cyanomelody_core::drive::DriveError>,
     core: OnceLock<Arc<AppCore>>,
+    /// Android のログイン（Google Identity Services）
+    #[cfg(target_os = "android")]
+    android: OnceLock<Arc<android::AndroidToken>>,
+}
+
+impl AppState {
+    fn can_login(&self) -> bool {
+        #[cfg(target_os = "android")]
+        return self.android.get().is_some();
+        #[cfg(not(target_os = "android"))]
+        return self.drive.is_ok();
+    }
+
+    fn logged_in(&self) -> bool {
+        #[cfg(target_os = "android")]
+        return self.android.get().is_some_and(|a| a.is_logged_in());
+        #[cfg(not(target_os = "android"))]
+        return self.drive.as_ref().is_ok_and(|d| d.is_logged_in());
+    }
 }
 
 fn core(app: &tauri::AppHandle) -> UiResult<Arc<AppCore>> {
@@ -57,8 +78,8 @@ fn app_info(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> UiResul
         core_version: cyanomelody_core::version(),
         device_id: core(&app)?.device_id.clone(),
         platform: if cfg!(desktop) { "desktop" } else { "mobile" },
-        can_login: state.drive.is_ok(),
-        logged_in: state.drive.as_ref().is_ok_and(|d| d.is_logged_in()),
+        can_login: state.can_login(),
+        logged_in: state.logged_in(),
     })
 }
 
@@ -101,10 +122,23 @@ async fn drive_login(app: tauri::AppHandle) -> UiResult<()> {
         *RUNNING.lock().unwrap() = false;
         result
     }
-    #[cfg(mobile)]
+    #[cfg(target_os = "android")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let state = app.state::<AppState>();
+            let token = state
+                .android
+                .get()
+                .ok_or_else(|| UiError::new("login", "起動の途中です"))?;
+            token.login().map_err(UiError::from)
+        })
+        .await
+        .map_err(|e| UiError::new("error", e.to_string()))?
+    }
+    #[cfg(all(mobile, not(target_os = "android")))]
     {
         let _ = app;
-        Err(UiError::new("login", "Android のログインは未対応です"))
+        Err(UiError::new("login", "この端末ではログインできません"))
     }
 }
 
@@ -112,6 +146,10 @@ async fn drive_login(app: tauri::AppHandle) -> UiResult<()> {
 fn drive_logout(state: tauri::State<'_, AppState>) {
     if let Ok(d) = state.drive.as_ref() {
         d.logout();
+    }
+    #[cfg(target_os = "android")]
+    if let Some(a) = state.android.get() {
+        a.logout();
     }
 }
 
@@ -498,6 +536,23 @@ fn forward_player_events(app: tauri::AppHandle) -> cyanomelody_core::playback::E
             },
         };
         let _ = app.emit("player", payload);
+        // Android では、フォアグラウンドサービスと通知・ロック画面に知らせる
+        #[cfg(target_os = "android")]
+        if let Ok(c) = core(&app) {
+            let s = c.player.status();
+            let title = c
+                .playing
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(|p| p.items.get(s.index?).map(|i| i.title.clone()))
+                .unwrap_or_default();
+            android::notify(
+                &title,
+                s.state == PlayState::Playing,
+                s.state != PlayState::Stopped,
+            );
+        }
     })
 }
 
@@ -515,19 +570,36 @@ pub fn run() {
         .manage(AppState {
             drive,
             core: OnceLock::new(),
+            #[cfg(target_os = "android")]
+            android: OnceLock::new(),
         })
         .setup(|app| {
             let handle = app.handle().clone();
             let data_dir = app.path().app_data_dir()?;
             let cache_dir = app.path().app_cache_dir()?.join("songs");
             let state = app.state::<AppState>();
+            #[cfg(not(target_os = "android"))]
             let tokens = state
                 .drive
                 .as_ref()
                 .ok()
                 .map(|d| d.tokens.clone() as Arc<dyn cyanomelody_core::drive::TokenProvider>);
-            let core = AppCore::new(&data_dir, &cache_dir, tokens, forward_player_events(handle))?;
-            let _ = state.core.set(Arc::new(core));
+            #[cfg(target_os = "android")]
+            let tokens = {
+                std::fs::create_dir_all(&data_dir)?;
+                let token = Arc::new(android::AndroidToken::new(&data_dir));
+                let _ = state.android.set(token.clone());
+                Some(token as Arc<dyn cyanomelody_core::drive::TokenProvider>)
+            };
+            let core = Arc::new(AppCore::new(
+                &data_dir,
+                &cache_dir,
+                tokens,
+                forward_player_events(handle),
+            )?);
+            #[cfg(target_os = "android")]
+            let _ = android::CORE.set(core.clone());
+            let _ = state.core.set(core);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

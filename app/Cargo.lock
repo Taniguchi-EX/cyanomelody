@@ -793,6 +793,7 @@ name = "cyanomelody"
 version = "0.1.0"
 dependencies = [
  "cyanomelody-core",
+ "jni",
  "keyring",
  "log",
  "serde",

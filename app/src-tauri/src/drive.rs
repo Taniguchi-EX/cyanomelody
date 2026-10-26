@@ -1,5 +1,6 @@
 //! Google Drive へのログイン（Windows と Ubuntu）。リフレッシュトークンは OS の資格情報の保管庫に保存する。
-//! Android のログインは `Androidの連携` のタスクで、Kotlin の Google Identity Services を使って作る。
+//! Android のログインは `android.rs`（Kotlin の Google Identity Services）で行うため、ここはデスクトップだけで使う。
+#![cfg_attr(mobile, allow(dead_code))]
 
 use std::sync::Arc;
 
