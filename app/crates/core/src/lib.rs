@@ -1,7 +1,10 @@
 //! cyanomelody の中核。OS に依存しない処理（再生順の制御、音楽ソース、保存など）を置く。
 //! Tauri や画面には依存しない。
 
+pub mod device;
+pub mod library;
 pub mod playback;
+pub mod source;
 
 /// 中核のバージョン。
 pub fn version() -> &'static str {

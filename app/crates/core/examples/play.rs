@@ -44,7 +44,9 @@ fn main() {
     loop {
         match rx.recv_timeout(Duration::from_secs(1)) {
             Ok(PlayerEvent::TrackChanged { index }) => println!("再生: {}", tracks[index].key),
-            Ok(PlayerEvent::TrackFailed { index, error }) => println!("飛ばした: {} / {error}", tracks[index].key),
+            Ok(PlayerEvent::TrackFailed { index, error }) => {
+                println!("飛ばした: {} / {error}", tracks[index].key)
+            }
             Ok(PlayerEvent::StateChanged(state)) => println!("状態: {state:?}"),
             Ok(PlayerEvent::Finished) => {
                 println!("最後まで再生した");
@@ -53,7 +55,11 @@ fn main() {
             Err(_) => {
                 let s = player.status();
                 if s.state == PlayState::Playing {
-                    println!("  位置 {:.1}秒 / 長さ {:.1}秒", s.position, s.duration.unwrap_or(0.0));
+                    println!(
+                        "  位置 {:.1}秒 / 長さ {:.1}秒",
+                        s.position,
+                        s.duration.unwrap_or(0.0)
+                    );
                 }
             }
         }

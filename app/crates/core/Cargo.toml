@@ -18,9 +18,12 @@ fastrand = "2"
 thiserror = "2"
 log = "0.4"
 cpal = { version = "0.16", optional = true }
+lofty = "0.25"
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [dev-dependencies]
 env_logger = "0.11"
+tempfile = "3"
 
 [[example]]
 name = "play"
