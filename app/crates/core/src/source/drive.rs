@@ -1,8 +1,11 @@
 //! Google Drive の音楽ソース。指定フォルダとサブフォルダの曲を、ファイル ID で見分けて読む。
 
+use std::sync::Arc;
+
 use symphonia::core::io::MediaSource;
 
 use super::{FileEntry, MusicSource, SourceError, SourceKind, Tags, is_audio, tags};
+use crate::cache::{CacheFile, SongCache};
 use crate::drive::{DriveClient, DriveError, RangeReader, parse_time};
 
 /// タグを読むときの取得の単位。タグは先頭か末尾の小さな範囲にあることが多い。
@@ -10,9 +13,13 @@ const TAG_CHUNK: u64 = 64 * 1024;
 /// 再生するときの取得の単位。
 const PLAY_CHUNK: u64 = 256 * 1024;
 
+/// キャッシュの足りない部分を裏で取得するときの単位。
+const FILL_BYTES: u64 = 4 * 1024 * 1024;
+
 pub struct DriveSource {
     client: DriveClient,
     folder_id: String,
+    cache: Option<Arc<SongCache>>,
 }
 
 impl DriveSource {
@@ -21,8 +28,40 @@ impl DriveSource {
         Self {
             client,
             folder_id: folder_id.into(),
+            cache: None,
         }
     }
+
+    /// 再生した曲を `cache` に保存し、次からはそこから再生する。
+    pub fn with_cache(mut self, cache: Arc<SongCache>) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+}
+
+/// キャッシュの足りない部分を、裏で順に取得して埋める。
+fn fill_in_background(client: DriveClient, key: String, file: Arc<CacheFile>) {
+    std::thread::spawn(move || {
+        for (start, end) in file.missing() {
+            let mut pos = start;
+            while pos < end {
+                if file.is_complete() {
+                    return;
+                }
+                let last = (pos + FILL_BYTES).min(end) - 1;
+                match client.read_range(&key, pos, last) {
+                    Ok(data) => file.write(pos, &data),
+                    Err(e) => {
+                        log::warn!(
+                            "{key} のキャッシュを埋められない（次に再生したときにやり直す）: {e}"
+                        );
+                        return;
+                    }
+                }
+                pos = last + 1;
+            }
+        }
+    });
 }
 
 fn source_error(e: DriveError, open: bool) -> SourceError {
@@ -74,16 +113,27 @@ impl MusicSource for DriveSource {
     }
 
     fn open(&self, key: &str) -> Result<Box<dyn MediaSource>, SourceError> {
+        if let Some(file) = self.cache.as_ref().and_then(|c| c.open_cached(key)) {
+            return Ok(Box::new(file));
+        }
         let file = self.client.file(key).map_err(|e| source_error(e, true))?;
         let len = file
             .size
             .ok_or_else(|| SourceError::Open(format!("{key} の大きさが分からない")))?;
-        Ok(Box::new(RangeReader::new(
-            self.client.clone(),
-            key,
-            len,
-            PLAY_CHUNK,
-        )))
+        let reader = match &self.cache {
+            Some(cache) => match cache.begin(key, len) {
+                Ok(cache_file) => {
+                    fill_in_background(self.client.clone(), key.to_string(), cache_file.clone());
+                    RangeReader::with_cache(self.client.clone(), key, len, PLAY_CHUNK, cache_file)
+                }
+                Err(e) => {
+                    log::warn!("キャッシュに書けないため、保存せずに再生する: {e}");
+                    RangeReader::new(self.client.clone(), key, len, PLAY_CHUNK)
+                }
+            },
+            None => RangeReader::new(self.client.clone(), key, len, PLAY_CHUNK),
+        };
+        Ok(Box::new(reader))
     }
 }
 
@@ -95,7 +145,6 @@ mod tests {
     use crate::library::Library;
     use crate::playback::decode::tests::wav;
     use std::io::Read;
-    use std::sync::Arc;
 
     fn source(mock: &MockDrive, folder: &str) -> DriveSource {
         let client = DriveClient::with_base(&mock.base_url(), Arc::new(StaticToken("t".into())));
@@ -136,6 +185,48 @@ mod tests {
         assert_eq!(out, data);
         let entry = src.list().unwrap().remove(0);
         assert_eq!(src.read_tags(&entry).unwrap(), Tags::default());
+    }
+
+    #[test]
+    fn caches_played_songs_and_plays_them_offline() {
+        use crate::cache::{DEFAULT_MAX_BYTES, SongCache};
+        use std::sync::atomic::Ordering;
+        use std::time::{Duration, Instant};
+        let dir = tempfile::tempdir().unwrap();
+        let cache = SongCache::open(dir.path(), DEFAULT_MAX_BYTES).unwrap();
+        let mock = MockDrive::start();
+        let data: Vec<u8> = (0..3_000_000u32).map(|i| (i % 249) as u8).collect();
+        let played = mock.add_file("root", "played.wav", data.clone());
+        let unplayed = mock.add_file("root", "unplayed.wav", data.clone());
+        let src = source(&mock, "root").with_cache(cache.clone());
+
+        // 先頭だけ読んで閉じても、裏で残りを取得してキャッシュがそろう
+        let mut head = vec![0u8; 1000];
+        src.open(&played).unwrap().read_exact(&mut head).unwrap();
+        let started = Instant::now();
+        while !cache.is_cached(&played) && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(cache.is_cached(&played));
+
+        // 2 回目は通信せずにキャッシュから読む
+        let before = mock.media_requests.load(Ordering::Relaxed);
+        let mut out = Vec::new();
+        src.open(&played).unwrap().read_to_end(&mut out).unwrap();
+        assert_eq!(out, data);
+        assert_eq!(mock.media_requests.load(Ordering::Relaxed), before);
+
+        // 通信できないときは、キャッシュ済みの曲だけ開ける
+        let offline = DriveSource::new(
+            DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into()))),
+            "root",
+        )
+        .with_cache(cache.clone());
+        assert!(offline.open(&played).is_ok());
+        assert!(matches!(
+            offline.open(&unplayed),
+            Err(SourceError::Offline(_))
+        ));
     }
 
     #[test]

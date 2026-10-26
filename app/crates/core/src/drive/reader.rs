@@ -11,6 +11,7 @@ use std::sync::{Arc, Condvar, Mutex};
 use symphonia::core::io::MediaSource;
 
 use super::{DriveClient, DriveError};
+use crate::cache::CacheFile;
 
 /// まとめて取得する大きさの上限。
 const MAX_BURST_BYTES: u64 = 4 * 1024 * 1024;
@@ -30,6 +31,8 @@ struct Shared {
     chunk: u64,
     state: Mutex<State>,
     fetched: Condvar,
+    /// 取得したものを書き込む曲のキャッシュ。書き込み済みの範囲は通信せずにそこから読む
+    cache: Option<Arc<CacheFile>>,
 }
 
 #[derive(Default)]
@@ -59,9 +62,25 @@ impl RangeReader {
                     ..Default::default()
                 }),
                 fetched: Condvar::new(),
+                cache: None,
             }),
             pos: 0,
         }
+    }
+
+    /// 取得したものを `cache` に書き込む。
+    pub fn with_cache(
+        client: DriveClient,
+        file_id: &str,
+        len: u64,
+        chunk: u64,
+        cache: Arc<CacheFile>,
+    ) -> Self {
+        let mut reader = Self::new(client, file_id, len, chunk);
+        Arc::get_mut(&mut reader.shared)
+            .expect("作った直後なので共有されていない")
+            .cache = Some(cache);
+        reader
     }
 
     pub fn len(&self) -> u64 {
@@ -134,7 +153,21 @@ impl Shared {
     fn fetch_marked(&self, idx: u64, end: u64) -> Result<(), DriveError> {
         let start_byte = idx * self.chunk;
         let end_byte = (end * self.chunk).min(self.len) - 1;
-        let result = self.client.read_range(&self.file_id, start_byte, end_byte);
+        let result = match &self.cache {
+            Some(cache) => {
+                let mut buf = vec![0u8; (end_byte - start_byte + 1) as usize];
+                if cache.read(start_byte, &mut buf) {
+                    Ok(buf)
+                } else {
+                    let fetched = self.client.read_range(&self.file_id, start_byte, end_byte);
+                    if let Ok(data) = &fetched {
+                        cache.write(start_byte, data);
+                    }
+                    fetched
+                }
+            }
+            None => self.client.read_range(&self.file_id, start_byte, end_byte),
+        };
         let mut st = self.state.lock().unwrap();
         for i in idx..end {
             st.inflight.remove(&i);

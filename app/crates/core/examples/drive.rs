@@ -4,11 +4,13 @@
 //! - OAuth クライアントは `secrets/google_oauth_desktop.sec.json` から読む
 //! - リフレッシュトークンは `secrets/google_token.sec.json` に保存する（なければブラウザでログインする）
 //! - `--play` を付けると、各曲の 40% の位置から指定の秒数ずつ鳴らす
+//! - `--cache <フォルダ>` を付けると、再生した曲をキャッシュに保存し、そろうまで待つ
 
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
+use cyanomelody_core::cache::{DEFAULT_MAX_BYTES, SongCache};
 use cyanomelody_core::drive::DriveClient;
 use cyanomelody_core::drive::auth::{LoopbackLogin, OAuthClient, RefreshingToken, TokenStore};
 use cyanomelody_core::library::{DEFAULT_PARALLELISM, Library};
@@ -58,6 +60,11 @@ fn main() {
         .position(|a| a == "--play")
         .map(|i| args[i + 1].parse().unwrap());
 
+    let cache_dir: Option<PathBuf> = args
+        .iter()
+        .position(|a| a == "--cache")
+        .map(|i| PathBuf::from(&args[i + 1]));
+
     let client_json =
         std::fs::read_to_string(secrets().join("google_oauth_desktop.sec.json")).unwrap();
     let oauth = OAuthClient::from_json(&client_json).unwrap();
@@ -76,8 +83,14 @@ fn main() {
     let client = DriveClient::new(tokens);
 
     let t = Instant::now();
+    println!("アカウント: {}", client.account_email().unwrap());
     let folder_id = client.folder_by_path(&folder).unwrap();
-    let source = Arc::new(DriveSource::new(client, folder_id));
+    let cache = cache_dir.map(|dir| SongCache::open(&dir, DEFAULT_MAX_BYTES).unwrap());
+    let mut source = DriveSource::new(client, folder_id);
+    if let Some(cache) = &cache {
+        source = source.with_cache(cache.clone());
+    }
+    let source = Arc::new(source);
     let library = Library::open_in_memory().unwrap();
     let report = library
         .refresh(source.as_ref(), DEFAULT_PARALLELISM, &|done, total| {
@@ -147,4 +160,28 @@ fn main() {
         }
     }
     player.stop();
+    if let Some(cache) = cache {
+        let t = Instant::now();
+        while songs.iter().any(|s| !cache.is_cached(&s.key))
+            && t.elapsed() < Duration::from_secs(120)
+        {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        for s in &songs {
+            println!(
+                "キャッシュ: {} / {}",
+                s.title,
+                if cache.is_cached(&s.key) {
+                    "保存済み"
+                } else {
+                    "未保存"
+                }
+            );
+        }
+        println!(
+            "キャッシュの合計: {} バイト / そろうまで {:.1}秒",
+            cache.used_bytes().unwrap(),
+            t.elapsed().as_secs_f64()
+        );
+    }
 }

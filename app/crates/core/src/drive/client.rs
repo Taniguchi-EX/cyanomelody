@@ -113,6 +113,23 @@ impl DriveClient {
             .map_err(|e| DriveError::Parse(e.to_string()))
     }
 
+    /// ログインしているアカウントのメールアドレス。通信できるかの確認にも使う
+    /// （通信できなければ `DriveError::Network`）。
+    pub fn account_email(&self) -> Result<String, DriveError> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct About {
+            user: User,
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct User {
+            email_address: String,
+        }
+        let about: About = self.get_json("/drive/v3/about", &[("fields", "user(emailAddress)")])?;
+        Ok(about.user.email_address)
+    }
+
     /// ファイルやフォルダの情報。
     pub fn file(&self, id: &str) -> Result<DriveFile, DriveError> {
         self.get_json(&format!("/drive/v3/files/{id}"), &[("fields", FILE_FIELDS)])
@@ -268,5 +285,7 @@ mod tests {
         let offline =
             DriveClient::with_base("http://127.0.0.1:9", Arc::new(StaticToken("t".into())));
         assert!(offline.list_children("root").unwrap_err().is_offline());
+        assert!(offline.account_email().unwrap_err().is_offline());
+        assert_eq!(c.account_email().unwrap(), "test@example.com");
     }
 }

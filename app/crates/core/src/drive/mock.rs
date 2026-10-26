@@ -172,6 +172,10 @@ fn respond(
         st.reject -= 1;
         return (401, b"{\"error\":\"unauthorized\"}".to_vec(), json_type);
     }
+    if path == "/drive/v3/about" {
+        let body = json!({ "user": { "emailAddress": "test@example.com" } });
+        return (200, body.to_string().into_bytes(), json_type);
+    }
     if path == "/drive/v3/files" {
         let q = params.get("q").cloned().unwrap_or_default();
         let parent = between(&q, "'", "' in parents").unwrap_or_default();
