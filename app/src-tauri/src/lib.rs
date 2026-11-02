@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use credits::{Credit, CreditInput, CreditKind, LicenseType};
 use error::Result;
 use error::Error;
-use files::{AudioFile, FileFilter};
+use files::{AudioFile, FileFilter, FileSummary};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
 use tags::{MoveTarget, RenameResult, Tag};
@@ -169,6 +169,11 @@ async fn list_files(state: State<'_, AppState>, filter: FileFilter) -> Result<Ve
 }
 
 #[tauri::command]
+async fn summarize_files(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<FileSummary> {
+    files::summarize_files(&state.conn(), &file_ids)
+}
+
+#[tauri::command]
 async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>> {
     tags::list_tags(&state.conn())
 }
@@ -293,6 +298,7 @@ pub fn run() {
             remove_folder,
             scan_folder,
             list_files,
+            summarize_files,
             list_tags,
             create_tag,
             rename_tag,

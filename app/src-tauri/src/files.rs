@@ -6,7 +6,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::tags::{descendants_and_self, get_or_create_tag, tag_rank, TAG_SEPARATOR};
+use crate::tags::{descendants_and_self, get_or_create_tag, list_tags, tag_rank, TAG_SEPARATOR};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +47,70 @@ pub struct FileFilter {
     /// どれかのライセンスが設定されたファイルに絞り込む
     pub license_ids: Vec<i64>,
     pub no_license: bool,
+    /// 指定したidのファイルだけに絞り込む（チェックしたファイルだけの表示）
+    pub file_ids: Option<Vec<i64>>,
+}
+
+/// ファイルのidの一覧を、SQLの1つの引数（JSONの配列）にする。数万件でも引数の数の上限にかからない
+fn ids_json(ids: &[i64]) -> String {
+    serde_json::to_string(ids).unwrap_or_else(|_| "[]".into())
+}
+
+/// まとめて操作するファイル（チェックしたファイル）の内訳
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSummary {
+    /// 指定したidのうち、ライブラリにあるもの
+    pub ids: Vec<i64>,
+    /// 見つからない印が付いたファイルの数
+    pub missing: i64,
+    /// 付いているタグ（タグの一覧の順）と、そのタグが付いたファイルの数
+    pub tags: Vec<CountItem>,
+    /// 出典ごとのファイルの数（id が None は「なし」）
+    pub sources: Vec<CountItem>,
+    pub licenses: Vec<CountItem>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CountItem {
+    pub id: Option<i64>,
+    pub count: i64,
+}
+
+pub fn summarize_files(conn: &Connection, file_ids: &[i64]) -> Result<FileSummary> {
+    let json = ids_json(file_ids);
+    let ids: Vec<i64> = conn
+        .prepare("SELECT id FROM audio_files WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY id")?
+        .query_map([&json], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let missing = conn.query_row(
+        "SELECT count(*) FROM audio_files WHERE missing = 1 AND id IN (SELECT value FROM json_each(?1))",
+        [&json],
+        |r| r.get(0),
+    )?;
+    let counts = |sql: &str| -> Result<Vec<CountItem>> {
+        Ok(conn
+            .prepare(sql)?
+            .query_map([&json], |r| Ok(CountItem { id: r.get(0)?, count: r.get(1)? }))?
+            .collect::<rusqlite::Result<_>>()?)
+    };
+    let mut tags = counts(
+        "SELECT tag_id, count(*) FROM file_tags
+         WHERE file_id IN (SELECT value FROM json_each(?1)) GROUP BY tag_id",
+    )?;
+    let order: std::collections::HashMap<i64, usize> =
+        list_tags(conn)?.into_iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+    tags.sort_by_key(|c| c.id.and_then(|id| order.get(&id).copied()).unwrap_or(usize::MAX));
+    let sources = counts(
+        "SELECT source_id, count(*) FROM audio_files
+         WHERE id IN (SELECT value FROM json_each(?1)) GROUP BY source_id ORDER BY source_id",
+    )?;
+    let licenses = counts(
+        "SELECT license_id, count(*) FROM audio_files
+         WHERE id IN (SELECT value FROM json_each(?1)) GROUP BY license_id ORDER BY license_id",
+    )?;
+    Ok(FileSummary { ids, missing, tags, sources, licenses })
 }
 
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
@@ -75,6 +139,10 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     }
     if filter.untagged_only {
         sql.push_str(" AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = a.id)");
+    }
+    if let Some(ids) = &filter.file_ids {
+        sql.push_str(" AND a.id IN (SELECT value FROM json_each(?))");
+        args.push(Value::Text(ids_json(ids)));
     }
     if filter.missing_only {
         sql.push_str(" AND a.missing = 1");
@@ -200,7 +268,7 @@ mod tests {
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};
-    use crate::tags::{list_tags, move_tag, MoveTarget};
+    use crate::tags::{move_tag, MoveTarget};
     use std::fs;
 
     /// a.wav, b.mp3, sub/c_100%.flac を置いたフォルダを登録・スキャンしたDB
@@ -313,6 +381,53 @@ mod tests {
         let all = list_files(&conn, &FileFilter::default()).unwrap();
         assert_eq!((all[0].source_id, all[0].license_id), (Some(s1), Some(l1)));
         assert_eq!((all[2].source_id, all[2].license_id), (None, None));
+    }
+
+    #[test]
+    fn filter_by_file_ids() {
+        let (_dir, conn) = setup();
+        let a = id_of(&conn, "a.wav");
+        let c = id_of(&conn, "sub/c_100%.flac");
+        let f = FileFilter { file_ids: Some(vec![c, a, 9999]), ..Default::default() };
+        assert_eq!(rels(&list_files(&conn, &f).unwrap()), vec!["a.wav", "sub/c_100%.flac"]);
+        let none = FileFilter { file_ids: Some(vec![]), ..Default::default() };
+        assert!(list_files(&conn, &none).unwrap().is_empty());
+        // ほかの条件とはAND
+        let and = FileFilter { file_ids: Some(vec![a, c]), text: "flac".into(), ..Default::default() };
+        assert_eq!(rels(&list_files(&conn, &and).unwrap()), vec!["sub/c_100%.flac"]);
+        // 引数の数の上限（32766）を超える数のidでも使える
+        let many: Vec<i64> = (1..=40_000).collect();
+        let f = FileFilter { file_ids: Some(many.clone()), ..Default::default() };
+        assert_eq!(list_files(&conn, &f).unwrap().len(), 3);
+        assert_eq!(summarize_files(&conn, &many).unwrap().ids.len(), 3);
+    }
+
+    #[test]
+    fn summarize_checked_files() {
+        let (dir, mut conn) = setup();
+        let a = id_of(&conn, "a.wav");
+        let b = id_of(&conn, "b.mp3");
+        let c = id_of(&conn, "sub/c_100%.flac");
+        let x = add_tag(&mut conn, &[a, b], "x").unwrap();
+        let y = add_tag(&mut conn, &[b, c], "y").unwrap();
+        // タグの一覧の順に並ぶ
+        move_tag(&mut conn, y, MoveTarget::Before(x)).unwrap();
+        let s1 = set_file_credit(&mut conn, CreditKind::Source, &[a, b], Some("s1")).unwrap();
+        fs::remove_file(dir.path().join("b.mp3")).unwrap();
+        let folder: i64 = conn.query_row("SELECT id FROM library_folders", [], |r| r.get(0)).unwrap();
+        scan_folder(&mut conn, folder).unwrap();
+
+        let s = summarize_files(&conn, &[a, b, 9999]).unwrap();
+        assert_eq!(s.ids, vec![a, b]);
+        assert_eq!(s.missing, 1);
+        assert_eq!(
+            s.tags,
+            vec![CountItem { id: Some(y), count: 1 }, CountItem { id: Some(x), count: 2 }]
+        );
+        assert_eq!(s.sources, vec![CountItem { id: s1, count: 2 }]);
+        assert_eq!(s.licenses, vec![CountItem { id: None, count: 2 }]);
+        let empty = summarize_files(&conn, &[]).unwrap();
+        assert_eq!(empty, FileSummary::default());
     }
 
     #[test]
