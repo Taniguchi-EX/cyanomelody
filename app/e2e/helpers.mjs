@@ -91,7 +91,8 @@ export async function connect(shotDir) {
       await ui.waitIdle();
     },
     async clearFilter() {
-      const b = page.getByRole("button", { name: "絞り込みを解除" });
+      // 「すべて解除」は、絞り込みと一緒にチェックと右の欄の表示も外す
+      const b = page.getByRole("button", { name: "すべて解除" });
       if (await b.count()) await b.click();
       await page.waitForTimeout(400);
     },
@@ -117,6 +118,9 @@ export async function connect(shotDir) {
     /** 取っ手 handle をつかんで、target の行の高さの ratio の位置まで動かして離す。
      *  release が false なら離さない（落とす前の表示を確かめるとき。後で page.mouse.up() する） */
     async dragTo(handle, target, ratio, release = true) {
+      // つかむ所と落とす先を、画面の中までスクロールしてから操作する
+      await target.scrollIntoViewIfNeeded();
+      await handle.scrollIntoViewIfNeeded();
       const h = await handle.boundingBox();
       const r = await target.boundingBox();
       await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);

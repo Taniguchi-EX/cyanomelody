@@ -20,7 +20,7 @@ const tree = () =>
 /** 編集画面の項目を「種類:内容」で */
 const items = () =>
   page.getByTestId("playlist-item").evaluateAll((rows) =>
-    rows.map((r) => `${r.querySelector(".item-kind").textContent}:${r.querySelector(".item-content").textContent}`),
+    rows.map((r) => `${r.querySelector(".item-kind").title}:${r.querySelector(".item-content").textContent}`),
   );
 const itemRow = (content) => page.getByTestId("playlist-item").filter({ hasText: content });
 const editor = () => page.getByTestId("playlist-editor");
@@ -60,14 +60,14 @@ await step("P01", "準備：フォルダを登録し、タグを付け、左の�
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
 });
 
-await step("P02", "一括操作の欄から、チェックしたファイルをプレイリストに追加できる（件数を確認する）", async () => {
+await step("P02", "一括操作の欄から、チェックしたファイルをプレイリストに追加できる（加えるだけなので確認しない）", async () => {
   await ui.check("chime.wav");
   await ui.check("chime.ogg");
   await ui.bulkMode("プレイリストに追加");
   await page.getByLabel("チェックしたファイルを加えるプレイリスト").selectOption({ label: "戦闘" });
   await page.getByTestId("bulk-bar").getByRole("button", { name: "追加", exact: true }).click();
   await waitIdle();
-  expect((await ui.lastConfirm()).includes("チェックした2件をプレイリスト「戦闘」に追加しますか"), await ui.lastConfirm());
+  expect((await status()).includes("2件をプレイリスト「戦闘」に追加しました"), await status());
   await ui.clearChecks();
 });
 
@@ -315,6 +315,21 @@ await step("P19", "項目に別名を付けると、編集画面と再生の欄�
   await page.getByLabel("chime.wavの別名", { exact: true }).press("Enter");
   await waitIdle();
   expect((await items())[0] === "ファイル:chime.wav", (await items())[0]);
+});
+
+await step("P20", "ファイルの行を左の欄のプレイリストへドラッグすると加わる（チェックした行をつかむとチェックしたファイルすべて）", async () => {
+  await back();
+  await createPlaylist("ドラッグ");
+  const target = playlistItem("ドラッグ");
+  await ui.dragTo(row("chime.flac").locator(".file-name"), target, 0.5);
+  await ui.check("chime.ogg");
+  await ui.check("chime.mp3");
+  await ui.dragTo(row("chime.ogg").locator(".file-name"), target, 0.5);
+  await open("ドラッグ");
+  const list = (await items()).join(" / ");
+  expect(list === "ファイル:chime.flac / ファイル:chime.mp3 / ファイル:chime.ogg", list);
+  await back();
+  await ui.clearChecks();
 });
 
 await ui.finish();

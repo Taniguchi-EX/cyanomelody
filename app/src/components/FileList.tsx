@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
+import { useFileDrag } from "../hooks/useFileDrag";
 
 const ROW_HEIGHT = 30;
 
@@ -19,6 +20,8 @@ type Props = {
   onPlay: (file: AudioFile) => void;
   /** 行にハッシュ値の先頭を出す（重複を見るとき） */
   showHash: boolean;
+  /** 行を左の欄のプレイリストへドラッグしたとき。チェックした行をつかんだら、チェックしたファイルすべて */
+  onDropToPlaylist: (fileIds: number[], playlistId: number) => void;
 };
 
 export function FileList({
@@ -31,7 +34,9 @@ export function FileList({
   onCheckShown,
   onPlay,
   showHash,
+  onDropToPlaylist,
 }: Props) {
+  const beginDrag = useFileDrag(onDropToPlaylist);
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: files.length,
@@ -90,6 +95,7 @@ export function FileList({
                   data-testid="file-row"
                   data-rel-path={f.relPath}
                   onClick={() => onFocus(f)}
+                  onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
                 >
                   <button
                     className="play"
@@ -105,7 +111,7 @@ export function FileList({
                   </button>
                   {f.missing && (
                     <span className="warn" title="ファイルが見つかりません">
-                      ⚠見つからない
+                      ⚠
                     </span>
                   )}
                   {showHash && (

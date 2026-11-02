@@ -63,25 +63,32 @@ await step("B04", "チェックは絞り込みの条件を変えても外れな�
   await ui.check("chime.flac");
   let c = await ui.checkedCount();
   expect(c === "チェック 3件（表示中 1件）", `風で絞り込み中 ${c}`);
-  await clearFilter();
+  await tagItem("風").click();
+  await page.waitForTimeout(400);
   c = await ui.checkedCount();
   expect(c === "チェック 3件（表示中 3件）", `解除後 ${c}`);
   expect((await isChecked("chime.wav")) && (await isChecked("chime.flac")) && (await isChecked("chime.mp3")), "外れた");
 });
 
-await step("B05", "「チェックしたファイルだけ」はほかの条件とANDで、「絞り込みを解除」で外れる（チェックは残る）", async () => {
+await step("B05", "「チェックしたファイルだけ」はほかの条件とANDで、「✕」（すべて解除）で絞り込みもチェックも右の欄の表示も外れる", async () => {
   await checkedOnly().check();
   await page.waitForTimeout(400);
   expect((await fileCount()) === 3, `チェックしたファイルだけ ${await fileCount()}`);
   await filterText("wav");
   expect((await fileCount()) === 1, `ファイル名とAND ${await fileCount()}`);
+  await row("chime.wav").click();
   await clearFilter();
   expect(!(await checkedOnly().isChecked()), "チェックしたファイルだけが外れない");
   expect((await fileCount()) === 5, `解除後 ${await fileCount()}`);
-  expect((await ui.checkedCount()).startsWith("チェック 3件"), "チェックが外れた");
+  expect((await ui.checkedCount()).startsWith("チェック 0件"), "チェックが外れない");
+  expect((await page.getByTestId("detail-panel").count()) === 0, "右の欄の表示が残る");
+  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "解除するものがないのにボタンが出ている");
 });
 
 await step("B06", "見出しのチェックボックスで、表示中のファイルをすべてチェック・すべて外す", async () => {
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await ui.check("chime.flac");
   await filterText("chime.");
   const head = page.getByLabel("表示中のファイルをすべてチェック");
   expect(await head.evaluate((el) => el.indeterminate), "一部チェックの表示になっていない");
@@ -115,7 +122,9 @@ await step("B08", "表示していないファイルも含めて、チェック�
   await waitIdle();
   const confirm = await ui.lastConfirm();
   expect(confirm === "チェックした2件にライセンス「規約A」を設定しますか？", confirm);
-  await clearFilter();
+  // 絞り込みだけを外す（「すべて解除」だとチェックも外れる）
+  await tagItem("雨").click();
+  await page.waitForTimeout(400);
   const n = await page.getByTestId("license").filter({ hasText: "規約A" }).locator(".sub").innerText();
   expect(n === "2", `規約Aの件数 ${n}`);
   await shot("B08_一括でライセンスを設定");

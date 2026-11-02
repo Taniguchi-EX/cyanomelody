@@ -733,8 +733,8 @@ h2:first-child {
 
 .item-kind {
   flex: none;
-  width: 110px;
-  font-size: 12px;
+  width: 22px;
+  text-align: center;
   color: var(--fg-sub);
 }
 
@@ -816,4 +816,40 @@ h2:first-child {
 
 .item-chain {
   max-width: 150px;
+}
+
+/* ===== ドラッグでプレイリストへ加える ===== */
+
+.drag-ghost {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+}
+
+[data-tree="playlists"].drop-target {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* 記号だけのボタン */
+button.icon {
+  padding: 0 6px;
+  line-height: 1.4;
+}
+
+.clear-all {
+  color: var(--fg-sub);
+}
+
+.item-content.editable {
+  cursor: text;
+}
+
+.item-content.editable:hover {
+  text-decoration: underline dotted;
 }

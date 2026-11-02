@@ -45,6 +45,13 @@ function kindLabel(item: PlaylistItem): string {
   return item.owned ? "子のプレイリスト" : "プレイリスト";
 }
 
+/** 種類を表す記号（名前は title で出す） */
+function kindIcon(item: PlaylistItem): string {
+  if (item.kind === "file") return "♪";
+  if (item.kind === "tags") return "🏷";
+  return item.owned ? "📁" : "↪";
+}
+
 function itemContent(item: PlaylistItem): string {
   if (item.kind === "file") return item.file?.relPath ?? "（ファイルなし）";
   if (item.kind === "tags") return item.tags.map((t) => t.name).join(" ＋ ");
@@ -210,7 +217,9 @@ export function PlaylistEditor({
             data-item-index={index}
             data-item-kind={item.kind}
           >
-            <span className="item-kind">{kindLabel(item)}</span>
+            <span className="item-kind" title={kindLabel(item)}>
+              {kindIcon(item)}
+            </span>
             {aliasItemId === item.id ? (
               <input
                 type="text"
@@ -227,7 +236,16 @@ export function PlaylistEditor({
                 aria-label={`${itemContent(item)}の別名`}
               />
             ) : (
-              <span className="item-content" title={itemContent(item)} data-testid="item-content">
+              <span
+                className="item-content editable"
+                title={`${itemContent(item)}（押すと別名を付けられます）`}
+                data-testid="item-content"
+                role="button"
+                tabIndex={0}
+                aria-label={`${itemContent(item)}の別名を付ける`}
+                onClick={() => !busy && startAlias(item)}
+                onKeyDown={(e) => e.key === "Enter" && !busy && startAlias(item)}
+              >
                 {item.alias ? (
                   <>
                     <span className="item-alias">{item.alias}</span>
@@ -236,7 +254,12 @@ export function PlaylistEditor({
                 ) : (
                   itemContent(item)
                 )}
-                {item.file?.missing && <span className="warn"> ⚠見つからない</span>}
+                {item.file?.missing && (
+                  <span className="warn" title="ファイルが見つかりません">
+                    {" "}
+                    ⚠
+                  </span>
+                )}
               </span>
             )}
             {item.kind !== "file" && (
@@ -266,7 +289,7 @@ export function PlaylistEditor({
               aria-label={`${itemContent(item)}のエフェクト`}
               title="この項目にかけるエフェクトのまとまり"
             >
-              <option value="">エフェクトなし</option>
+              <option value="">fx なし</option>
               {chains.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -274,14 +297,13 @@ export function PlaylistEditor({
               ))}
             </select>
             <button
-              onClick={() => startAlias(item)}
-              disabled={busy || aliasItemId === item.id}
-              aria-label={`${itemContent(item)}の別名を付ける`}
+              className="icon"
+              onClick={() => onRemoveItem(item)}
+              disabled={busy}
+              title="外す"
+              aria-label={`${itemContent(item)}を外す`}
             >
-              別名
-            </button>
-            <button onClick={() => onRemoveItem(item)} disabled={busy} aria-label={`${itemContent(item)}を外す`}>
-              外す
+              ✕
             </button>
             <span
               className="drag-handle"
@@ -359,7 +381,7 @@ export function PlaylistEditor({
           <button onClick={() => onAddTags(filterTagIds)} disabled={busy || filterTagIds.length === 0}>
             いまの絞り込みのタグを加える
           </button>
-          <span className="sub">{filterTags.length > 0 ? filterTags.map((t) => t.name).join(" ＋ ") : "（タグで絞り込んでいません）"}</span>
+          {filterTags.length > 0 && <span className="sub">{filterTags.map((t) => t.name).join(" ＋ ")}</span>}
         </div>
 
         <h2>プレイリストを加える</h2>
@@ -384,7 +406,6 @@ export function PlaylistEditor({
             加える
           </button>
         </div>
-        <div className="sub">自分自身や、自分を含むプレイリストは、ループになるので選べません。</div>
 
         <h2>子のプレイリストを作る</h2>
         <div className="row">

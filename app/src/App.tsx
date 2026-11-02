@@ -284,6 +284,31 @@ export default function App() {
       showInfo(parts.join("、"));
     });
 
+  /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
+  const anyActive =
+    filter.tagIds.length > 0 ||
+    filter.untaggedOnly ||
+    filter.missingOnly ||
+    filter.duplicatesOnly ||
+    filter.hash !== null ||
+    filter.sourceIds.length > 0 ||
+    filter.noSource ||
+    filter.licenseIds.length > 0 ||
+    filter.noLicense ||
+    checkedOnly ||
+    text !== "" ||
+    checked.size > 0 ||
+    focusedId !== null;
+
+  /** 絞り込み・チェック・右の欄の表示を、すべて解除する */
+  const clearAll = () => {
+    setText("");
+    setCheckedOnly(false);
+    setFilter(EMPTY_FILTER);
+    checks.clear();
+    setFocusedId(null);
+  };
+
   const showSameAudio = (hash: string) => {
     setText("");
     setCheckedOnly(false);
@@ -580,11 +605,8 @@ export default function App() {
     return ok;
   };
 
-  const bulkAddToPlaylist = (playlistId: number) =>
-    bulk(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しますか？`, async () => {
-      await playlistApi.addFiles(playlistId, checks.ids());
-      showInfo(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
-    });
+  // 加えるのは元に戻しやすい（編集画面で外せる）ので、確認しない
+  const bulkAddToPlaylist = (playlistId: number) => addToPlaylist(playlistId, checks.ids());
 
   const addTagsToPlaylist = async (tagIds: number[]) => {
     if (!playlistDetail) return false;
@@ -826,25 +848,9 @@ export default function App() {
                   同じ音声：{filter.hash.slice(0, 12)}…
                 </span>
               )}
-              {(filter.tagIds.length > 0 ||
-                filter.untaggedOnly ||
-                filter.missingOnly ||
-                filter.duplicatesOnly ||
-                filter.hash ||
-                filter.sourceIds.length > 0 ||
-                filter.noSource ||
-                filter.licenseIds.length > 0 ||
-                filter.noLicense ||
-                checkedOnly ||
-                text) && (
-                <button
-                  onClick={() => {
-                    setText("");
-                    setCheckedOnly(false);
-                    setFilter(EMPTY_FILTER);
-                  }}
-                >
-                  絞り込みを解除
+              {anyActive && (
+                <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
+                  ✕
                 </button>
               )}
               <span className="sub" data-testid="file-count">
@@ -910,6 +916,7 @@ export default function App() {
               onCheckShown={checks.checkShown}
               onPlay={audio.preview}
               showHash={filter.duplicatesOnly || filter.hash !== null}
+          onDropToPlaylist={(ids, playlistId) => addToPlaylist(playlistId, ids)}
             />
           </>
         )}
