@@ -6,7 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSqlOutput, ValueRef};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension, ToSql};
 use serde::{Deserialize, Serialize};
 
 use crate::db::{exists, ids_json, now};
@@ -29,24 +30,7 @@ pub enum PlayMode {
     Random,
 }
 
-impl PlayMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            PlayMode::Order => "order",
-            PlayMode::Shuffle => "shuffle",
-            PlayMode::Random => "random",
-        }
-    }
-
-    fn parse(s: &str) -> PlayMode {
-        match s {
-            "shuffle" => PlayMode::Shuffle,
-            "random" => PlayMode::Random,
-            _ => PlayMode::Order,
-        }
-    }
-}
-
+/// 項目の種類
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ItemKind {
@@ -55,15 +39,37 @@ pub enum ItemKind {
     Playlist,
 }
 
-impl ItemKind {
-    fn parse(s: &str) -> ItemKind {
-        match s {
-            "file" => ItemKind::File,
-            "tags" => ItemKind::Tags,
-            _ => ItemKind::Playlist,
+/// データベースの文字列（playlist_items の mode・kind 列）と列挙型の対応。
+/// 決まった文字列以外はエラーにする（黙って別の値として扱わない）
+macro_rules! sql_text_enum {
+    ($ty:ident, $what:literal, { $($variant:ident => $text:literal),+ $(,)? }) => {
+        impl $ty {
+            fn as_str(self) -> &'static str {
+                match self {
+                    $($ty::$variant => $text),+
+                }
+            }
         }
-    }
+
+        impl ToSql for $ty {
+            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                Ok(self.as_str().into())
+            }
+        }
+
+        impl FromSql for $ty {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                match value.as_str()? {
+                    $($text => Ok($ty::$variant),)+
+                    other => Err(FromSqlError::Other(format!("不明な{}です: {other}", $what).into())),
+                }
+            }
+        }
+    };
 }
+
+sql_text_enum!(PlayMode, "再生方法", { Order => "order", Shuffle => "shuffle", Random => "random" });
+sql_text_enum!(ItemKind, "項目の種類", { File => "file", Tags => "tags", Playlist => "playlist" });
 
 /// 左の欄に出すプレイリスト（階層の順）
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -263,7 +269,7 @@ fn duplicate(name: &str) -> Error {
 fn append_item(
     conn: &Connection,
     playlist_id: i64,
-    kind: &str,
+    kind: ItemKind,
     file_id: Option<i64>,
     ref_id: Option<i64>,
     owned: bool,
@@ -294,7 +300,7 @@ pub fn create_playlist(conn: &mut Connection, name: &str, parent: Option<i64>) -
     )?;
     let id = tx.last_insert_rowid();
     if let Some(p) = parent {
-        append_item(&tx, p, "playlist", None, Some(id), true)?;
+        append_item(&tx, p, ItemKind::Playlist, None, Some(id), true)?;
     }
     tx.commit()?;
     Ok(id)
@@ -363,7 +369,7 @@ pub fn add_files(conn: &mut Connection, playlist_id: i64, file_ids: &[i64]) -> R
         .query_map([ids_json(file_ids)], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for f in sorted {
-        append_item(&tx, playlist_id, "file", Some(f), None, false)?;
+        append_item(&tx, playlist_id, ItemKind::File, Some(f), None, false)?;
     }
     tx.commit()?;
     Ok(())
@@ -382,7 +388,7 @@ pub fn add_tags(conn: &mut Connection, playlist_id: i64, tag_ids: &[i64]) -> Res
     if tags.is_empty() {
         return Err(Error::invalid("タグを1つ以上選んでください"));
     }
-    let item = append_item(&tx, playlist_id, "tags", None, None, false)?;
+    let item = append_item(&tx, playlist_id, ItemKind::Tags, None, None, false)?;
     for t in tags {
         tx.execute("INSERT INTO playlist_item_tags (item_id, tag_id) VALUES (?1, ?2)", [item, t])?;
     }
@@ -396,7 +402,7 @@ pub fn add_playlist_ref(conn: &mut Connection, playlist_id: i64, ref_id: i64) ->
     ensure_exists(&tx, playlist_id)?;
     ensure_exists(&tx, ref_id)?;
     check_no_loop(&tx, playlist_id, ref_id)?;
-    let item = append_item(&tx, playlist_id, "playlist", None, Some(ref_id), false)?;
+    let item = append_item(&tx, playlist_id, ItemKind::Playlist, None, Some(ref_id), false)?;
     tx.commit()?;
     Ok(item)
 }
@@ -442,7 +448,7 @@ pub fn move_item(conn: &mut Connection, item_id: i64, index: usize) -> Result<()
 pub fn set_item_mode(conn: &Connection, item_id: i64, mode: PlayMode) -> Result<()> {
     let n = conn.execute(
         "UPDATE playlist_items SET mode = ?2 WHERE id = ?1 AND kind <> 'file'",
-        params![item_id, mode.as_str()],
+        params![item_id, mode],
     )?;
     if n == 0 {
         return Err(Error::invalid("再生方法を変えられる項目が見つかりません"));
@@ -484,7 +490,7 @@ pub fn move_playlist(conn: &mut Connection, id: i64, target: MoveTarget) -> Resu
             // 今の親での項目をそのまま使う（再生方法を引き継ぐ）。最上位からなら新しく作る
             let item = match current {
                 Some((_, item)) => item,
-                None => append_item(&tx, c, "playlist", None, Some(id), true)?,
+                None => append_item(&tx, c, ItemKind::Playlist, None, Some(id), true)?,
             };
             let mut ids: Vec<i64> = item_ids(&tx, c)?.into_iter().filter(|&i| i != item).collect();
             let index = match (target, anchor) {
@@ -555,8 +561,8 @@ impl<'a> Catalog<'a> {
                     r.get::<_, i64>(0)?,
                     ItemRow {
                         id: r.get(1)?,
-                        kind: ItemKind::parse(&r.get::<_, String>(2)?),
-                        mode: PlayMode::parse(&r.get::<_, String>(3)?),
+                        kind: r.get(2)?,
+                        mode: r.get(3)?,
                         owned: r.get(4)?,
                         file_id: r.get(5)?,
                         ref_id: r.get(6)?,
@@ -1105,5 +1111,46 @@ mod tests {
         let n = expand_playlist(&conn, top, PlayMode::Shuffle).unwrap().len();
         let expand_ms = t1.elapsed().as_secs_f64() * 1000.0;
         println!("編集画面の表示 {get_ms:.1}ms（項目{}件）、展開 {expand_ms:.1}ms（{n}曲）", detail.items.len());
+    }
+
+    #[test]
+    fn unknown_text_in_database_is_an_error() {
+        let mut conn = setup();
+        let a = create_playlist(&mut conn, "A", None).unwrap();
+        let b = create_playlist(&mut conn, "B", None).unwrap();
+        let item = add_playlist_ref(&mut conn, a, b).unwrap();
+        // CHECK 制約を外して、決まっていない文字列を入れる
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON").unwrap();
+        conn.execute("UPDATE playlist_items SET mode = 'loop' WHERE id = ?1", [item]).unwrap();
+        let err = get_playlist(&conn, a).unwrap_err().to_string();
+        assert!(err.contains("不明な再生方法です: loop"), "{err}");
+    }
+
+    /// 3万件が対象のタグの組み合わせ1つのプレイリストを展開する速さ。cargo test --release tag_combo_speed -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn tag_combo_speed() {
+        use std::time::Instant;
+        let mut conn = setup();
+        {
+            let tx = conn.transaction().unwrap();
+            let mut stmt = tx
+                .prepare("INSERT INTO audio_files (id, folder_id, rel_path, size, modified_at, added_at) VALUES (?1, 1, ?2, 0, 0, 0)")
+                .unwrap();
+            for i in 100..30_100i64 {
+                stmt.execute(rusqlite::params![i, format!("d{:02}/se_{i:05}.wav", i % 100)]).unwrap();
+            }
+            drop(stmt);
+            tx.commit().unwrap();
+        }
+        let all: Vec<i64> = (1..30_100).collect();
+        let tag = add_tag(&mut conn, &all, "大量").unwrap();
+        let p = create_playlist(&mut conn, "大量", None).unwrap();
+        add_tags(&mut conn, p, &[tag]).unwrap();
+        for round in 0..3 {
+            let t0 = Instant::now();
+            let n = expand_playlist(&conn, p, PlayMode::Order).unwrap().len();
+            println!("{round}回目：展開 {:.1}ms（{n}曲）", t0.elapsed().as_secs_f64() * 1000.0);
+        }
     }
 }

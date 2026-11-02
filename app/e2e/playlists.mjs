@@ -276,6 +276,12 @@ await step("P17", "3万件が対象のタグの組み合わせを再生し始め
   await page.getByRole("button", { name: "選ぶ", exact: true }).click();
   await page.getByRole("button", { name: "この組み合わせを加える" }).click();
   await waitIdle();
+  // 裏でのハッシュ値の計算（3万件）とデータベースを取り合うと時間がばらつくので、終わるのを待ってから測る
+  await page.waitForFunction(() => document.querySelector("[data-testid=hash-status]")?.textContent?.includes("計算しました"), null, {
+    timeout: 120000,
+  });
+  // 計算が終わると一覧（3万件）を読み直すので、それも待つ
+  await page.waitForTimeout(1000);
   const t0 = Date.now();
   await page.getByRole("button", { name: "▶ 再生" }).click();
   await page.getByTestId("player-bar").waitFor({ timeout: 30000 });
