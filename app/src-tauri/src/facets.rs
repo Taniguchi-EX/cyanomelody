@@ -245,6 +245,9 @@ mod tests {
             FileFilter { untagged_only: true, ..Default::default() },
             FileFilter { no_source: true, text: "wav".into(), ..Default::default() },
             FileFilter { file_ids: Some(vec![1, 2]), ..Default::default() },
+            FileFilter { tag_ids: vec![boom], source_ids: vec![s1], ..Default::default() },
+            FileFilter { untagged_only: true, no_license: true, ..Default::default() },
+            FileFilter { tag_ids: vec![env, rain], license_ids: vec![99], ..Default::default() },
         ] {
             check_against_list(&conn, &filter);
         }

@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use credits::{Credit, CreditInput, CreditKind, LicenseType};
 use error::Result;
 use error::Error;
+use facets::Facets;
 use files::{AudioFile, FileFilter, FileSummary};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
@@ -169,6 +170,12 @@ async fn list_files(state: State<'_, AppState>, filter: FileFilter) -> Result<Ve
     files::list_files(&state.conn(), &filter)
 }
 
+/// 絞り込みの各項目を選んだときの件数
+#[tauri::command]
+async fn facet_counts(state: State<'_, AppState>, filter: FileFilter) -> Result<Facets> {
+    facets::facet_counts(&state.conn(), &filter)
+}
+
 #[tauri::command]
 async fn summarize_files(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<FileSummary> {
     files::summarize_files(&state.conn(), &file_ids)
@@ -300,6 +307,7 @@ pub fn run() {
             scan_folder,
             list_files,
             summarize_files,
+            facet_counts,
             list_tags,
             create_tag,
             rename_tag,

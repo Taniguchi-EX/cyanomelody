@@ -212,9 +212,12 @@ await step("C13", "絞り込み：出典どうしはOR、「なし」とは同�
   await leftItem("license", "新しい規約").click();
   await page.waitForTimeout(400);
   expect((await fileCount()) === 2, `AND ${await fileCount()}`);
+  // 絞り込んだファイルはどれもライセンスが設定されているので、「（ライセンスなし）」は0件になりグレーアウトする
+  // （「絞り込み条件のグレーアウト」の作業で、0件になる条件は選べなくなった）
+  expect((await page.getByTestId("license-none").getAttribute("aria-disabled")) === "true", "グレーアウトしていない");
   await page.getByTestId("license-none").click();
   await page.waitForTimeout(400);
-  expect((await fileCount()) === 0, `出典あり・ライセンスなし ${await fileCount()}`);
+  expect((await fileCount()) === 2, `グレーアウトした条件が選ばれた ${await fileCount()}`);
   await shot("C13_絞り込み");
 });
 

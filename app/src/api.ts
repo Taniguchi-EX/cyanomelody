@@ -47,6 +47,15 @@ export type FileFilter = {
   fileIds: number[] | null;
 };
 
+/** 絞り込みの各項目を選んだときの件数。0件の項目は入らない */
+export type Facets = {
+  tags: CountItem[];
+  untagged: number;
+  /** id が null は「（出典なし）」 */
+  sources: CountItem[];
+  licenses: CountItem[];
+};
+
 /** 件数の内訳の1項目。id が null は「なし」 */
 export type CountItem = { id: number | null; count: number };
 
@@ -85,6 +94,7 @@ export const api = {
   removeFolder: (folderId: number) => invoke<void>("remove_folder", { folderId }),
   scanFolder: (folderId: number) => invoke<ScanResult>("scan_folder", { folderId }),
   listFiles: (filter: FileFilter) => invoke<AudioFile[]>("list_files", { filter }),
+  facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   summarizeFiles: (fileIds: number[]) => invoke<FileSummary>("summarize_files", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),

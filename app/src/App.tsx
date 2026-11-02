@@ -12,6 +12,7 @@ import {
   type CreditKind,
   type FileFilter,
   type FileSummary,
+  type Facets,
   type HashProgress,
   type LibraryFolder,
   type LicenseType,
@@ -67,6 +68,8 @@ export default function App() {
   const [checkAnchor, setCheckAnchor] = useState<number | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
   const [summary, setSummary] = useState<FileSummary | null>(null);
+  /** 左の欄の各項目を選んだときの件数 */
+  const [facets, setFacets] = useState<Facets | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
@@ -86,8 +89,10 @@ export default function App() {
   // 「チェックしたファイルだけ」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
   const reloadFiles = useCallback(async () => {
-    const list = await api.listFiles({ ...filter, fileIds: checkedFilter ? [...checkedFilter] : null });
+    const request = { ...filter, fileIds: checkedFilter ? [...checkedFilter] : null };
+    const [list, counts] = await Promise.all([api.listFiles(request), api.facetCounts(request)]);
     setFiles(list);
+    setFacets(counts);
     // 絞り込みで消えたファイルは、右の欄からも消す
     setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
   }, [filter, checkedFilter]);
@@ -136,10 +141,8 @@ export default function App() {
   // チェックしたファイルの内訳。データが変わると一覧も読み直されるので、一覧が変わるたびに求め直す。
   // ライブラリから消えたファイル（登録解除など）は、チェックから外す
   useEffect(() => {
-    if (checked.size === 0) {
-      setSummary(null);
-      return;
-    }
+    // チェックがないときは一括操作の欄を出さないので、内訳は求めない（前の内訳は使われない）
+    if (checked.size === 0) return;
     let cancelled = false;
     api
       .summarizeFiles([...checked])
@@ -549,6 +552,7 @@ export default function App() {
           onToggleTag={toggleTag}
           onToggleUntagged={toggleUntagged}
           onManage={() => setManaging(true)}
+          facets={facets}
           busy={busy}
           onMove={moveTag}
         />
@@ -559,6 +563,7 @@ export default function App() {
             credits={creditsOf(kind)}
             selectedIds={filter[FILTER_KEYS[kind].ids]}
             noneSelected={filter[FILTER_KEYS[kind].none]}
+            counts={facets ? (kind === "source" ? facets.sources : facets.licenses) : null}
             onToggle={(id) => toggleCredit(kind, id)}
             onToggleNone={() => toggleCreditNone(kind)}
             onManage={() => setManagingCredit(kind)}

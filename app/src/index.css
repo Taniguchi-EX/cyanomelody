@@ -183,6 +183,16 @@ h2:first-child {
   background: var(--bg);
 }
 
+.tag-list li.disabled {
+  color: var(--fg-sub);
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tag-list li.disabled:hover {
+  background: none;
+}
+
 .tag-list li.active {
   background: var(--selected);
   font-weight: 600;

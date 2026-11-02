@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import type { FileFilter, MoveTarget, Tag } from "../api";
+import type { Facets, FileFilter, MoveTarget, Tag } from "../api";
 import { descendantsAndSelf, parentIds, visibleTags } from "../tagTree";
 import { Collapsible } from "./Collapsible";
 
@@ -11,6 +11,8 @@ type Props = {
   onToggleUntagged: () => void;
   onManage: () => void;
   onMove: (tag: Tag, target: MoveTarget) => void;
+  /** 各項目を選んだときの件数。まだ求めていなければ null（タグの総数を出す） */
+  facets: Facets | null;
 };
 
 /** ドラッグ中に、どこに落とすかの表示 */
@@ -36,13 +38,18 @@ function saveCollapsed(ids: Set<number>) {
   }
 }
 
-export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, onManage, onMove }: Props) {
+export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, onManage, onMove, facets }: Props) {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
   const [dragId, setDragId] = useState<number | null>(null);
   const [drop, setDrop] = useState<Drop | null>(null);
   const start = useRef<{ tag: Tag; x: number; y: number; moving: boolean } | null>(null);
 
   const parents = useMemo(() => parentIds(tags), [tags]);
+  // 選んだときの件数。0件になる項目はグレーアウトし、選べないようにする（選んでいる項目は外せる）
+  const facetMap = useMemo(() => new Map(facets?.tags.map((c) => [c.id, c.count])), [facets]);
+  const countOf = (t: Tag) => (facets ? (facetMap.get(t.id) ?? 0) : t.fileCount);
+  const untaggedCount = facets?.untagged ?? null;
+  const untaggedDisabled = untaggedCount === 0 && !filter.untaggedOnly;
   const shown = useMemo(() => visibleTags(tags, collapsed), [tags, collapsed]);
   const forbidden = useMemo(
     () => (dragId === null ? new Set<number>() : descendantsAndSelf(tags, dragId)),
@@ -118,55 +125,67 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
       }
     >
       <ul className={`tag-list tag-tree${dragId !== null ? " dragging" : ""}`}>
-        <li className={filter.untaggedOnly ? "active" : ""} onClick={onToggleUntagged} data-testid="untagged">
-          <span>（タグなし）</span>
+        <li
+          className={(filter.untaggedOnly ? "active" : "") + (untaggedDisabled ? " disabled" : "")}
+          onClick={() => !untaggedDisabled && onToggleUntagged()}
+          aria-disabled={untaggedDisabled}
+          data-testid="untagged"
+        >
+          <span className="tag-name">（タグなし）</span>
+          {untaggedCount !== null && <span className="sub">{untaggedCount}</span>}
         </li>
-        {shown.map((t) => (
-          <li
-            key={t.id}
-            className={
-              (filter.tagIds.includes(t.id) ? "active" : "") +
-              (forbidden.has(t.id) ? " drag-source" : "") +
-              dropClass(t.id)
-            }
-            onClick={() => onToggleTag(t.id)}
-            data-testid="tag"
-            data-tag-id={t.id}
-            data-tag-name={t.name}
-            data-depth={t.depth}
-            style={{ paddingLeft: 6 + t.depth * 14 }}
-          >
-            <span
-              className="twisty"
-              onClick={(e) => {
-                // 子のないタグでは、行のクリック（絞り込み）として扱う
-                if (!parents.has(t.id)) return;
-                e.stopPropagation();
-                toggleCollapsed(t.id);
-              }}
-              role={parents.has(t.id) ? "button" : undefined}
-              aria-label={parents.has(t.id) ? `${t.name}を${collapsed.has(t.id) ? "開く" : "たたむ"}` : undefined}
-              data-testid="tag-twisty"
+        {shown.map((t) => {
+          const selected = filter.tagIds.includes(t.id);
+          const disabled = countOf(t) === 0 && !selected;
+          return (
+            <li
+              key={t.id}
+              className={
+                (selected ? "active" : "") +
+                (disabled ? " disabled" : "") +
+                (forbidden.has(t.id) ? " drag-source" : "") +
+                dropClass(t.id)
+              }
+              onClick={() => !disabled && onToggleTag(t.id)}
+              aria-disabled={disabled}
+              data-testid="tag"
+              data-tag-id={t.id}
+              data-tag-name={t.name}
+              data-depth={t.depth}
+              style={{ paddingLeft: 6 + t.depth * 14 }}
             >
-              {parents.has(t.id) ? (collapsed.has(t.id) ? "▶" : "▼") : ""}
-            </span>
-            <span className="tag-name">{t.name}</span>
-            <span className="sub">{t.fileCount}</span>
-            <span
-              className="drag-handle"
-              title="ドラッグして並べ替え"
-              aria-label={`${t.name}を移す`}
-              data-testid="drag-handle"
-              onClick={(e) => e.stopPropagation()}
-              onPointerDown={(e) => onPointerDown(e, t)}
-              onPointerMove={onPointerMove}
-              onPointerUp={(e) => finish(e, true)}
-              onPointerCancel={(e) => finish(e, false)}
-            >
-              ≡
-            </span>
-          </li>
-        ))}
+              <span
+                className="twisty"
+                onClick={(e) => {
+                  // 子のないタグでは、行のクリック（絞り込み）として扱う
+                  if (!parents.has(t.id)) return;
+                  e.stopPropagation();
+                  toggleCollapsed(t.id);
+                }}
+                role={parents.has(t.id) ? "button" : undefined}
+                aria-label={parents.has(t.id) ? `${t.name}を${collapsed.has(t.id) ? "開く" : "たたむ"}` : undefined}
+                data-testid="tag-twisty"
+              >
+                {parents.has(t.id) ? (collapsed.has(t.id) ? "▶" : "▼") : ""}
+              </span>
+              <span className="tag-name">{t.name}</span>
+              <span className="sub">{countOf(t)}</span>
+              <span
+                className="drag-handle"
+                title="ドラッグして並べ替え"
+                aria-label={`${t.name}を移す`}
+                data-testid="drag-handle"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => onPointerDown(e, t)}
+                onPointerMove={onPointerMove}
+                onPointerUp={(e) => finish(e, true)}
+                onPointerCancel={(e) => finish(e, false)}
+              >
+                ≡
+              </span>
+            </li>
+          );
+        })}
       </ul>
       {tags.length > 0 && (
         <div
