@@ -8,9 +8,20 @@ type Props = {
   onAddTag: (name: string) => Promise<boolean>;
   onRemoveTag: (tagId: number) => void;
   onRemoveMissing: () => void;
+  onRelink: () => void;
+  onShowSameAudio: (hash: string) => void;
 };
 
-export function SelectionPanel({ files, tags, busy, onAddTag, onRemoveTag, onRemoveMissing }: Props) {
+export function SelectionPanel({
+  files,
+  tags,
+  busy,
+  onAddTag,
+  onRemoveTag,
+  onRemoveMissing,
+  onRelink,
+  onShowSameAudio,
+}: Props) {
   const [name, setName] = useState("");
 
   // 選んだファイルに付いているタグと、そのタグが付いたファイルの数
@@ -39,7 +50,20 @@ export function SelectionPanel({ files, tags, busy, onAddTag, onRemoveTag, onRem
   return (
     <section>
       <h2>選んだファイル（{files.length}件）</h2>
-      {files.length === 1 && <div className="folder-path sub">{files[0].path}</div>}
+      {files.length === 1 && (
+        <>
+          <div className="folder-path sub">{files[0].path}</div>
+          <h2>ハッシュ値</h2>
+          <div className="folder-path hash" data-testid="selected-hash">
+            {files[0].hash ?? (files[0].hashError ? `計算できませんでした（${files[0].hashError}）` : "未計算")}
+          </div>
+          <div className="row" style={{ marginTop: 4 }}>
+            <button onClick={() => files[0].hash && onShowSameAudio(files[0].hash)} disabled={!files[0].hash}>
+              同じ音声のファイルを探す
+            </button>
+          </div>
+        </>
+      )}
 
       <h2>タグを付ける</h2>
       <div className="row">
@@ -93,8 +117,14 @@ export function SelectionPanel({ files, tags, busy, onAddTag, onRemoveTag, onRem
       {missingCount > 0 && (
         <>
           <h2>見つからないファイル</h2>
-          <div className="sub">選んだうち {missingCount}件 のファイルが見つかりません。</div>
+          <div className="sub">
+            選んだうち {missingCount}件 のファイルが見つかりません。
+            「ひも付け直す」で、ライブラリの中から同じ音声のファイルを探してタグを移します。
+          </div>
           <div className="row" style={{ marginTop: 4 }}>
+            <button onClick={onRelink} disabled={busy}>
+              ひも付け直す
+            </button>
             <button onClick={onRemoveMissing} disabled={busy}>
               ライブラリから外す
             </button>

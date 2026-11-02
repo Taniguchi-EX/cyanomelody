@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { api, describeScan, type AudioFile, type FileFilter, type LibraryFolder, type Tag } from "./api";
+import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  api,
+  describeHashing,
+  describeScan,
+  type AudioFile,
+  type FileFilter,
+  type HashProgress,
+  type LibraryFolder,
+  type Tag,
+} from "./api";
+import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
 import { FileList, type SelectMode } from "./components/FileList";
@@ -9,7 +21,14 @@ import { TagManager } from "./components/TagManager";
 
 type Status = { text: string; error: boolean };
 
-const EMPTY_FILTER: FileFilter = { text: "", tagIds: [], untaggedOnly: false, missingOnly: false };
+const EMPTY_FILTER: FileFilter = {
+  text: "",
+  tagIds: [],
+  untaggedOnly: false,
+  missingOnly: false,
+  duplicatesOnly: false,
+  hash: null,
+};
 
 export default function App() {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
@@ -23,6 +42,9 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
   const [managing, setManaging] = useState(false);
+  const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchPath, setSearchPath] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
@@ -47,13 +69,32 @@ export default function App() {
     reloadAll().catch(showError);
   }, [reloadAll]);
 
+  // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、選んだファイルのハッシュ値が変わるため）
+  const reloadAllRef = useRef(reloadAll);
+  reloadAllRef.current = reloadAll;
+  useEffect(() => {
+    api
+      .hashingProgress()
+      .then((p) => p.running && setHashProgress(p))
+      .catch(showError);
+    const unlisten = listen<HashProgress>("hash-progress", (e) => {
+      setHashProgress(e.payload);
+      if (!e.payload.running) reloadAllRef.current().catch(showError);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
+
+  const startHashing = () => api.startHashing().catch(showError);
+
   // ファイル名の入力は少し待ってから絞り込む
   useEffect(() => {
     const timer = setTimeout(() => setFilter((f) => (f.text === text ? f : { ...f, text })), 200);
     return () => clearTimeout(timer);
   }, [text]);
 
-  /** 処理中は操作できないようにし、終わったら一覧を読み直す */
+  /** 処理中は操作できないようにし、終わったら一覧を読み直す。読み直しが済むまでを処理中とする */
   const run = async (task: () => Promise<void>) => {
     setBusy(true);
     try {
@@ -61,8 +102,8 @@ export default function App() {
     } catch (e) {
       showError(e);
     } finally {
-      setBusy(false);
       await reloadAll().catch(showError);
+      setBusy(false);
     }
   };
 
@@ -111,6 +152,7 @@ export default function App() {
       const r = await api.addFolder(path);
       showInfo(describeScan(path, r));
       ok = true;
+      startHashing();
     });
     return ok;
   };
@@ -140,6 +182,7 @@ export default function App() {
       }
       if (errors.length) setStatus({ text: errors.join(" / "), error: true });
       else showInfo(messages.join(" / "));
+      startHashing();
     });
 
   const addTag = async (name: string) => {
@@ -166,6 +209,41 @@ export default function App() {
       showInfo(`${n}件をライブラリから外しました`);
     });
   };
+
+  const relink = () => {
+    const targets = selectedFiles.filter((f) => f.missing);
+    run(async () => {
+      const r = await api.relinkFiles(targets.map((f) => f.id));
+      const parts = [`ひも付け直した ${r.relinked}件`];
+      if (r.notFound) parts.push(`同じ音声のファイルがない ${r.notFound}件`);
+      if (r.ambiguous) parts.push(`候補が複数ある ${r.ambiguous}件`);
+      if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
+      showInfo(parts.join("、"));
+    });
+  };
+
+  const showSameAudio = (hash: string) => {
+    setText("");
+    setFilter({ ...EMPTY_FILTER, hash });
+  };
+
+  const browseSearchFile = async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "音声ファイル", extensions: [...AUDIO_EXTENSIONS] }],
+    });
+    if (typeof selected === "string") setSearchPath(selected);
+  };
+
+  const searchByFile = () =>
+    run(async () => {
+      const path = searchPath.trim();
+      const hash = await api.hashFile(path);
+      showSameAudio(hash);
+      setSearching(false);
+      setSearchPath("");
+      showInfo(`同じ音声のファイルを探しました: ${path}`);
+    });
 
   const toggleTag = (tagId: number) =>
     setFilter((f) => ({
@@ -277,7 +355,26 @@ export default function App() {
             />
             見つからないファイルだけ
           </label>
-          {(filter.tagIds.length > 0 || filter.untaggedOnly || filter.missingOnly || text) && (
+          <label>
+            <input
+              type="checkbox"
+              checked={filter.duplicatesOnly}
+              onChange={(e) => setFilter((f) => ({ ...f, duplicatesOnly: e.target.checked }))}
+            />
+            重複しているファイルだけ
+          </label>
+          <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
+          {filter.hash && (
+            <span className="chip" data-testid="hash-filter" title={filter.hash}>
+              同じ音声：{filter.hash.slice(0, 12)}…
+            </span>
+          )}
+          {(filter.tagIds.length > 0 ||
+            filter.untaggedOnly ||
+            filter.missingOnly ||
+            filter.duplicatesOnly ||
+            filter.hash ||
+            text) && (
             <button
               onClick={() => {
                 setText("");
@@ -291,6 +388,25 @@ export default function App() {
             {files.length}件{selected.size > 0 && `（${selected.size}件を選択中）`}
           </span>
         </div>
+        {searching && (
+          <div className="toolbar">
+            <span className="sub">このファイルと同じ音声のファイルを探す：</span>
+            <input
+              type="text"
+              placeholder="音声ファイルのパス"
+              value={searchPath}
+              onChange={(e) => setSearchPath(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && searchPath.trim() && searchByFile()}
+              aria-label="探す音声ファイルのパス"
+            />
+            <button onClick={browseSearchFile} disabled={busy}>
+              参照
+            </button>
+            <button onClick={searchByFile} disabled={busy || !searchPath.trim()}>
+              探す
+            </button>
+          </div>
+        )}
         <FileList
           files={files}
           selected={selected}
@@ -298,6 +414,7 @@ export default function App() {
           onSelect={select}
           onSelectAll={() => setSelected(new Set(files.map((f) => f.id)))}
           onPlay={play}
+          showHash={filter.duplicatesOnly || filter.hash !== null}
         />
       </main>
 
@@ -309,11 +426,21 @@ export default function App() {
           onAddTag={addTag}
           onRemoveTag={removeTag}
           onRemoveMissing={removeMissing}
+          onRelink={relink}
+          onShowSameAudio={showSameAudio}
         />
       </aside>
 
-      <div className={`status${status.error ? " error" : ""}`} data-testid="status">
-        {busy ? "処理中…" : status.text || " "}
+      <div className="status-bar">
+        <div className={`status${status.error ? " error" : ""}`} data-testid="status">
+          {busy ? "処理中…" : status.text || " "}
+        </div>
+        {hashProgress && (
+          <div className="hash-status" data-testid="hash-status">
+            {describeHashing(hashProgress)}
+            {hashProgress.running && <button onClick={() => api.cancelHashing().catch(showError)}>中止</button>}
+          </div>
+        )}
       </div>
       <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
       {managing && (

@@ -24,6 +24,8 @@ export type AudioFile = {
   modifiedAt: number;
   missing: boolean;
   tags: string[];
+  hash: string | null;
+  hashError: string | null;
 };
 
 export type FileFilter = {
@@ -31,6 +33,8 @@ export type FileFilter = {
   tagIds: number[];
   untaggedOnly: boolean;
   missingOnly: boolean;
+  duplicatesOnly: boolean;
+  hash: string | null;
 };
 
 export type Tag = {
@@ -54,6 +58,11 @@ export const api = {
     invoke<RenameResult>("rename_tag", { tagId, name, merge }),
   deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),
   deleteUnusedTags: () => invoke<number>("delete_unused_tags"),
+  startHashing: () => invoke<void>("start_hashing"),
+  cancelHashing: () => invoke<void>("cancel_hashing"),
+  hashingProgress: () => invoke<HashProgress>("hashing_progress"),
+  hashFile: (path: string) => invoke<string>("hash_file", { path }),
+  relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
 };
 
 export type RenameResult = {
@@ -67,4 +76,28 @@ export function describeScan(path: string, r: ScanResult): string {
   if (r.missing) parts.push(`見つからない ${r.missing}件`);
   if (r.restored) parts.push(`戻った ${r.restored}件`);
   return `スキャンしました: ${path}（${parts.join("、")}）`;
+}
+
+export type HashProgress = {
+  running: boolean;
+  done: number;
+  total: number;
+  failed: number;
+  cancelled: boolean;
+};
+
+export type RelinkResult = {
+  relinked: number;
+  notFound: number;
+  ambiguous: number;
+  noHash: number;
+};
+
+export function describeHashing(p: HashProgress): string {
+  if (p.running) return `ハッシュ値を計算中 ${p.done}/${p.total}`;
+  const parts = [`${p.done}件`];
+  if (p.failed) parts.push(`計算できなかったファイル ${p.failed}件`);
+  return p.cancelled
+    ? `ハッシュ値の計算を中止しました（${parts.join("、")}）`
+    : `ハッシュ値を計算しました（${parts.join("、")}）`;
 }

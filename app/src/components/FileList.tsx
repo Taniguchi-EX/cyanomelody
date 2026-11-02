@@ -13,9 +13,11 @@ type Props = {
   onSelect: (index: number, mode: SelectMode) => void;
   onSelectAll: () => void;
   onPlay: (file: AudioFile) => void;
+  /** 行にハッシュ値の先頭を出す（重複を見るとき） */
+  showHash: boolean;
 };
 
-export function FileList({ files, selected, playingId, onSelect, onSelectAll, onPlay }: Props) {
+export function FileList({ files, selected, playingId, onSelect, onSelectAll, onPlay, showHash }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: files.length,
@@ -73,6 +75,11 @@ export function FileList({ files, selected, playingId, onSelect, onSelectAll, on
               {f.missing && (
                 <span className="warn" title="ファイルが見つかりません">
                   ⚠見つからない
+                </span>
+              )}
+              {showHash && (
+                <span className="hash" title={f.hash ?? ""}>
+                  {f.hash?.slice(0, 8) ?? "--------"}
                 </span>
               )}
               <span className="file-name" title={f.path}>

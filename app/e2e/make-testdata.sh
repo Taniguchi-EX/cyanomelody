@@ -18,6 +18,20 @@ ff -i "$formats/chime.wav" -metadata title="チャイム" "$formats/chime.flac"
 ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a libvorbis "$formats/chime.ogg"
 ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a aac "$formats/サブフォルダ/チャイム.m4a"
 
+# hash/ … ハッシュ値の機能の確認用。重複（そのままのコピーと、タグだけ書き換えたもの）と、壊れたファイルを含む
+# outside/ … ライブラリに登録しない場所の音声（ファイルを指定して探すときに使う）
+hash="$out/hash"
+outside="$out/outside"
+rm -rf "$hash" "$outside"
+mkdir -p "$hash/dup" "$outside"
+ff -f lavfi -i "sine=frequency=523:duration=0.5" -metadata title="ド" -c:a libmp3lame "$hash/se1.mp3"
+cp "$hash/se1.mp3" "$hash/dup/se1_copy.mp3"
+ff -i "$hash/se1.mp3" -map_metadata -1 -metadata title="タグを書き換えた" -c copy "$hash/se1_retag.mp3"
+ff -f lavfi -i "sine=frequency=659:duration=0.5" -metadata title="ミ" "$hash/se2.wav"
+printf x > "$hash/broken.wav"
+cp "$hash/se2.wav" "$outside/se2_outside.wav"
+printf 'not audio' > "$outside/text.mp3"
+
 if [ ! -d "$large" ]; then
   for d in $(seq -w 0 99); do
     mkdir -p "$large/d$d"

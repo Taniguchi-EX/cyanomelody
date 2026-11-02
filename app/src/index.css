@@ -93,10 +93,34 @@ input[type="text"] {
   min-height: 0;
 }
 
-.status {
+.status-bar {
   grid-column: 1 / -1;
+  display: flex;
+  gap: 16px;
+  align-items: center;
   border-top: 1px solid var(--border);
-  padding: 4px 8px;
+  padding: 0 8px;
+  min-height: 26px;
+}
+
+.hash-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--fg-sub);
+  white-space: nowrap;
+}
+
+.hash-status button {
+  font-size: 12px;
+  padding: 0 6px;
+}
+
+.status {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
   font-size: 12px;
   color: var(--fg-sub);
   white-space: nowrap;
@@ -227,6 +251,12 @@ h2:first-child {
   border-radius: 10px;
   font-size: 12px;
   background: var(--bg);
+}
+
+.hash {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  color: var(--fg-sub);
 }
 
 .play {
