@@ -722,28 +722,35 @@ fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut V
     path.push(playlist_id);
     let mut out = Vec::new();
     for item in cat.items(playlist_id) {
-        match item.kind {
-            ItemKind::File => {
-                if let (true, Some(file_id)) = (cat.file_ok(item.file_id), item.file_id) {
-                    out.push(Track { file_id, alias: item.alias.clone(), chains: Vec::from_iter(item.effect_chain_id) });
-                }
-            }
-            ItemKind::Tags => {
-                let tracks =
-                    cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
-                out.extend(apply_mode(tracks, item.mode, rng));
-            }
-            ItemKind::Playlist => {
-                if let Some(r) = item.ref_id {
-                    let tracks: Vec<Track> =
-                        expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
-                    out.extend(apply_mode(tracks, item.mode, rng));
-                }
-            }
-        }
+        out.extend(expand_item(cat, &item, rng, path)?);
     }
     path.pop();
     Ok(out)
+}
+
+/// 項目1つを展開する（項目の再生方法とエフェクトを当てはめる）
+fn expand_item(cat: &mut Catalog, item: &ItemRow, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<Track>> {
+    Ok(match item.kind {
+        ItemKind::File => match (cat.file_ok(item.file_id), item.file_id) {
+            (true, Some(file_id)) => {
+                vec![Track { file_id, alias: item.alias.clone(), chains: Vec::from_iter(item.effect_chain_id) }]
+            }
+            _ => Vec::new(),
+        },
+        ItemKind::Tags => {
+            let tracks =
+                cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
+            apply_mode(tracks, item.mode, rng)
+        }
+        ItemKind::Playlist => match item.ref_id {
+            Some(r) => {
+                let tracks: Vec<Track> =
+                    expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
+                apply_mode(tracks, item.mode, rng)
+            }
+            None => Vec::new(),
+        },
+    })
 }
 
 /// 書き出す内容の木（「プレイリストの出力」で使う）
@@ -834,6 +841,35 @@ fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Res
     ensure_exists(conn, id)?;
     let mut cat = Catalog::load(conn)?;
     let tracks = apply_mode(expand_items(&mut cat, id, rng, &mut Vec::new())?, mode, rng);
+    to_entries(conn, tracks)
+}
+
+/// 項目1つだけの再生順（項目の再生方法・別名・エフェクトは、プレイリストの中で再生したときと同じ。外側の項目のものは付かない）
+pub fn expand_playlist_item(conn: &Connection, item_id: i64) -> Result<Vec<PlayEntry>> {
+    expand_item_with(conn, item_id, &mut Rng::from_time())
+}
+
+fn expand_item_with(conn: &Connection, item_id: i64, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
+    let mut cat = Catalog::load(conn)?;
+    let (playlist_id, item) = cat
+        .items
+        .iter()
+        .find_map(|(p, items)| items.iter().find(|i| i.id == item_id).map(|i| (*p, i.clone())))
+        .ok_or_else(|| Error::invalid("項目が見つかりません"))?;
+    let tracks = expand_item(&mut cat, &item, rng, &mut vec![playlist_id])?;
+    to_entries(conn, tracks)
+}
+
+/// ファイルを項目として直接入れているプレイリスト（名前の順でなく、左の欄と同じ並びは画面側で決める）
+pub fn playlists_with_file(conn: &Connection, file_id: i64) -> Result<Vec<i64>> {
+    Ok(conn
+        .prepare("SELECT DISTINCT playlist_id FROM playlist_items WHERE file_id = ?1 ORDER BY playlist_id")?
+        .query_map([file_id], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// 展開した曲に、パスを付けて再生順の1曲にする
+fn to_entries(conn: &Connection, tracks: Vec<Track>) -> Result<Vec<PlayEntry>> {
     let files: Vec<i64> = tracks.iter().map(|t| t.file_id).collect();
     // パスはまとめて1回で引く（数万件でも速く）
     let paths: HashMap<i64, (String, String)> = conn
@@ -1100,6 +1136,34 @@ mod tests {
         delete_playlist(&mut conn, a).unwrap();
         assert_eq!(tree(&conn), "B1:0 B2:0 C:0");
         assert!(delete_playlist(&mut conn, a).is_err());
+    }
+
+    #[test]
+    fn expand_one_item_and_playlists_with_file() {
+        let mut conn = setup();
+        let rain = add_tag(&mut conn, &[1, 2, 3], "雨").unwrap();
+        let steps = create_playlist(&mut conn, "足音", None).unwrap();
+        add_files(&mut conn, steps, &[2, 3]).unwrap();
+        let battle = create_playlist(&mut conn, "戦闘", None).unwrap();
+        add_files(&mut conn, battle, &[4]).unwrap();
+        let tag_item = add_tags(&mut conn, battle, &[rain]).unwrap();
+        let ref_item = add_playlist_ref(&mut conn, battle, steps).unwrap();
+        let file_item = get_playlist(&conn, battle).unwrap().items[0].id;
+        set_item_alias(&conn, file_item, "扉").unwrap();
+        let one = |id, seed| expand_item_with(&conn, id, &mut Rng(seed)).unwrap();
+        let ids = |v: Vec<PlayEntry>| v.into_iter().map(|e| e.file_id).collect::<Vec<_>>();
+        let f = one(file_item, 1);
+        assert_eq!((f.len(), f[0].file_id, f[0].alias.as_deref()), (1, 4, Some("扉")));
+        assert_eq!(ids(one(tag_item, 1)), vec![1, 2, 3]);
+        assert_eq!(ids(one(ref_item, 1)), vec![2, 3]);
+        set_item_mode(&conn, tag_item, PlayMode::Random).unwrap();
+        assert_eq!(one(tag_item, 7).len(), 1);
+        assert!(expand_item_with(&conn, 9999, &mut Rng(1)).is_err());
+
+        assert_eq!(playlists_with_file(&conn, 2).unwrap(), vec![steps]);
+        assert_eq!(playlists_with_file(&conn, 4).unwrap(), vec![battle]);
+        // タグの組み合わせで入るだけのファイルは含めない
+        assert!(playlists_with_file(&conn, 1).unwrap().is_empty());
     }
 
     #[test]

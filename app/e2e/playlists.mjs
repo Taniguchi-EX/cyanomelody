@@ -353,4 +353,26 @@ await step("P21", "シャッフル・1曲のボタンで、再生方法を選ん
   await page.getByRole("button", { name: "停止", exact: true }).click();
 });
 
+await step("P22", "編集画面で項目の種類の記号を押すと、その項目だけ再生する", async () => {
+  await page.getByRole("button", { name: "chime.mp3を再生" }).click();
+  await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
+  expect((await position()) === "1/1", await position());
+  expect((await page.getByTestId("player-file").innerText()) === "chime.mp3", await page.getByTestId("player-file").innerText());
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+});
+
+await step("P23", "右の欄に、そのファイルを入れているプレイリストが出て、押すと開く", async () => {
+  await back();
+  await row("chime.flac").click();
+  await page.waitForTimeout(300);
+  const names = await page.getByTestId("used-in").getByRole("button").allInnerTexts();
+  expect(names.includes("ドラッグ"), names.join(","));
+  await shot("P23_入っているプレイリスト");
+  await page.getByTestId("used-in").getByRole("button", { name: "ドラッグ", exact: true }).click();
+  await page.waitForTimeout(300);
+  const name = await page.getByLabel("プレイリストの名前", { exact: true }).inputValue();
+  expect(name === "ドラッグ", name);
+  await back();
+});
+
 await ui.finish();

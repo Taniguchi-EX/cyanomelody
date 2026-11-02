@@ -269,6 +269,10 @@ export const playlistApi = {
   /** 空なら外す */
   setItemAlias: (itemId: number, alias: string) => invoke<void>("set_playlist_item_alias", { itemId, alias }),
   expand: (id: number, mode: PlayMode) => invoke<PlayEntry[]>("expand_playlist", { id, mode }),
+  /** 項目1つだけの再生順 */
+  expandItem: (itemId: number) => invoke<PlayEntry[]>("expand_playlist_item", { itemId }),
+  /** ファイルを項目として直接入れているプレイリストのid */
+  withFile: (fileId: number) => invoke<number[]>("playlists_with_file", { fileId }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   startExport: (id: number, dest: string) => invoke<string>("start_export", { id, dest }),
   cancelExport: () => invoke<void>("cancel_export"),

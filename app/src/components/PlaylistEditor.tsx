@@ -21,6 +21,8 @@ type Props = {
   onRename: (name: string) => Promise<boolean>;
   onDelete: () => void;
   onPlay: (mode: PlayMode) => void;
+  /** 項目1つだけを再生する */
+  onPlayItem: (item: PlaylistItem) => void;
   onRemoveItem: (item: PlaylistItem) => void;
   onMoveItem: (item: PlaylistItem, index: number) => void;
   onSetMode: (item: PlaylistItem, mode: PlayMode) => void;
@@ -69,6 +71,7 @@ export function PlaylistEditor({
   onRename,
   onDelete,
   onPlay,
+  onPlayItem,
   onRemoveItem,
   onMoveItem,
   onSetMode,
@@ -213,9 +216,16 @@ export function PlaylistEditor({
             data-item-index={index}
             data-item-kind={item.kind}
           >
-            <span className="item-kind" title={kindLabel(item)}>
-              {kindIcon(item)}
-            </span>
+            <button
+              className="item-kind"
+              title={kindLabel(item)}
+              aria-label={`${itemContent(item)}を再生`}
+              disabled={item.kind === "file" ? !item.file || item.file.missing : item.fileCount === 0}
+              onClick={() => onPlayItem(item)}
+            >
+              <span className="kind-icon">{kindIcon(item)}</span>
+              <span className="kind-play">▶</span>
+            </button>
             {aliasItemId === item.id ? (
               <input
                 type="text"

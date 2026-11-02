@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import type { AudioFile, PlaylistNode, Tag } from "../api";
+import { useEffect, useState, type ReactNode } from "react";
+import { playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
 import { PlaylistPicker } from "./PlaylistPicker";
 
 type Props = {
@@ -16,6 +16,7 @@ type Props = {
   children?: ReactNode;
   playlists: PlaylistNode[];
   onAddToPlaylist: (playlistId: number) => Promise<boolean>;
+  onOpenPlaylist: (playlistId: number) => void;
 };
 
 /** 右の欄。一覧でクリックした1件のファイルの詳細と操作 */
@@ -31,8 +32,26 @@ export function SelectionPanel({
   children,
   playlists,
   onAddToPlaylist,
+  onOpenPlaylist,
 }: Props) {
   const [name, setName] = useState("");
+  // このファイルを直接入れているプレイリスト。プレイリストが変わったら（項目の数が変わる）求め直す
+  const [usedIn, setUsedIn] = useState<{ fileId: number; ids: number[] } | null>(null);
+  const fileId = file?.id;
+  useEffect(() => {
+    if (fileId === undefined) return;
+    let alive = true;
+    playlistApi
+      .withFile(fileId)
+      .then((ids) => alive && setUsedIn({ fileId, ids }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [fileId, playlists]);
+  const usedInIds = usedIn && usedIn.fileId === fileId ? usedIn.ids : [];
+  // 左の欄と同じ並び
+  const usedInPlaylists = playlists.filter((p) => usedInIds.includes(p.id));
 
   if (!file) {
     return (
@@ -92,11 +111,13 @@ export function SelectionPanel({
           <li key={t.id} data-testid="selected-tag">
             <span>{t.name}</span>
             <button
+              className="icon"
               onClick={() => onRemoveTag(t.id)}
               disabled={busy}
+              title="外す"
               aria-label={`${t.name}を外す`}
             >
-              外す
+              ✕
             </button>
           </li>
         ))}
@@ -104,7 +125,16 @@ export function SelectionPanel({
 
       {children}
 
-      <h2>プレイリストに追加</h2>
+      <h2>プレイリスト</h2>
+      {usedInPlaylists.length > 0 && (
+        <div className="used-in" data-testid="used-in">
+          {usedInPlaylists.map((p) => (
+            <button key={p.id} className="chip" onClick={() => onOpenPlaylist(p.id)} title="開く">
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
       <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} label="このファイルを加えるプレイリスト" />
 
       {file.missing && (

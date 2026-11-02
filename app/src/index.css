@@ -889,6 +889,38 @@ button.icon {
 
 /* ===== 再生 ===== */
 
+/* 編集画面の項目の種類の記号。マウスを乗せると再生の記号に変わり、押すとその項目だけ再生する */
+button.item-kind {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  min-width: 1.6em;
+}
+
+button.item-kind .kind-play,
+button.item-kind:hover:not(:disabled) .kind-icon {
+  display: none;
+}
+
+button.item-kind:hover:not(:disabled) .kind-play {
+  display: inline;
+  color: var(--accent);
+}
+
+/* 右の欄の、ファイルが入っているプレイリスト */
+.used-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.used-in button.chip {
+  margin-left: 0;
+  color: var(--accent);
+  cursor: pointer;
+}
+
 .play-modes {
   display: inline-flex;
   gap: 2px;

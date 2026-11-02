@@ -374,6 +374,16 @@ async fn expand_playlist(state: State<'_, AppState>, id: i64, mode: PlayMode) ->
 }
 
 #[tauri::command]
+async fn expand_playlist_item(state: State<'_, AppState>, item_id: i64) -> Result<Vec<PlayEntry>> {
+    playlists::expand_playlist_item(&state.conn(), item_id)
+}
+
+#[tauri::command]
+async fn playlists_with_file(state: State<'_, AppState>, file_id: i64) -> Result<Vec<i64>> {
+    playlists::playlists_with_file(&state.conn(), file_id)
+}
+
+#[tauri::command]
 async fn list_effect_chains(state: State<'_, AppState>) -> Result<Vec<EffectChain>> {
     chains::list_chains(&state.conn())
 }
@@ -578,6 +588,8 @@ pub fn run() {
             start_export,
             cancel_export,
             expand_playlist,
+            expand_playlist_item,
+            playlists_with_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

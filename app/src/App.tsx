@@ -745,6 +745,19 @@ export default function App() {
     }
   };
 
+  const playPlaylistItem = async (item: PlaylistItem) => {
+    try {
+      const queue = await playlistApi.expandItem(item.id);
+      if (queue.length === 0) {
+        showInfo("再生するファイルがありません");
+        return;
+      }
+      audio.playQueue(playlistDetail?.name ?? "", queue);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
   return (
     <div className="app">
       <aside className="side">
@@ -804,6 +817,7 @@ export default function App() {
             onRename={(name) => renamePlaylist(playlistDetail.id, name)}
             onDelete={() => deletePlaylist(playlistDetail.id)}
             onPlay={(mode) => playPlaylist(playlistDetail.id, mode)}
+            onPlayItem={playPlaylistItem}
             onRemoveItem={removePlaylistItem}
             onMoveItem={movePlaylistItem}
             onSetMode={setPlaylistItemMode}
@@ -934,6 +948,7 @@ export default function App() {
           onShowSameAudio={showSameAudio}
           playlists={playlists}
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
+          onOpenPlaylist={openPlaylist}
         >
           {creditKinds.map((kind) => (
             <CreditField
