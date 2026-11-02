@@ -197,7 +197,12 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
              VALUES (?1, ?2, ?3, ?4, 0, ?5)",
         )?;
         let mut update = tx.prepare(
-            "UPDATE audio_files SET size = ?2, modified_at = ?3, missing = 0 WHERE id = ?1",
+            // サイズか更新日時が変わったら、ハッシュ値を消して計算し直させる
+            "UPDATE audio_files SET
+                hash = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash END,
+                hash_error = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash_error END,
+                size = ?2, modified_at = ?3, missing = 0
+             WHERE id = ?1",
         )?;
         let mut mark_missing = tx.prepare("UPDATE audio_files SET missing = 1 WHERE id = ?1")?;
 
@@ -325,6 +330,31 @@ mod tests {
         touch(&root.join("a.wav"));
         let r = scan_folder(&mut conn, id).unwrap();
         assert_eq!((r.found, r.added, r.missing, r.restored), (2, 0, 0, 1));
+    }
+
+    #[test]
+    fn scan_clears_hash_only_when_file_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        touch(&dir.path().join("a.wav"));
+        touch(&dir.path().join("b.wav"));
+        let mut conn = open_in_memory().unwrap();
+        let id = add_folder(&conn, dir.path()).unwrap();
+        scan_folder(&mut conn, id).unwrap();
+        conn.execute("UPDATE audio_files SET hash = 'h', hash_error = NULL", []).unwrap();
+
+        fs::write(dir.path().join("b.wav"), b"changed content").unwrap();
+        scan_folder(&mut conn, id).unwrap();
+        fn hash(conn: &Connection, rel: &str) -> Option<String> {
+            conn.query_row("SELECT hash FROM audio_files WHERE rel_path = ?1", [rel], |r| r.get(0))
+                .unwrap()
+        }
+        assert_eq!(hash(&conn, "a.wav").as_deref(), Some("h"));
+        assert_eq!(hash(&conn, "b.wav"), None);
+
+        // 見つからなくなってもハッシュ値は残す
+        fs::remove_file(dir.path().join("a.wav")).unwrap();
+        scan_folder(&mut conn, id).unwrap();
+        assert_eq!(hash(&conn, "a.wav").as_deref(), Some("h"));
     }
 
     #[test]

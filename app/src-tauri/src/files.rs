@@ -20,6 +20,10 @@ pub struct AudioFile {
     pub modified_at: i64,
     pub missing: bool,
     pub tags: Vec<String>,
+    /// 音声データ部分のハッシュ値。未計算・計算できなかったときは None
+    pub hash: Option<String>,
+    /// ハッシュ値を計算できなかった理由
+    pub hash_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -31,13 +35,18 @@ pub struct FileFilter {
     pub tag_ids: Vec<i64>,
     pub untagged_only: bool,
     pub missing_only: bool,
+    /// 同じハッシュ値のファイルが2件以上あるものだけに絞り込む（重複の判定はライブラリ全体で行う）
+    pub duplicates_only: bool,
+    /// このハッシュ値のファイルに絞り込む
+    pub hash: Option<String>,
 }
 
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
     let mut sql = String::from(
         "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
                 (SELECT group_concat(t.name, char(31)) FROM file_tags ft
-                   JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id)
+                   JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
+                a.hash, a.hash_error
          FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
          WHERE 1 = 1",
     );
@@ -59,7 +68,22 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     if filter.missing_only {
         sql.push_str(" AND a.missing = 1");
     }
-    sql.push_str(" ORDER BY f.path, a.rel_path");
+    if filter.duplicates_only {
+        sql.push_str(
+            " AND a.hash IN (SELECT hash FROM audio_files WHERE hash IS NOT NULL
+                             GROUP BY hash HAVING count(*) > 1)",
+        );
+    }
+    if let Some(hash) = &filter.hash {
+        sql.push_str(" AND a.hash = ?");
+        args.push(Value::Text(hash.clone()));
+    }
+    // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
+    sql.push_str(if filter.duplicates_only {
+        " ORDER BY a.hash, f.path, a.rel_path"
+    } else {
+        " ORDER BY f.path, a.rel_path"
+    });
 
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args), |r| {
@@ -82,6 +106,8 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             modified_at: r.get(5)?,
             missing: r.get(6)?,
             tags,
+            hash: r.get(8)?,
+            hash_error: r.get(9)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

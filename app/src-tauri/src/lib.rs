@@ -1,23 +1,52 @@
+mod audio_hash;
 mod db;
 mod error;
 mod files;
+mod hashing;
 mod library;
 mod tags;
 
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
-use tauri::{AppHandle, Manager, State};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use error::Result;
+use error::Error;
 use files::{AudioFile, FileFilter};
+use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
 use tags::{RenameResult, Tag};
 
 struct AppState {
     conn: Mutex<Connection>,
+    hashing: Arc<HashJob>,
 }
+
+/// 裏で行うハッシュ値の計算の状態
+#[derive(Default)]
+struct HashJob {
+    running: AtomicBool,
+    cancel: AtomicBool,
+    progress: Mutex<HashProgress>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HashProgress {
+    running: bool,
+    done: usize,
+    total: usize,
+    /// 計算できなかった件数
+    failed: usize,
+    cancelled: bool,
+}
+
+/// 一度に計算して保存する件数。この単位で進み具合を通知し、中止を受け付ける
+const HASH_BATCH: usize = 256;
 
 impl AppState {
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -33,7 +62,81 @@ fn allow_asset_dir(app: &AppHandle, path: &Path) {
     }
 }
 
+/// 計算待ちのファイルのハッシュ値を、別スレッドで計算する。
+/// 進み具合はイベント "hash-progress" で画面に知らせる。
+fn run_hashing(app: AppHandle, job: Arc<HashJob>) {
+    let state = app.state::<AppState>();
+    let pending = match hashing::pending_files(&state.conn()) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("hashing: {e}");
+            Vec::new()
+        }
+    };
+    let mut progress = HashProgress { running: true, total: pending.len(), ..Default::default() };
+    let notify = |p: &HashProgress| {
+        *job.progress.lock().unwrap_or_else(|e| e.into_inner()) = p.clone();
+        let _ = app.emit("hash-progress", p);
+    };
+    notify(&progress);
+    for batch in pending.chunks(HASH_BATCH) {
+        let results: Vec<_> = hashing::compute_parallel(batch, &job.cancel)
+            .into_iter()
+            .filter_map(|(id, r)| r.map(|r| (id, r)))
+            .collect();
+        progress.failed += results.iter().filter(|(_, r)| r.is_err()).count();
+        progress.done += results.len();
+        if let Err(e) = hashing::save_hashes(&mut state.conn(), &results) {
+            log::error!("hashing: {e}");
+        }
+        if job.cancel.load(Ordering::Relaxed) {
+            progress.cancelled = true;
+            break;
+        }
+        notify(&progress);
+    }
+    progress.running = false;
+    job.running.store(false, Ordering::SeqCst);
+    notify(&progress);
+}
+
 // Tauriのコマンドは、async にすると画面のスレッドを止めずに別スレッドで動く
+
+/// ハッシュ値の計算を始める。既に計算中なら何もしない。
+#[tauri::command]
+async fn start_hashing(app: AppHandle, state: State<'_, AppState>) -> Result<()> {
+    let job = state.hashing.clone();
+    if job.running.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    job.cancel.store(false, Ordering::SeqCst);
+    std::thread::spawn(move || run_hashing(app, job));
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_hashing(state: State<'_, AppState>) -> Result<()> {
+    state.hashing.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
+    Ok(state.hashing.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
+}
+
+/// 任意のファイル（ライブラリ外でもよい）のハッシュ値を計算する
+#[tauri::command]
+async fn hash_file(path: String) -> Result<String> {
+    audio_hash::audio_hash(Path::new(&path))
+        .map_err(|e| Error::invalid(format!("ハッシュ値を計算できませんでした: {e}")))
+}
+
+#[tauri::command]
+async fn relink_files(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<RelinkResult> {
+    hashing::relink(&mut state.conn(), &file_ids)
+}
+
 
 #[tauri::command]
 async fn list_folders(state: State<'_, AppState>) -> Result<Vec<LibraryFolder>> {
@@ -136,6 +239,7 @@ pub fn run() {
             }
             app.manage(AppState {
                 conn: Mutex::new(conn),
+                hashing: Arc::new(HashJob::default()),
             });
             Ok(())
         })
@@ -153,6 +257,11 @@ pub fn run() {
             add_tag,
             remove_tag,
             remove_missing_files,
+            start_hashing,
+            cancel_hashing,
+            hashing_progress,
+            hash_file,
+            relink_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

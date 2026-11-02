@@ -36,6 +36,12 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
     CREATE INDEX file_tags_tag ON file_tags(tag_id, file_id);
     "#,
+    // 2: ハッシュ値を使った機能
+    r#"
+    ALTER TABLE audio_files ADD COLUMN hash TEXT;
+    ALTER TABLE audio_files ADD COLUMN hash_error TEXT;
+    CREATE INDEX audio_files_hash ON audio_files(hash);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
