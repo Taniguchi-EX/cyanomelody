@@ -75,6 +75,11 @@ export function PlaylistEditor({
   // ループになるプレイリスト（自分自身と、自分を含むもの）は、候補に出すが選べないようにする
   const loops = new Set(playlists.filter((p) => makesLoop(playlists, detail.id, p.id)).map((p) => p.id));
   const filterTags = tags.filter((t) => filterTagIds.includes(t.id));
+  const canRename = !busy && name.trim() !== "" && name.trim() !== detail.name;
+
+  const createChild = async () => {
+    if (await onCreateChild(childName)) setChildName("");
+  };
 
   const targetAt = (x: number, y: number) => {
     const row = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-item-index]");
@@ -111,12 +116,10 @@ export function PlaylistEditor({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && canRename && onRename(name)}
           aria-label="プレイリストの名前"
         />
-        <button
-          onClick={() => onRename(name)}
-          disabled={busy || !name.trim() || name.trim() === detail.name}
-        >
+        <button onClick={() => onRename(name)} disabled={!canRename}>
           名前を変える
         </button>
         <select value={playMode} onChange={(e) => setPlayMode(e.target.value as PlayMode)} aria-label="このプレイリストの再生方法">
@@ -286,12 +289,11 @@ export function PlaylistEditor({
             placeholder="子のプレイリストの名前"
             value={childName}
             onChange={(e) => setChildName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !busy && childName.trim() && createChild()}
             aria-label="子のプレイリストの名前"
           />
           <button
-            onClick={async () => {
-              if (await onCreateChild(childName)) setChildName("");
-            }}
+            onClick={createChild}
             disabled={busy || !childName.trim()}
           >
             作る

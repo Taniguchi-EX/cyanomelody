@@ -286,4 +286,16 @@ await step("P17", "3万件が対象のタグの組み合わせを再生し始め
   return `${ms}ms`;
 });
 
+await step("P18", "編集画面：名前や子のプレイリストの名前の欄でEnterを押すと、変更・作成できる", async () => {
+  await open("戦闘");
+  await page.getByLabel("プレイリストの名前", { exact: true }).fill("戦闘（Enter）");
+  await page.getByLabel("プレイリストの名前", { exact: true }).press("Enter");
+  await waitIdle();
+  expect((await tree()).startsWith("戦闘（Enter）:0"), await tree());
+  await page.getByLabel("子のプレイリストの名前").fill("Enterの子");
+  await page.getByLabel("子のプレイリストの名前").press("Enter");
+  await waitIdle();
+  expect((await tree()).includes("Enterの子:1"), await tree());
+});
+
 await ui.finish();

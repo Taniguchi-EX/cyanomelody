@@ -291,4 +291,20 @@ await step("C19", "URLを押すとブラウザで開く（エラーが出ない�
   expect(!(await page.getByTestId("status").getAttribute("class")).includes("error"), `status: ${s}`);
 });
 
+await step("C20", "管理画面：名前の欄でEnterを押すと作成できる。Escで閉じる（編集中のEscは編集をやめるだけ）", async () => {
+  await openManager("source");
+  await page.getByLabel("名前", { exact: true }).fill("Enterで作成");
+  await page.getByLabel("名前", { exact: true }).press("Enter");
+  await waitIdle();
+  expect((await manageRow("Enterで作成").count()) === 1, "作成されない");
+  await manageRow("Enterで作成").getByRole("button", { name: "編集" }).click();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  const head = await page.getByTestId("credit-form").locator("h2").innerText();
+  expect(head === "新しい出典", `編集をやめていない: ${head}`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  expect((await page.getByTestId("credit-form").count()) === 0, "閉じない");
+});
+
 await ui.finish();

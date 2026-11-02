@@ -121,4 +121,21 @@ await step("A10", "空の名前には変えられない", async () => {
   await clearFilter();
 });
 
+await step("A11", "管理画面は、フォーカスが外にあってもEscで閉じる。名前の変更中のEscは変更をやめるだけ", async () => {
+  await page.getByRole("button", { name: "タグを管理" }).click();
+  // 管理画面を開いたボタン（管理画面の外）にフォーカスがある
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  expect((await page.getByRole("dialog", { name: "タグの管理" }).count()) === 0, "閉じない");
+  await page.getByRole("button", { name: "タグを管理" }).click();
+  await manageRow("使用中").getByRole("button", { name: "名前変更" }).click();
+  await page.getByLabel("タグの新しい名前").press("Escape");
+  await page.waitForTimeout(200);
+  expect((await page.getByRole("dialog", { name: "タグの管理" }).count()) === 1, "名前の変更中に閉じた");
+  expect((await page.getByLabel("タグの新しい名前").count()) === 0, "変更をやめていない");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  expect((await page.getByRole("dialog", { name: "タグの管理" }).count()) === 0, "2回目のEscで閉じない");
+});
+
 await ui.finish();

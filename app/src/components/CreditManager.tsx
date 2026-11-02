@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Credit, CreditInput, CreditKind, LicenseType } from "../api";
 import { CREDIT_LABEL, TERM_DEFS, UNKNOWN_TERMS, shortTerm } from "../credits";
 import { TermsEditor } from "./TermsEditor";
+import { useEscape } from "../hooks/useEscape";
 
 type Props = {
   kind: CreditKind;
@@ -42,6 +43,9 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
     if (ok) reset();
   };
 
+  // 編集中のEscは、編集をやめるだけにする
+  useEscape(() => (editing ? reset() : onClose()));
+
   /** 種類を選んだら条項をその種類の内容にし、名前が空なら種類の名前を入れる */
   const selectType = (key: string) => {
     const type = licenseTypes.find((t) => t.key === key);
@@ -53,7 +57,7 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
   };
 
   return (
-    <div className="overlay" onKeyDown={(e) => e.key === "Escape" && editing === null && onClose()}>
+    <div className="overlay">
       <div className="dialog" role="dialog" aria-label={`${label}の管理`}>
         <div className="dialog-head">
           <h2>
@@ -71,6 +75,7 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
               type="text"
               value={input.name}
               onChange={(e) => setInput((i) => ({ ...i, name: e.target.value }))}
+              onKeyDown={(e) => e.key === "Enter" && !busy && input.name.trim() && submit()}
             />
             <label htmlFor="credit-url">URL</label>
             <input
@@ -79,6 +84,7 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
               placeholder="https://"
               value={input.url}
               onChange={(e) => setInput((i) => ({ ...i, url: e.target.value }))}
+              onKeyDown={(e) => e.key === "Enter" && !busy && input.name.trim() && submit()}
             />
             <label htmlFor="credit-note">メモ</label>
             <textarea

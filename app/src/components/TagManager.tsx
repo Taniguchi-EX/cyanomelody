@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Tag } from "../api";
+import { useEscape } from "../hooks/useEscape";
 
 type Props = {
   tags: Tag[];
@@ -17,6 +18,9 @@ export function TagManager({ tags, busy, onCreate, onRename, onDelete, onDeleteU
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const unused = tags.filter((t) => t.fileCount === 0).length;
+
+  // 名前の変更中のEscは、入力欄が変更をやめるだけにする（入力欄で止めるので、ここには届かない）
+  useEscape(() => editingId === null && onClose());
 
   const create = async () => {
     if (await onCreate(newName)) setNewName("");
@@ -36,7 +40,7 @@ export function TagManager({ tags, busy, onCreate, onRename, onDelete, onDeleteU
   };
 
   return (
-    <div className="overlay" onKeyDown={(e) => e.key === "Escape" && editingId === null && onClose()}>
+    <div className="overlay">
       <div className="dialog" role="dialog" aria-label="タグの管理">
         <div className="dialog-head">
           <h2>タグの管理（{tags.length}件）</h2>
@@ -77,7 +81,11 @@ export function TagManager({ tags, busy, onCreate, onRename, onDelete, onDeleteU
                       onChange={(e) => setEditName(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") commitEdit(t);
-                        if (e.key === "Escape") setEditingId(null);
+                        if (e.key === "Escape") {
+                          // 名前の変更をやめるだけにし、管理画面を閉じるEsc（useEscape）まで届かせない
+                          e.stopPropagation();
+                          setEditingId(null);
+                        }
                       }}
                       aria-label="タグの新しい名前"
                     />
