@@ -478,6 +478,16 @@ button.toggle.on {
   user-select: none;
 }
 
+/* 試聴中の行の下端の進み具合 */
+.row-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
 .file-row.selected {
   background: var(--selected);
 }

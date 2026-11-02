@@ -15,6 +15,8 @@ type Props = {
   /** チェックしたファイル（表示していないものも含む） */
   checked: Set<number>;
   playingId: number | null;
+  /** 試聴中のファイルの進み具合（0〜1） */
+  progress: number;
   onFocus: (file: AudioFile) => void;
   /** 行のチェックボックス。range が true なら前に押した行との間をまとめて同じ状態にする */
   onCheck: (index: number, range: boolean) => void;
@@ -32,6 +34,7 @@ export function FileList({
   focusedId,
   checked,
   playingId,
+  progress,
   onFocus,
   onCheck,
   onCheckShown,
@@ -80,6 +83,23 @@ export function FileList({
             if (e.ctrlKey && e.key === "a") {
               e.preventDefault();
               onCheckShown(true);
+            }
+            // ↑↓：右の欄に出すファイルを移す。試聴中なら、移った先を続けて試聴する（聞き比べ）
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              const cur = files.findIndex((f) => f.id === focusedId);
+              const next =
+                cur < 0 ? 0 : Math.min(Math.max(cur + (e.key === "ArrowDown" ? 1 : -1), 0), files.length - 1);
+              const f = files[next];
+              onFocus(f);
+              virtualizer.scrollToIndex(next);
+              if (playingId !== null && playingId !== f.id && !f.missing) onPlay(f);
+            }
+            // スペース：右の欄に出しているファイルの試聴を始める・止める（ボタンなどの上では、そちらの操作にする）
+            if (e.key === " " && !(e.target as HTMLElement).closest("button, input")) {
+              e.preventDefault();
+              const f = files.find((x) => x.id === focusedId);
+              if (f && !f.missing) onPlay(f);
             }
           }}
         >
@@ -135,6 +155,9 @@ export function FileList({
                       </span>
                     ))}
                   </span>
+                  {playingId === f.id && (
+                    <div className="row-progress" data-testid="row-progress" style={{ width: `${progress * 100}%` }} />
+                  )}
                   <label className="check-cell" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"

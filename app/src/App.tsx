@@ -939,6 +939,7 @@ export default function App() {
               focusedId={focusedId}
               checked={checked}
               playingId={audio.previewId}
+              progress={audio.time.duration > 0 ? audio.time.current / audio.time.duration : 0}
               onFocus={(f) => setFocusedId(f.id)}
               onCheck={checks.checkRow}
               onCheckShown={checks.checkShown}

@@ -229,4 +229,28 @@ await step("T19", "空のタグ名では付けられない", async () => {
   expect(await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).isDisabled(), "ボタンが押せる");
 });
 
+await step("T20", "聞き比べ：↑↓で右の欄のファイルを移し、試聴中なら移った先を続けて試聴する。スペースで試聴を始める・止める", async () => {
+  await clearFilter();
+  const selected = (rel) => row(rel).evaluate((el) => el.classList.contains("selected"));
+  const playing = async (rel) => {
+    await page.waitForTimeout(200);
+    return row(rel).getByRole("button", { name: "停止" }).count();
+  };
+  // T15でchime.oggは外れている。並びは flac、mp3、wav
+  await row("chime.flac").locator(".file-name").click();
+  await page.keyboard.press("ArrowDown");
+  expect(await selected("chime.mp3"), "↓で移らない");
+  expect((await page.evaluate(() => document.querySelector("audio").paused)), "試聴していないのに鳴った");
+  await page.keyboard.press(" ");
+  expect((await playing("chime.mp3")) === 1, "スペースで試聴しない");
+  await page.keyboard.press("ArrowDown");
+  expect(await selected("chime.wav"), "↓で移らない");
+  expect((await playing("chime.wav")) === 1 && (await playing("chime.mp3")) === 0, `移った先を試聴しない wav:${await playing("chime.wav")} mp3:${await playing("chime.mp3")} src:${await page.evaluate(() => decodeURIComponent(document.querySelector("audio").src))}`);
+  await row("chime.wav").getByTestId("row-progress").waitFor({ timeout: 3000 });
+  await page.keyboard.press("ArrowUp");
+  expect((await playing("chime.mp3")) === 1, "↑で移った先を試聴しない");
+  await page.keyboard.press(" ");
+  expect((await playing("chime.mp3")) === 0, "スペースで止まらない");
+});
+
 await ui.finish();
