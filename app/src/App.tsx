@@ -927,12 +927,12 @@ export default function App() {
               <span className="sub" data-testid="file-count">
                 {files.length}件
               </span>
-              {/* チェックの件数と操作は、チェックがあるときだけ出す */}
+              {/* チェックしている件数は常に出す。チェックの操作は、チェックがあるときだけ出す */}
+              <span className="checked-count" data-testid="checked-count">
+                チェック {checked.size}件（表示中 {checks.shownChecked}件）
+              </span>
               {(checked.size > 0 || checkedOnly) && (
                 <>
-                  <span className="checked-count" data-testid="checked-count">
-                    チェック {checked.size}件（表示中 {checks.shownChecked}件）
-                  </span>
                   <button onClick={checks.clear} disabled={checked.size === 0}>
                     チェックをすべて外す
                   </button>
