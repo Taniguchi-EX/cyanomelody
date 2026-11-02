@@ -269,4 +269,25 @@ export const playlistApi = {
   /** 空なら外す */
   setItemAlias: (itemId: number, alias: string) => invoke<void>("set_playlist_item_alias", { itemId, alias }),
   expand: (id: number, mode: PlayMode) => invoke<PlayEntry[]>("expand_playlist", { id, mode }),
+  /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
+  startExport: (id: number, dest: string) => invoke<string>("start_export", { id, dest }),
+  cancelExport: () => invoke<void>("cancel_export"),
 };
+
+/** プレイリストの出力の進み具合 */
+export type ExportProgress = {
+  running: boolean;
+  done: number;
+  total: number;
+  failed: number;
+  cancelled: boolean;
+  /** 書き出し先（作ったフォルダ） */
+  folder: string;
+};
+
+export function describeExport(p: ExportProgress): string {
+  if (p.running) return `書き出し中 ${p.done}/${p.total}`;
+  const parts = [`${p.done - p.failed}件`];
+  if (p.failed) parts.push(`書き出せなかったファイル ${p.failed}件`);
+  return `${p.cancelled ? "書き出しを中止しました" : "書き出しました"}（${parts.join("、")}）: ${p.folder}`;
+}

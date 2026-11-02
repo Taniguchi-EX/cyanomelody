@@ -5,6 +5,7 @@ mod credits;
 mod db;
 mod effects;
 mod error;
+mod export;
 mod facets;
 mod files;
 mod hashing;
@@ -39,6 +40,27 @@ struct AppState {
     hashing: Arc<HashJob>,
     /// エフェクトをかけた音の置き場所
     effect_cache: PathBuf,
+    export: Arc<ExportJob>,
+}
+
+/// 裏で行うプレイリストの出力の状態
+#[derive(Default)]
+struct ExportJob {
+    running: AtomicBool,
+    cancel: AtomicBool,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportProgress {
+    running: bool,
+    done: usize,
+    total: usize,
+    /// 書き出せなかった件数
+    failed: usize,
+    cancelled: bool,
+    /// 書き出し先（作ったフォルダ）
+    folder: String,
 }
 
 /// 裏で行うハッシュ値の計算の状態
@@ -418,6 +440,53 @@ async fn preview_effects(state: State<'_, AppState>, file_id: i64, effects: Vec<
     Ok(out.to_string_lossy().into_owned())
 }
 
+/// プレイリストを dest の中に書き出し始める。書き出し先のフォルダを作って、そのパスを返す。
+/// ファイルの書き出しは裏で行い、進み具合はイベント "export-progress" で知らせる
+#[tauri::command]
+async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, dest: String) -> Result<String> {
+    let job = state.export.clone();
+    if job.running.swap(true, Ordering::SeqCst) {
+        return Err(Error::invalid("ほかのプレイリストを書き出しているところです"));
+    }
+    let prepared = export::prepare(&state.conn(), id, Path::new(dest.trim()));
+    let (root, tasks) = match prepared {
+        Ok(p) => p,
+        Err(e) => {
+            job.running.store(false, Ordering::SeqCst);
+            return Err(e);
+        }
+    };
+    job.cancel.store(false, Ordering::SeqCst);
+    let folder = root.to_string_lossy().into_owned();
+    let result = folder.clone();
+    std::thread::spawn(move || {
+        let mut progress = ExportProgress { running: true, total: tasks.len(), folder, ..Default::default() };
+        let _ = app.emit("export-progress", &progress);
+        for task in &tasks {
+            if job.cancel.load(Ordering::Relaxed) {
+                progress.cancelled = true;
+                break;
+            }
+            if let Err(e) = export::run_task(task) {
+                log::warn!("export: {}: {e}", task.source.display());
+                progress.failed += 1;
+            }
+            progress.done += 1;
+            let _ = app.emit("export-progress", &progress);
+        }
+        progress.running = false;
+        job.running.store(false, Ordering::SeqCst);
+        let _ = app.emit("export-progress", &progress);
+    });
+    Ok(result)
+}
+
+#[tauri::command]
+async fn cancel_export(state: State<'_, AppState>) -> Result<()> {
+    state.export.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 /// データの置き場所。テストなどで分けたいときは環境変数 CYANOMELODY_DATA_DIR で変えられる。
 fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(dir) = std::env::var_os("CYANOMELODY_DATA_DIR") {
@@ -453,6 +522,7 @@ pub fn run() {
                 conn: Mutex::new(conn),
                 hashing: Arc::new(HashJob::default()),
                 effect_cache,
+                export: Arc::new(ExportJob::default()),
             });
             Ok(())
         })
@@ -505,6 +575,8 @@ pub fn run() {
             set_playlist_item_chain,
             render_effects,
             preview_effects,
+            start_export,
+            cancel_export,
             expand_playlist,
         ])
         .run(tauri::generate_context!())

@@ -31,6 +31,10 @@ type Props = {
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
   onCreateChild: (name: string) => Promise<boolean>;
+  /** dest の中に書き出し始める。始められたら true */
+  onExport: (dest: string) => Promise<boolean>;
+  /** フォルダを選ぶダイアログを出し、選んだパスを返す */
+  onBrowseFolder: () => Promise<string | null>;
 };
 
 const DRAG_THRESHOLD = 4;
@@ -67,6 +71,8 @@ export function PlaylistEditor({
   onAddTags,
   onAddRef,
   onCreateChild,
+  onExport,
+  onBrowseFolder,
 }: Props) {
   const [name, setName] = useState(detail.name);
   const [playMode, setPlayMode] = useState<PlayMode>("order");
@@ -74,6 +80,12 @@ export function PlaylistEditor({
   const [pickedTags, setPickedTags] = useState<Tag[]>([]);
   const [refId, setRefId] = useState("");
   const [childName, setChildName] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportDest, setExportDest] = useState("");
+
+  const startExport = async () => {
+    if (await onExport(exportDest)) setExporting(false);
+  };
   // 別名を入力している項目
   const [aliasItemId, setAliasItemId] = useState<number | null>(null);
   const [aliasText, setAliasText] = useState("");
@@ -152,10 +164,36 @@ export function PlaylistEditor({
         <button onClick={() => onPlay(playMode)} disabled={busy}>
           ▶ 再生
         </button>
+        <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
+          書き出す
+        </button>
         <button onClick={onDelete} disabled={busy}>
           このプレイリストを削除
         </button>
       </div>
+      {exporting && (
+        <div className="toolbar">
+          <input
+            type="text"
+            placeholder="書き出し先のフォルダ"
+            value={exportDest}
+            onChange={(e) => setExportDest(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !busy && exportDest.trim() && startExport()}
+            aria-label="書き出し先のフォルダ"
+          />
+          <button
+            onClick={async () => {
+              const dir = await onBrowseFolder();
+              if (dir) setExportDest(dir);
+            }}
+          >
+            参照
+          </button>
+          <button onClick={startExport} disabled={busy || !exportDest.trim()}>
+            書き出しを始める
+          </button>
+        </div>
+      )}
 
       <div className="playlist-items">
         {detail.items.length === 0 && <div className="empty">項目はまだありません</div>}

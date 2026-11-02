@@ -12,6 +12,8 @@ import {
   type FileFilter,
   type Facets,
   type HashProgress,
+  type ExportProgress,
+  describeExport,
   type LibraryFolder,
   type LicenseType,
   type MoveTarget,
@@ -85,6 +87,7 @@ export default function App() {
   const [chains, setChains] = useState<EffectChain[]>([]);
   const [managingEffects, setManagingEffects] = useState(false);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchPath, setSearchPath] = useState("");
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
@@ -175,6 +178,14 @@ export default function App() {
   }, []);
 
   const startHashing = () => api.startHashing().catch(showError);
+
+  // プレイリストの出力の進み具合
+  useEffect(() => {
+    const unlisten = listen<ExportProgress>("export-progress", (e) => setExportProgress(e.payload));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   // ファイル名の入力は少し待ってから絞り込む
   useEffect(() => {
@@ -662,6 +673,23 @@ export default function App() {
     }
   };
 
+  /** プレイリストを書き出し始める */
+  const exportPlaylist = async (id: number, dest: string) => {
+    try {
+      const folder = await playlistApi.startExport(id, dest);
+      showInfo(`書き出しを始めました: ${folder}`);
+      return true;
+    } catch (e) {
+      showError(e);
+      return false;
+    }
+  };
+
+  const browseFolder = async () => {
+    const dir = await open({ directory: true, multiple: false });
+    return typeof dir === "string" ? dir : null;
+  };
+
   const setPlaylistItemChain = (item: PlaylistItem, chainId: number | null) =>
     run(async () => {
       await chainApi.setItemChain(item.id, chainId);
@@ -763,6 +791,8 @@ export default function App() {
             onAddTags={addTagsToPlaylist}
             onAddRef={addRefToPlaylist}
             onCreateChild={(name) => createPlaylist(name, playlistDetail.id)}
+            onExport={(dest) => exportPlaylist(playlistDetail.id, dest)}
+            onBrowseFolder={browseFolder}
           />
         ) : (
           <>
@@ -927,6 +957,14 @@ export default function App() {
         <div className={`status${status.error ? " error" : ""}`} data-testid="status">
           {busy ? "処理中…" : status.text || " "}
         </div>
+        {exportProgress && (
+          <div className="hash-status" data-testid="export-status">
+            {describeExport(exportProgress)}
+            {exportProgress.running && (
+              <button onClick={() => playlistApi.cancelExport().catch(showError)}>中止</button>
+            )}
+          </div>
+        )}
         {hashProgress && (
           <div className="hash-status" data-testid="hash-status">
             {describeHashing(hashProgress)}

@@ -746,6 +746,90 @@ fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut V
     Ok(out)
 }
 
+/// 書き出す内容の木（「プレイリストの出力」で使う）
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExportNode {
+    /// 書き出すファイル。名前は、別名があれば別名、なければファイル名から決める
+    File { file_id: i64, alias: Option<String>, effects: Vec<i64> },
+    /// プレイリストの項目のフォルダ。名前は、別名があれば別名、なければプレイリスト名
+    Folder { name: String, children: Vec<ExportNode> },
+}
+
+impl ExportNode {
+    fn from_track(t: Track) -> ExportNode {
+        ExportNode::File { file_id: t.file_id, alias: t.alias, effects: t.chains }
+    }
+
+    /// 中のファイルすべてに、外側の項目のまとまりを足す
+    fn with_chain(self, chain: Option<i64>) -> ExportNode {
+        match self {
+            ExportNode::File { file_id, alias, mut effects } => {
+                effects.extend(chain);
+                ExportNode::File { file_id, alias, effects }
+            }
+            ExportNode::Folder { name, children } => {
+                ExportNode::Folder { name, children: children.into_iter().map(|c| c.with_chain(chain)).collect() }
+            }
+        }
+    }
+}
+
+/// 書き出す内容を決める。項目の展開・再生方法・別名・エフェクトは再生と同じ決まりで、プレイリストの項目はフォルダにする。
+/// 「順に再生」のプレイリストの項目は、中の階層をそのままフォルダにする。シャッフル・ランダムセレクトの項目は、
+/// 並べ替えや選び方が中の階層をまたぐので、展開した曲をそのフォルダに並べる
+fn plan_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<ExportNode>> {
+    if path.contains(&playlist_id) {
+        return Ok(Vec::new());
+    }
+    path.push(playlist_id);
+    let mut out = Vec::new();
+    for item in cat.items(playlist_id) {
+        match item.kind {
+            ItemKind::File => {
+                // 見つからないファイルも入れておき、書き出すときに「書き出せなかった」に数える
+                if let Some(file_id) = item.file_id.filter(|f| cat.files.contains_key(f)) {
+                    out.push(ExportNode::File {
+                        file_id,
+                        alias: item.alias.clone(),
+                        effects: Vec::from_iter(item.effect_chain_id),
+                    });
+                }
+            }
+            ItemKind::Tags => {
+                let tracks: Vec<Track> =
+                    cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
+                out.extend(apply_mode(tracks, item.mode, rng).into_iter().map(ExportNode::from_track));
+            }
+            ItemKind::Playlist => {
+                let Some(r) = item.ref_id else { continue };
+                let name = item.alias.clone().or_else(|| cat.names.get(&r).cloned()).unwrap_or_default();
+                let children = if item.mode == PlayMode::Order {
+                    plan_items(cat, r, rng, path)?.into_iter().map(|n| n.with_chain(item.effect_chain_id)).collect()
+                } else {
+                    let tracks: Vec<Track> =
+                        expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
+                    apply_mode(tracks, item.mode, rng).into_iter().map(ExportNode::from_track).collect()
+                };
+                out.push(ExportNode::Folder { name, children });
+            }
+        }
+    }
+    path.pop();
+    Ok(out)
+}
+
+/// プレイリストの名前と、書き出す内容
+pub fn plan_export(conn: &Connection, id: i64) -> Result<(String, Vec<ExportNode>)> {
+    plan_export_with(conn, id, &mut Rng::from_time())
+}
+
+fn plan_export_with(conn: &Connection, id: i64, rng: &mut Rng) -> Result<(String, Vec<ExportNode>)> {
+    let mut cat = Catalog::load(conn)?;
+    let name = cat.names.get(&id).cloned().ok_or_else(not_found)?;
+    let nodes = plan_items(&mut cat, id, rng, &mut Vec::new())?;
+    Ok((name, nodes))
+}
+
 fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
     ensure_exists(conn, id)?;
     let mut cat = Catalog::load(conn)?;
@@ -1259,5 +1343,49 @@ mod tests {
         let entries = expand_with(&conn, b, PlayMode::Order, &mut Rng(1)).unwrap();
         assert_eq!(entries[0].effects, vec![inner]);
         assert!(entries[1].effects.is_empty());
+    }
+
+    #[test]
+    fn export_plan_keeps_folders_for_ordered_playlists() {
+        let mut conn = setup();
+        let chain = crate::chains::create_chain(&conn, "c").unwrap();
+        let top = create_playlist(&mut conn, "戦闘", None).unwrap();
+        add_files(&mut conn, top, &[1, 5]).unwrap();
+        let child = create_playlist(&mut conn, "足音", Some(top)).unwrap();
+        let grand = create_playlist(&mut conn, "孫", Some(child)).unwrap();
+        add_files(&mut conn, grand, &[2]).unwrap();
+        add_files(&mut conn, child, &[3]).unwrap();
+        let shuffled = create_playlist(&mut conn, "混ぜる", Some(top)).unwrap();
+        let inner = create_playlist(&mut conn, "中", Some(shuffled)).unwrap();
+        add_files(&mut conn, inner, &[4]).unwrap();
+        let items = get_playlist(&conn, top).unwrap().items;
+        set_item_alias(&conn, items[0].id, "剣").unwrap();
+        crate::chains::set_item_chain(&conn, items[2].id, Some(chain)).unwrap();
+        set_item_mode(&conn, items[3].id, PlayMode::Shuffle).unwrap();
+
+        let (name, nodes) = plan_export_with(&conn, top, &mut Rng(1)).unwrap();
+        assert_eq!(name, "戦闘");
+        let file = |id: i64, alias: Option<&str>, effects: Vec<i64>| ExportNode::File {
+            file_id: id,
+            alias: alias.map(str::to_owned),
+            effects,
+        };
+        assert_eq!(
+            nodes,
+            vec![
+                file(1, Some("剣"), vec![]),
+                // 見つからないファイル（5）も入れる（書き出すときに失敗として数える）
+                file(5, None, vec![]),
+                ExportNode::Folder {
+                    name: "足音".into(),
+                    children: vec![
+                        ExportNode::Folder { name: "孫".into(), children: vec![file(2, None, vec![chain])] },
+                        file(3, None, vec![chain]),
+                    ],
+                },
+                // シャッフルの項目は、中の階層を開いて並べる
+                ExportNode::Folder { name: "混ぜる".into(), children: vec![file(4, None, vec![])] },
+            ]
+        );
     }
 }
