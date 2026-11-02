@@ -5,6 +5,8 @@ import { CreditField } from "./CreditField";
 type Mode = "addTag" | "removeTag" | CreditKind;
 
 type Props = {
+  /** チェックしている件数（内訳を求める前から正しい件数を出すため、内訳とは別に受け取る） */
+  checkedCount: number;
   /** チェックしたファイルの内訳。読み込み中は null */
   summary: FileSummary | null;
   tags: Tag[];
@@ -30,6 +32,7 @@ const MODES: { mode: Mode; label: string }[] = [
 
 /** 一覧の上の一括操作の欄。チェックしたファイルすべてが対象 */
 export function BulkBar({
+  checkedCount,
   summary,
   tags,
   sources,
@@ -46,7 +49,7 @@ export function BulkBar({
 }: Props) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [name, setName] = useState("");
-  const total = summary?.ids.length ?? 0;
+  const total = checkedCount;
   const missing = summary?.missing ?? 0;
 
   const addTag = async () => {

@@ -658,6 +658,7 @@ export default function App() {
         )}
         {checked.size > 0 && (
           <BulkBar
+            checkedCount={checked.size}
             summary={summary}
             tags={tags}
             sources={sources}
