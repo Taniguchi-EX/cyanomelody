@@ -20,13 +20,29 @@ export function expect(cond, message) {
 export async function connect(shotDir) {
   const browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
   const page = browser.contexts()[0].pages()[0];
-  // 確認ダイアログはすべて「OK」で答える
+  // ブラウザの確認ダイアログが出たときは「OK」で答える（通常は下の stubConfirm で置き換えるので出ない）
   page.on("dialog", (d) => d.accept());
   // 画面の状態（左の欄のたたみ具合など）は WebView2 の保存領域に残るので、テストごとに消す
   await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(500);
+
+  // Tauriのダイアログのプラグインは window.confirm をOSのダイアログ（非同期）に置き換える。
+  // OSのダイアログはテストから操作できないので、メッセージを記録して決めた答えを返すものに置き換える
+  const stubConfirm = () =>
+    page.evaluate(() => {
+      window.__confirms = [];
+      window.__confirmReply = true;
+      window.confirm = (message) => {
+        window.__confirms.push(String(message));
+        return Promise.resolve(window.__confirmReply);
+      };
+    });
+  const reload = async () => {
+    await page.reload();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForTimeout(500);
+    await stubConfirm();
+  };
+  await reload();
 
   const results = [];
   const ui = {
@@ -41,15 +57,20 @@ export async function connect(shotDir) {
         console.log(`FAIL ${id} ${name}: ${e.message ?? e}`);
       }
     },
+    /** 画面を読み込み直す（確認ダイアログの置き換えもやり直す） */
+    reload,
+    /** 確認ダイアログに「OK」（true）と「キャンセル」（false）のどちらで答えるか */
+    setConfirmReply: (reply) => page.evaluate((r) => (window.__confirmReply = r), reply),
+    /** 最後に出た確認ダイアログのメッセージ */
+    lastConfirm: () => page.evaluate(() => window.__confirms.at(-1) ?? ""),
     shot: (name) => page.screenshot({ path: path.join(shotDir, `${name}.png`) }),
     status: () => page.getByTestId("status").innerText(),
     fileCount: async () => parseInt(await page.getByTestId("file-count").innerText(), 10),
     row: (rel) => page.locator(`[data-testid=file-row][data-rel-path="${rel}"]`),
-    // 左のタグの一覧の行。行の文字列は「名前」+「件数」（例：チャイム2）
-    tagItem: (name) =>
-      page.getByTestId("tag").filter({ hasText: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\d+$`) }),
-    tagNames: async () =>
-      (await page.getByTestId("tag").allInnerTexts()).map((t) => t.split("\n")[0].trim()),
+    // 左のタグの一覧の行
+    tagItem: (name) => page.locator(`[data-testid=tag][data-tag-name="${name}"]`),
+    // 左のタグの一覧の名前（表示している順）
+    tagNames: () => page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => r.dataset.tagName)),
     async waitIdle() {
       // 処理中の表示が出るのを少し待ってから（出ないほど速い処理もある）、消えるのを待つ
       await page

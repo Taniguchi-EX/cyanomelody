@@ -67,7 +67,7 @@ export function TagManager({ tags, busy, onCreate, onRename, onDelete, onDeleteU
           </thead>
           <tbody>
             {tags.map((t) => (
-              <tr key={t.id} data-testid="manage-tag" data-tag-name={t.name}>
+              <tr key={t.id} data-testid="manage-tag" data-tag-name={t.name} data-depth={t.depth}>
                 <td style={{ paddingLeft: 6 + t.depth * 16 }}>
                   {editingId === t.id ? (
                     <input

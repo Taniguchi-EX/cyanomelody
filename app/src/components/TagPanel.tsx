@@ -133,6 +133,7 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
             data-testid="tag"
             data-tag-id={t.id}
             data-tag-name={t.name}
+            data-depth={t.depth}
             style={{ paddingLeft: 6 + t.depth * 14 }}
           >
             <span

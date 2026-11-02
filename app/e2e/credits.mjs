@@ -214,9 +214,7 @@ await step("C14", "たたんでも選んでいる条件の数が見出しに出�
   expect((await section("source").getByTestId("selected-count").innerText()) === "2", "選択数");
   expect((await section("license").getByTestId("selected-count").innerText()) === "1", "ライセンスの選択数");
   await shot("C14_たたんだ状態");
-  await page.reload();
-  await page.waitForLoadState("domcontentloaded");
-  await page.waitForTimeout(800);
+  await ui.reload();
   expect((await section("source").getAttribute("data-collapsed")) === "true", "再読み込みで開いた");
   expect((await section("license").getAttribute("data-collapsed")) === "false", "ライセンスがたたまれた");
   await page.getByRole("button", { name: "出典で絞り込む" }).click();

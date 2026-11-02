@@ -18,6 +18,7 @@ import {
   type Tag,
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
+import { confirmDialog } from "./confirm";
 import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
@@ -191,12 +192,12 @@ export default function App() {
     return ok;
   };
 
-  const removeFolder = (folder: LibraryFolder) => {
+  const removeFolder = async (folder: LibraryFolder) => {
     const message =
       `「${folder.path}」の登録を解除しますか？\n` +
       `このフォルダのファイル${folder.fileCount}件の情報と、付けたタグ・出典・ライセンスの設定がアプリから消えます。\n` +
       "実際のファイルは消えません。";
-    if (!window.confirm(message)) return;
+    if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.removeFolder(folder.id);
       showInfo(`登録を解除しました: ${folder.path}`);
@@ -235,9 +236,9 @@ export default function App() {
       showInfo("タグを外しました");
     });
 
-  const removeMissing = () => {
+  const removeMissing = async () => {
     const targets = selectedFiles.filter((f) => f.missing);
-    if (!window.confirm(`見つからないファイル${targets.length}件をライブラリから外しますか？\n付けたタグ・出典・ライセンスの設定も消えます。`)) return;
+    if (!(await confirmDialog(`見つからないファイル${targets.length}件をライブラリから外しますか？\n付けたタグ・出典・ライセンスの設定も消えます。`))) return;
     run(async () => {
       const n = await api.removeMissingFiles(targets.map((f) => f.id));
       showInfo(`${n}件をライブラリから外しました`);
@@ -312,10 +313,11 @@ export default function App() {
     const other = tags.find((t) => t.id !== tag.id && t.name.toLowerCase() === newName.toLowerCase());
     if (
       other &&
-      !window.confirm(
+      !(await confirmDialog(
         `タグ「${other.name}」が既にあります。\n「${tag.name}」を「${other.name}」に統合しますか？\n` +
-          `「${tag.name}」が付いたファイル${tag.fileCount}件に「${other.name}」が付き、「${tag.name}」は削除されます。`,
-      )
+          `「${tag.name}」が付いたファイルに「${other.name}」が付き、「${tag.name}」は削除されます。` +
+          "\n子のタグがあれば、統合先の子の最後に移ります。",
+      ))
     ) {
       return false;
     }
@@ -333,13 +335,13 @@ export default function App() {
     return ok;
   };
 
-  const deleteTag = (tag: Tag) => {
+  const deleteTag = async (tag: Tag) => {
     // fileCount は子孫のタグの分を含むので、件数は出さない
     const children = tags.filter((t) => t.parentId === tag.id).length;
     const message =
       `タグ「${tag.name}」を削除しますか？\n付いているファイルから外れます。` +
       (children > 0 ? `\n子のタグ${children}件は、削除したタグの位置に繰り上がります。` : "");
-    if (!window.confirm(message)) return;
+    if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.deleteTag(tag.id);
       replaceFilterTag(tag.id, null);
@@ -353,9 +355,9 @@ export default function App() {
       showInfo(`タグ「${tag.name}」を移しました`);
     });
 
-  const deleteUnusedTags = () => {
+  const deleteUnusedTags = async () => {
     const unused = tags.filter((t) => t.fileCount === 0);
-    if (!window.confirm(`どのファイルにも付いていないタグ${unused.length}件を削除しますか？`)) return;
+    if (!(await confirmDialog(`どのファイルにも付いていないタグ${unused.length}件を削除しますか？`))) return;
     run(async () => {
       const n = await api.deleteUnusedTags();
       for (const t of unused) replaceFilterTag(t.id, null);
@@ -405,13 +407,13 @@ export default function App() {
     return ok;
   };
 
-  const deleteCredit = (kind: CreditKind, credit: Credit) => {
+  const deleteCredit = async (kind: CreditKind, credit: Credit) => {
     const label = CREDIT_LABEL[kind];
     const message =
       `${label}「${credit.name}」を削除しますか？
 ` +
       `設定されているファイル${credit.fileCount}件は「${label}なし」になります。`;
-    if (!window.confirm(message)) return;
+    if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.deleteCredit(kind, credit.id);
       removeFilterCredit(kind, credit.id);

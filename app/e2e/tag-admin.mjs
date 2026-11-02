@@ -79,7 +79,8 @@ await step("A07", "既存のタグと同じ名前にすると統合でき、絞�
   await page.getByRole("button", { name: "タグを管理" }).click();
   await rename("Explosion", "爆発");
   const names = await manageNames();
-  expect(names.join(",") === "未使用タグ,爆発", names.join(","));
+  // タグは作った順に並ぶ（名前の順ではない）
+  expect(names.join(",") === "爆発,未使用タグ", names.join(","));
   expect((await manageRow("爆発").locator("td.num").innerText()) === "3", "統合後の件数が3でない");
   await shot("A07_統合後の管理画面");
   await page.getByRole("button", { name: "閉じる" }).click();
