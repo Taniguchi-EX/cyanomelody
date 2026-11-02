@@ -1,4 +1,5 @@
 import type { FileFilter, Tag } from "../api";
+import { Collapsible } from "./Collapsible";
 
 type Props = {
   tags: Tag[];
@@ -10,11 +11,16 @@ type Props = {
 
 export function TagPanel({ tags, filter, onToggleTag, onToggleUntagged, onManage }: Props) {
   return (
-    <section>
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2>タグで絞り込む</h2>
-        <button onClick={onManage}>タグを管理</button>
-      </div>
+    <Collapsible
+      id="tags"
+      title="タグで絞り込む"
+      selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
+      actions={
+        <button onClick={onManage} aria-label="タグを管理">
+          管理
+        </button>
+      }
+    >
       <ul className="tag-list">
         <li className={filter.untaggedOnly ? "active" : ""} onClick={onToggleUntagged} data-testid="untagged">
           <span>（タグなし）</span>
@@ -32,6 +38,6 @@ export function TagPanel({ tags, filter, onToggleTag, onToggleUntagged, onManage
         ))}
       </ul>
       {tags.length === 0 && <div className="sub">タグはまだありません</div>}
-    </section>
+    </Collapsible>
   );
 }

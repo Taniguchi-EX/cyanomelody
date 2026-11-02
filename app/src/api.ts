@@ -26,6 +26,8 @@ export type AudioFile = {
   tags: string[];
   hash: string | null;
   hashError: string | null;
+  sourceId: number | null;
+  licenseId: number | null;
 };
 
 export type FileFilter = {
@@ -35,6 +37,12 @@ export type FileFilter = {
   missingOnly: boolean;
   duplicatesOnly: boolean;
   hash: string | null;
+  /** どれかの出典が設定されたファイル（OR） */
+  sourceIds: number[];
+  noSource: boolean;
+  /** どれかのライセンスが設定されたファイル（OR） */
+  licenseIds: number[];
+  noLicense: boolean;
 };
 
 export type Tag = {
@@ -63,6 +71,53 @@ export const api = {
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
   hashFile: (path: string) => invoke<string>("hash_file", { path }),
   relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
+  licenseTypes: () => invoke<LicenseType[]>("license_types"),
+  listCredits: (kind: CreditKind) => invoke<Credit[]>("list_credits", { kind }),
+  createCredit: (kind: CreditKind, input: CreditInput) => invoke<number>("create_credit", { kind, input }),
+  updateCredit: (kind: CreditKind, id: number, input: CreditInput) =>
+    invoke<void>("update_credit", { kind, id, input }),
+  deleteCredit: (kind: CreditKind, id: number) => invoke<void>("delete_credit", { kind, id }),
+  /** name が null なら外す */
+  setFileCredit: (kind: CreditKind, fileIds: number[], name: string | null) =>
+    invoke<number | null>("set_file_credit", { kind, fileIds, name }),
+};
+
+/** 出典かライセンスか */
+export type CreditKind = "source" | "license";
+
+/** ライセンスの条項。null は「不明」 */
+export type Terms = {
+  commercial: boolean | null;
+  credit: boolean | null;
+  modify: boolean | null;
+  redistribute: boolean | null;
+  shareAlike: boolean | null;
+};
+
+export type LicenseType = {
+  key: string;
+  name: string;
+  terms: Terms;
+};
+
+/** 出典またはライセンス。出典では licenseType は null、terms はすべて不明 */
+export type Credit = {
+  id: number;
+  name: string;
+  url: string;
+  note: string;
+  /** 一般的なライセンスの種類。「独自」のときは null */
+  licenseType: string | null;
+  terms: Terms;
+  fileCount: number;
+};
+
+export type CreditInput = {
+  name: string;
+  url: string;
+  note: string;
+  licenseType: string | null;
+  terms: Terms;
 };
 
 export type RenameResult = {

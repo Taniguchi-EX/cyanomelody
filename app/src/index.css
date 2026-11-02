@@ -39,12 +39,6 @@ body,
   margin: 0;
 }
 
-button,
-input {
-  font: inherit;
-  color: inherit;
-}
-
 button {
   background: var(--bg-sub);
   border: 1px solid var(--border);
@@ -350,4 +344,164 @@ h2:first-child {
 .empty {
   padding: 16px;
   color: var(--fg-sub);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+select,
+textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+.collapsible {
+  margin-top: 12px;
+}
+
+.collapsible-head {
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  min-width: 0;
+  text-align: left;
+}
+
+.collapse-toggle h2 {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.collapse-toggle .chip {
+  margin-left: 2px;
+}
+
+.caret {
+  font-size: 10px;
+  color: var(--fg-sub);
+  width: 12px;
+}
+
+.credit-form {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--bg-sub);
+}
+
+.credit-form h2 {
+  margin-top: 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 8px;
+  align-items: center;
+}
+
+.form-grid > label,
+.form-grid > span {
+  font-size: 12px;
+  color: var(--fg-sub);
+}
+
+.terms-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.term-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.term-label {
+  width: 96px;
+  font-size: 12px;
+}
+
+.segmented {
+  display: inline-flex;
+}
+
+.segmented button {
+  border-radius: 0;
+  min-width: 48px;
+  font-size: 12px;
+}
+
+.segmented button + button {
+  border-left: none;
+}
+
+.segmented button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.segmented button.on {
+  background: var(--selected);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.segmented button:disabled {
+  opacity: 0.45;
+}
+
+.terms-short {
+  font-size: 12px;
+}
+
+.credit-field h2:first-child {
+  margin-top: 12px;
+}
+
+.credit-detail {
+  margin-top: 4px;
+}
+
+.credit-detail a {
+  color: var(--accent);
+  display: block;
+}
+
+.credit-detail .note {
+  white-space: pre-wrap;
+}
+
+.credit-groups,
+.terms-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.terms-list li.unknown {
+  color: var(--warn);
 }

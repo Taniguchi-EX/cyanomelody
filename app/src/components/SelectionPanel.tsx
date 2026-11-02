@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { AudioFile, Tag } from "../api";
 
 type Props = {
@@ -10,6 +10,8 @@ type Props = {
   onRemoveMissing: () => void;
   onRelink: () => void;
   onShowSameAudio: (hash: string) => void;
+  /** タグの下に出す欄（出典・ライセンス） */
+  children?: ReactNode;
 };
 
 export function SelectionPanel({
@@ -21,6 +23,7 @@ export function SelectionPanel({
   onRemoveMissing,
   onRelink,
   onShowSameAudio,
+  children,
 }: Props) {
   const [name, setName] = useState("");
 
@@ -113,6 +116,8 @@ export function SelectionPanel({
           </li>
         ))}
       </ul>
+
+      {children}
 
       {missingCount > 0 && (
         <>

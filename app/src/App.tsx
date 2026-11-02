@@ -7,17 +7,25 @@ import {
   describeHashing,
   describeScan,
   type AudioFile,
+  type Credit,
+  type CreditInput,
+  type CreditKind,
   type FileFilter,
   type HashProgress,
   type LibraryFolder,
+  type LicenseType,
   type Tag,
 } from "./api";
+import { CREDIT_LABEL } from "./credits";
 import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
 import { FileList, type SelectMode } from "./components/FileList";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { TagManager } from "./components/TagManager";
+import { CreditPanel } from "./components/CreditPanel";
+import { CreditManager } from "./components/CreditManager";
+import { CreditField } from "./components/CreditField";
 
 type Status = { text: string; error: boolean };
 
@@ -28,7 +36,17 @@ const EMPTY_FILTER: FileFilter = {
   missingOnly: false,
   duplicatesOnly: false,
   hash: null,
+  sourceIds: [],
+  noSource: false,
+  licenseIds: [],
+  noLicense: false,
 };
+
+/** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
+const FILTER_KEYS = {
+  source: { ids: "sourceIds", none: "noSource" },
+  license: { ids: "licenseIds", none: "noLicense" },
+} as const;
 
 export default function App() {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
@@ -42,6 +60,10 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
   const [managing, setManaging] = useState(false);
+  const [sources, setSources] = useState<Credit[]>([]);
+  const [licenses, setLicenses] = useState<Credit[]>([]);
+  const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
+  const [managingCredit, setManagingCredit] = useState<CreditKind | null>(null);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchPath, setSearchPath] = useState("");
@@ -59,15 +81,26 @@ export default function App() {
   }, [filter]);
 
   const reloadAll = useCallback(async () => {
-    const [fs, ts] = await Promise.all([api.listFolders(), api.listTags()]);
+    const [fs, ts, ss, ls] = await Promise.all([
+      api.listFolders(),
+      api.listTags(),
+      api.listCredits("source"),
+      api.listCredits("license"),
+    ]);
     setFolders(fs);
     setTags(ts);
+    setSources(ss);
+    setLicenses(ls);
     await reloadFiles();
   }, [reloadFiles]);
 
   useEffect(() => {
     reloadAll().catch(showError);
   }, [reloadAll]);
+
+  useEffect(() => {
+    api.licenseTypes().then(setLicenseTypes).catch(showError);
+  }, []);
 
   // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、選んだファイルのハッシュ値が変わるため）
   const reloadAllRef = useRef(reloadAll);
@@ -318,6 +351,80 @@ export default function App() {
     });
   };
 
+  const creditsOf = (kind: CreditKind) => (kind === "source" ? sources : licenses);
+
+  /** 出典どうし・ライセンスどうしはOR。「なし」とは同時に選べない */
+  const toggleCredit = (kind: CreditKind, id: number) => {
+    const k = FILTER_KEYS[kind];
+    setFilter((f) => ({
+      ...f,
+      [k.none]: false,
+      [k.ids]: f[k.ids].includes(id) ? f[k.ids].filter((x) => x !== id) : [...f[k.ids], id],
+    }));
+  };
+
+  const toggleCreditNone = (kind: CreditKind) => {
+    const k = FILTER_KEYS[kind];
+    setFilter((f) => ({ ...f, [k.ids]: [], [k.none]: !f[k.none] }));
+  };
+
+  const removeFilterCredit = (kind: CreditKind, id: number) => {
+    const k = FILTER_KEYS[kind];
+    setFilter((f) => (f[k.ids].includes(id) ? { ...f, [k.ids]: f[k.ids].filter((x) => x !== id) } : f));
+  };
+
+  const createCredit = async (kind: CreditKind, input: CreditInput) => {
+    let ok = false;
+    await run(async () => {
+      await api.createCredit(kind, input);
+      showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を作成しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const updateCredit = async (kind: CreditKind, credit: Credit, input: CreditInput) => {
+    let ok = false;
+    await run(async () => {
+      await api.updateCredit(kind, credit.id, input);
+      showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を保存しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const deleteCredit = (kind: CreditKind, credit: Credit) => {
+    const label = CREDIT_LABEL[kind];
+    const message =
+      `${label}「${credit.name}」を削除しますか？
+` +
+      `設定されているファイル${credit.fileCount}件は「${label}なし」になります。`;
+    if (!window.confirm(message)) return;
+    run(async () => {
+      await api.deleteCredit(kind, credit.id);
+      removeFilterCredit(kind, credit.id);
+      showInfo(`${label}「${credit.name}」を削除しました`);
+    });
+  };
+
+  const setFileCredit = async (kind: CreditKind, name: string) => {
+    let ok = false;
+    await run(async () => {
+      await api.setFileCredit(kind, selectedIds(), name);
+      showInfo(`${selectedFiles.length}件に${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const clearFileCredit = (kind: CreditKind) =>
+    run(async () => {
+      await api.setFileCredit(kind, selectedIds(), null);
+      showInfo(`${selectedFiles.length}件の${CREDIT_LABEL[kind]}を外しました`);
+    });
+
+  const creditKinds: CreditKind[] = ["source", "license"];
+
   return (
     <div className="app">
       <aside className="side">
@@ -336,6 +443,18 @@ export default function App() {
           onToggleUntagged={toggleUntagged}
           onManage={() => setManaging(true)}
         />
+        {creditKinds.map((kind) => (
+          <CreditPanel
+            key={kind}
+            kind={kind}
+            credits={creditsOf(kind)}
+            selectedIds={filter[FILTER_KEYS[kind].ids]}
+            noneSelected={filter[FILTER_KEYS[kind].none]}
+            onToggle={(id) => toggleCredit(kind, id)}
+            onToggleNone={() => toggleCreditNone(kind)}
+            onManage={() => setManagingCredit(kind)}
+          />
+        ))}
       </aside>
 
       <main className="main">
@@ -374,6 +493,10 @@ export default function App() {
             filter.missingOnly ||
             filter.duplicatesOnly ||
             filter.hash ||
+            filter.sourceIds.length > 0 ||
+            filter.noSource ||
+            filter.licenseIds.length > 0 ||
+            filter.noLicense ||
             text) && (
             <button
               onClick={() => {
@@ -428,7 +551,21 @@ export default function App() {
           onRemoveMissing={removeMissing}
           onRelink={relink}
           onShowSameAudio={showSameAudio}
-        />
+        >
+          {creditKinds.map((kind) => (
+            <CreditField
+              key={kind}
+              kind={kind}
+              files={selectedFiles}
+              credits={creditsOf(kind)}
+              licenseTypes={licenseTypes}
+              busy={busy}
+              onSet={(name) => setFileCredit(kind, name)}
+              onClear={() => clearFileCredit(kind)}
+              onError={showError}
+            />
+          ))}
+        </SelectionPanel>
       </aside>
 
       <div className="status-bar">
@@ -452,6 +589,19 @@ export default function App() {
           onDelete={deleteTag}
           onDeleteUnused={deleteUnusedTags}
           onClose={() => setManaging(false)}
+        />
+      )}
+      {managingCredit && (
+        <CreditManager
+          key={managingCredit}
+          kind={managingCredit}
+          credits={creditsOf(managingCredit)}
+          licenseTypes={licenseTypes}
+          busy={busy}
+          onCreate={(input) => createCredit(managingCredit, input)}
+          onUpdate={(credit, input) => updateCredit(managingCredit, credit, input)}
+          onDelete={(credit) => deleteCredit(managingCredit, credit)}
+          onClose={() => setManagingCredit(null)}
         />
       )}
     </div>
