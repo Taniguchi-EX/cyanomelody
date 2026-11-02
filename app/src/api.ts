@@ -48,8 +48,20 @@ export type FileFilter = {
 export type Tag = {
   id: number;
   name: string;
+  /** 親のタグのid。最上位なら null */
+  parentId: number | null;
+  /** 階層の深さ。最上位は0 */
+  depth: number;
+  /** そのタグか子孫のタグが付いたファイルの数 */
   fileCount: number;
 };
+
+/** タグを移す先 */
+export type MoveTarget =
+  | { kind: "before"; tagId: number }
+  | { kind: "after"; tagId: number }
+  | { kind: "child"; tagId: number }
+  | { kind: "root" };
 
 export const api = {
   listFolders: () => invoke<LibraryFolder[]>("list_folders"),
@@ -66,6 +78,7 @@ export const api = {
     invoke<RenameResult>("rename_tag", { tagId, name, merge }),
   deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),
   deleteUnusedTags: () => invoke<number>("delete_unused_tags"),
+  moveTag: (tagId: number, target: MoveTarget) => invoke<void>("move_tag", { tagId, target }),
   startHashing: () => invoke<void>("start_hashing"),
   cancelHashing: () => invoke<void>("cancel_hashing"),
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),

@@ -31,8 +31,10 @@ export function SelectionPanel({
   const counts = useMemo(() => {
     const map = new Map<string, number>();
     for (const f of files) for (const t of f.tags) map.set(t, (map.get(t) ?? 0) + 1);
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b, "ja"));
-  }, [files]);
+    // タグの一覧と同じ順に並べる
+    const order = new Map(tags.map((t, i) => [t.name, i]));
+    return [...map.entries()].sort(([a], [b]) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity));
+  }, [files, tags]);
 
   const tagId = (tagName: string) => tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())?.id;
   const missingCount = files.filter((f) => f.missing).length;

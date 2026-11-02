@@ -14,6 +14,7 @@ import {
   type HashProgress,
   type LibraryFolder,
   type LicenseType,
+  type MoveTarget,
   type Tag,
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
@@ -333,13 +334,24 @@ export default function App() {
   };
 
   const deleteTag = (tag: Tag) => {
-    if (!window.confirm(`タグ「${tag.name}」を削除しますか？\n付いているファイル${tag.fileCount}件から外れます。`)) return;
+    // fileCount は子孫のタグの分を含むので、件数は出さない
+    const children = tags.filter((t) => t.parentId === tag.id).length;
+    const message =
+      `タグ「${tag.name}」を削除しますか？\n付いているファイルから外れます。` +
+      (children > 0 ? `\n子のタグ${children}件は、削除したタグの位置に繰り上がります。` : "");
+    if (!window.confirm(message)) return;
     run(async () => {
       await api.deleteTag(tag.id);
       replaceFilterTag(tag.id, null);
       showInfo(`タグ「${tag.name}」を削除しました`);
     });
   };
+
+  const moveTag = (tag: Tag, target: MoveTarget) =>
+    run(async () => {
+      await api.moveTag(tag.id, target);
+      showInfo(`タグ「${tag.name}」を移しました`);
+    });
 
   const deleteUnusedTags = () => {
     const unused = tags.filter((t) => t.fileCount === 0);
@@ -442,6 +454,8 @@ export default function App() {
           onToggleTag={toggleTag}
           onToggleUntagged={toggleUntagged}
           onManage={() => setManaging(true)}
+          busy={busy}
+          onMove={moveTag}
         />
         {creditKinds.map((kind) => (
           <CreditPanel
