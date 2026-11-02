@@ -95,9 +95,28 @@ export async function connect(shotDir) {
       if (await b.count()) await b.click();
       await page.waitForTimeout(400);
     },
+    /** 行のチェックボックスを押す（Shift などは opts で） */
+    check: (rel, opts) => page.locator(`[data-testid=file-row][data-rel-path="${rel}"]`).getByTestId("file-check").click(opts),
+    checkedCount: () => page.getByTestId("checked-count").innerText(),
+    async clearChecks() {
+      const b = page.getByRole("button", { name: "チェックをすべて外す" });
+      if (await b.isEnabled()) await b.click();
+      await page.waitForTimeout(200);
+    },
+    /** 一括操作の欄のボタン（タグを付ける・タグを外す・出典・ライセンス）で、その操作の欄を開く */
+    async bulkMode(label) {
+      const b = page.getByTestId("bulk-bar").getByRole("button", { name: label, exact: true });
+      if ((await b.getAttribute("aria-pressed")) !== "true") await b.click();
+    },
+    async bulkAddTag(name) {
+      await ui.bulkMode("タグを付ける");
+      await page.getByLabel("まとめて付けるタグ名").fill(name);
+      await page.getByTestId("bulk-bar").getByRole("button", { name: "付ける", exact: true }).click();
+      await ui.waitIdle();
+    },
     async addTag(name) {
-      await page.getByLabel("付けるタグ名").fill(name);
-      await page.getByRole("button", { name: "付ける" }).click();
+      await page.getByLabel("付けるタグ名", { exact: true }).fill(name);
+      await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).click();
       await ui.waitIdle();
     },
     async finish() {

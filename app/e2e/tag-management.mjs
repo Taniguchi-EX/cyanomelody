@@ -54,10 +54,13 @@ for (const rel of ["chime.flac", "chime.mp3", "chime.ogg", "chime.wav", "サブ�
   });
 }
 
-await step("T05", "複数のファイルを選んでタグを付けられる（新しいタグを作る）", async () => {
-  await row("chime.wav").click();
-  await row("chime.mp3").click({ modifiers: ["Control"] });
-  await addTag("チャイム");
+await step("T05", "チェックした複数のファイルにまとめてタグを付けられる（新しいタグを作る）", async () => {
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await ui.bulkAddTag("チャイム");
+  const confirm = await ui.lastConfirm();
+  expect(confirm.includes("チェックした2件にタグ「チャイム」を付けますか"), confirm);
+  await ui.clearChecks();
   const t = await tagItem("チャイム").innerText();
   expect(t.includes("2"), `タグ一覧: ${t}`);
   expect((await row("chime.wav").locator(".chip").allInnerTexts()).includes("チャイム"), "一覧にタグが出ない");
@@ -103,19 +106,24 @@ await step("T09", "ファイル名の一部で絞り込める（大文字・小�
   await clearFilter();
 });
 
-await step("T10", "選んだファイルからタグを外せる", async () => {
-  await row("chime.wav").click();
-  await row("chime.mp3").click({ modifiers: ["Control"] });
-  await page.getByRole("button", { name: "チャイムを外す" }).click();
+await step("T10", "チェックしたファイルからまとめてタグを外せる", async () => {
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await ui.bulkMode("タグを外す");
+  const t = await page.locator("[data-testid=bulk-tag][data-tag-name=チャイム]").innerText();
+  expect(t.includes("2/2"), `件数の表示 ${t}`);
+  await page.getByRole("button", { name: "チャイムをまとめて外す" }).click();
   await waitIdle();
+  await ui.clearChecks();
   expect((await tagItem("チャイム").innerText()).includes("0"), await tagItem("チャイム").innerText());
 });
 
-await step("T11", "Shiftで範囲選択できる", async () => {
-  await row("chime.flac").click();
-  await row("chime.wav").click({ modifiers: ["Shift"] });
-  const t = await page.getByTestId("file-count").innerText();
-  expect(t.includes("4件を選択中"), t);
+await step("T11", "Shiftを押しながらチェックすると、範囲をまとめてチェックできる", async () => {
+  await ui.check("chime.flac");
+  await ui.check("chime.wav", { modifiers: ["Shift"] });
+  const t = await ui.checkedCount();
+  expect(t.includes("チェック 4件"), t);
+  await ui.clearChecks();
 });
 
 await step("T12", "見つからなくなったファイルに印が付き、タグは残る", async () => {
@@ -183,11 +191,14 @@ await step("T16", "3万ファイルのフォルダを登録・表示・スクロ
   return `登録とスキャン ${addMs}ms、10回スクロール ${scrollMs}ms、絞り込み ${filterMs}ms（入力待ち200msを含む）、描画行 ${rows}`;
 });
 
-await step("T17", "3万件を全選択してタグを付けられる", async () => {
+await step("T17", "3万件をすべてチェックして、まとめてタグを付けられる", async () => {
   await page.getByTestId("file-list").click();
   await page.keyboard.press("Control+a");
+  await page.waitForTimeout(500);
+  const c = await ui.checkedCount();
+  expect(c.includes("チェック 30004件"), c);
   const t0 = Date.now();
-  await addTag("一括");
+  await ui.bulkAddTag("一括");
   const ms = Date.now() - t0;
   expect((await tagItem("一括").innerText()).includes("30004"), await tagItem("一括").innerText());
   return `${ms}ms`;
@@ -205,8 +216,8 @@ await step("T18", "フォルダの登録を解除すると、ファイルとタ�
 
 await step("T19", "空のタグ名では付けられない", async () => {
   await row("chime.wav").click();
-  await page.getByLabel("付けるタグ名").fill("   ");
-  expect(await page.getByRole("button", { name: "付ける" }).isDisabled(), "ボタンが押せる");
+  await page.getByLabel("付けるタグ名", { exact: true }).fill("   ");
+  expect(await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).isDisabled(), "ボタンが押せる");
 });
 
 await ui.finish();
