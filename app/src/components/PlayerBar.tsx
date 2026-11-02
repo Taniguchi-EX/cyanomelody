@@ -1,11 +1,4 @@
-import type { PlayEntry } from "../api";
-
-export type Player = {
-  name: string;
-  queue: PlayEntry[];
-  index: number;
-  paused: boolean;
-};
+import type { Player } from "../hooks/useAudioPlayer";
 
 type Props = {
   player: Player;

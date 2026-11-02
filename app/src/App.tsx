@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -11,7 +10,6 @@ import {
   type CreditInput,
   type CreditKind,
   type FileFilter,
-  type FileSummary,
   type Facets,
   type HashProgress,
   type LibraryFolder,
@@ -33,7 +31,9 @@ import { FileList } from "./components/FileList";
 import { BulkBar } from "./components/BulkBar";
 import { PlaylistPanel } from "./components/PlaylistPanel";
 import { PlaylistEditor } from "./components/PlaylistEditor";
-import { PlayerBar, type Player } from "./components/PlayerBar";
+import { PlayerBar } from "./components/PlayerBar";
+import { useAudioPlayer } from "./hooks/useAudioPlayer";
+import { useChecks } from "./hooks/useChecks";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
@@ -70,15 +70,9 @@ export default function App() {
   const [text, setText] = useState("");
   /** クリックして右の欄に出しているファイル */
   const [focusedId, setFocusedId] = useState<number | null>(null);
-  /** チェックしたファイル。絞り込みを変えても外れない */
-  const [checked, setChecked] = useState<Set<number>>(new Set());
-  /** Shift+クリックでの範囲のチェックの起点（ファイルのid。絞り込みを変えても同じファイルを指す） */
-  const [checkAnchor, setCheckAnchor] = useState<number | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
-  const [summary, setSummary] = useState<FileSummary | null>(null);
   /** 左の欄の各項目を選んだときの件数 */
   const [facets, setFacets] = useState<Facets | null>(null);
-  const [playingId, setPlayingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
   const [managing, setManaging] = useState(false);
@@ -89,20 +83,24 @@ export default function App() {
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchPath, setSearchPath] = useState("");
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
   /** 中央で開いているプレイリスト（null ならファイルの一覧を出す） */
   const [openPlaylistId, setOpenPlaylistId] = useState<number | null>(null);
   const [playlistDetail, setPlaylistDetail] = useState<PlaylistDetail | null>(null);
-  /** プレイリストの再生。止まっていれば null */
-  const [player, setPlayer] = useState<Player | null>(null);
-  const playerRef = useRef<Player | null>(null);
-  playerRef.current = player;
+  // 開いているプレイリスト。データを読み直すとき（reloadAll）に参照する
   const openPlaylistRef = useRef<number | null>(null);
-  openPlaylistRef.current = openPlaylistId;
+  useEffect(() => {
+    openPlaylistRef.current = openPlaylistId;
+  }, [openPlaylistId]);
 
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
   const showInfo = (text: string) => setStatus({ text, error: false });
+
+  /** チェック（一括操作の対象） */
+  const checks = useChecks(files, showError);
+  const checked = checks.checked;
+  /** 試聴とプレイリストの再生 */
+  const audio = useAudioPlayer({ onInfo: showInfo, onError: showError });
 
   // 「チェックしたファイルだけ」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
@@ -153,7 +151,9 @@ export default function App() {
 
   // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、選んだファイルのハッシュ値が変わるため）
   const reloadAllRef = useRef(reloadAll);
-  reloadAllRef.current = reloadAll;
+  useEffect(() => {
+    reloadAllRef.current = reloadAll;
+  }, [reloadAll]);
   useEffect(() => {
     api
       .hashingProgress()
@@ -169,25 +169,6 @@ export default function App() {
   }, []);
 
   const startHashing = () => api.startHashing().catch(showError);
-
-  // チェックしたファイルの内訳。データが変わると一覧も読み直されるので、一覧が変わるたびに求め直す。
-  // ライブラリから消えたファイル（登録解除など）は、チェックから外す
-  useEffect(() => {
-    // チェックがないときは一括操作の欄を出さないので、内訳は求めない（前の内訳は使われない）
-    if (checked.size === 0) return;
-    let cancelled = false;
-    api
-      .summarizeFiles([...checked])
-      .then((s) => {
-        if (cancelled) return;
-        setSummary(s);
-        if (s.ids.length !== checked.size) setChecked(new Set(s.ids));
-      })
-      .catch(showError);
-    return () => {
-      cancelled = true;
-    };
-  }, [checked, files]);
 
   // ファイル名の入力は少し待ってから絞り込む
   useEffect(() => {
@@ -210,58 +191,6 @@ export default function App() {
 
   const focusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
   const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
-  const shownChecked = useMemo(() => files.reduce((n, f) => n + (checked.has(f.id) ? 1 : 0), 0), [files, checked]);
-
-  /** 行のチェックボックス。range なら起点との間をまとめて、押した行の新しい状態にそろえる */
-  const checkRow = (index: number, range: boolean) => {
-    const on = !checked.has(files[index].id);
-    // 起点のファイルが今の一覧にないときは、押した行だけ
-    const anchorIndex = range && checkAnchor !== null ? files.findIndex((f) => f.id === checkAnchor) : -1;
-    const [from, to] = anchorIndex >= 0 ? [Math.min(anchorIndex, index), Math.max(anchorIndex, index)] : [index, index];
-    setChecked((prev) => {
-      const next = new Set(prev);
-      for (const f of files.slice(from, to + 1)) {
-        if (on) next.add(f.id);
-        else next.delete(f.id);
-      }
-      return next;
-    });
-    setCheckAnchor(files[index].id);
-  };
-
-  const checkShown = (on: boolean) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      for (const f of files) {
-        if (on) next.add(f.id);
-        else next.delete(f.id);
-      }
-      return next;
-    });
-
-  const clearChecks = () => {
-    setChecked(new Set());
-    setCheckAnchor(null);
-  };
-
-  const play = (file: AudioFile) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    // 試聴を始めると、プレイリストの再生は止まる
-    if (playerRef.current) setPlayer(null);
-    if (playingId === file.id) {
-      audio.pause();
-      setPlayingId(null);
-      return;
-    }
-    audio.src = convertFileSrc(file.path);
-    setPlayingId(file.id);
-    audio.play().catch((e) => {
-      setPlayingId(null);
-      showError(`再生できませんでした: ${file.relPath}（${e}）`);
-    });
-  };
-
   const addFolder = async (path: string) => {
     let ok = false;
     await run(async () => {
@@ -520,7 +449,6 @@ export default function App() {
     });
 
   // 一括操作。対象はチェックしたファイルすべて（表示していないものも含む）なので、毎回件数を出して確認する
-  const checkedIds = () => [...checked];
 
   /** 確認してから実行する。実行したら true */
   const bulk = async (message: string, task: () => Promise<void>) => {
@@ -535,20 +463,20 @@ export default function App() {
 
   const bulkAddTag = (name: string) =>
     bulk(`チェックした${checked.size}件にタグ「${name.trim()}」を付けますか？`, async () => {
-      await api.addTag(checkedIds(), name);
+      await api.addTag(checks.ids(), name);
       showInfo(`チェックした${checked.size}件にタグ「${name.trim()}」を付けました`);
     });
 
   const bulkRemoveTag = (tag: Tag) =>
     bulk(`チェックした${checked.size}件からタグ「${tag.name}」を外しますか？`, async () => {
-      await api.removeTag(checkedIds(), tag.id);
+      await api.removeTag(checks.ids(), tag.id);
       showInfo(`チェックした${checked.size}件からタグ「${tag.name}」を外しました`);
     });
 
   const bulkSetCredit = (kind: CreditKind, name: string) => {
     const label = CREDIT_LABEL[kind];
     return bulk(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しますか？`, async () => {
-      await api.setFileCredit(kind, checkedIds(), name);
+      await api.setFileCredit(kind, checks.ids(), name);
       showInfo(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しました`);
     });
   };
@@ -556,15 +484,15 @@ export default function App() {
   const bulkClearCredit = (kind: CreditKind) => {
     const label = CREDIT_LABEL[kind];
     return bulk(`チェックした${checked.size}件の${label}を外しますか？`, async () => {
-      await api.setFileCredit(kind, checkedIds(), null);
+      await api.setFileCredit(kind, checks.ids(), null);
       showInfo(`チェックした${checked.size}件の${label}を外しました`);
     });
   };
 
   const bulkRelink = async () => {
-    const message = `チェックしたうち、見つからないファイル${summary?.missing ?? 0}件をひも付け直しますか？`;
+    const message = `チェックしたうち、見つからないファイル${checks.summary?.missing ?? 0}件をひも付け直しますか？`;
     if (!(await confirmDialog(message))) return;
-    relink(checkedIds());
+    relink(checks.ids());
   };
 
   const creditKinds: CreditKind[] = ["source", "license"];
@@ -637,7 +565,7 @@ export default function App() {
 
   const bulkAddToPlaylist = (playlistId: number) =>
     bulk(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しますか？`, async () => {
-      await playlistApi.addFiles(playlistId, checkedIds());
+      await playlistApi.addFiles(playlistId, checks.ids());
       showInfo(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
     });
 
@@ -679,34 +607,6 @@ export default function App() {
       await playlistApi.setItemMode(item.id, mode);
     });
 
-  // 再生。再生順は始めるときに決める
-  /** 再生順の index 番目を再生する。範囲の外なら終わる。再生できなければ飛ばす */
-  const playAt = (p: Player, index: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (index < 0 || index >= p.queue.length) {
-      audio.pause();
-      setPlayer(null);
-      showInfo(`「${p.name}」の再生が終わりました`);
-      return;
-    }
-    const next = { ...p, index, paused: false };
-    setPlayer(next);
-    playerRef.current = next;
-    setPlayingId(null);
-    const entry = p.queue[index];
-    audio.src = convertFileSrc(entry.path);
-    audio.play().catch((e) => skip(next, String(e)));
-  };
-
-  /** 再生できなかった曲を飛ばす。再生の失敗は play() の失敗と audio の error の両方で届くので、
-   *  すでに別の曲に移っていれば何もしない */
-  const skip = (p: Player, reason: string) => {
-    if (playerRef.current !== p) return;
-    showError(`再生できなかったので飛ばしました: ${p.queue[p.index].relPath}（${reason}）`);
-    playAt(p, p.index + 1);
-  };
-
   const playPlaylist = async (id: number, mode: PlayMode = "order") => {
     try {
       const queue = await playlistApi.expand(id, mode);
@@ -714,23 +614,10 @@ export default function App() {
         showInfo(`「${playlistName(id)}」には再生するファイルがありません`);
         return;
       }
-      playAt({ name: playlistName(id), queue, index: 0, paused: false }, 0);
+      audio.playQueue(playlistName(id), queue);
     } catch (e) {
       showError(e);
     }
-  };
-
-  const stopPlayer = () => {
-    audioRef.current?.pause();
-    setPlayer(null);
-  };
-
-  const togglePause = () => {
-    const audio = audioRef.current;
-    if (!audio || !player) return;
-    if (player.paused) audio.play().catch(showError);
-    else audio.pause();
-    setPlayer({ ...player, paused: !player.paused });
   };
 
   return (
@@ -800,121 +687,121 @@ export default function App() {
           />
         ) : (
           <>
-        <div className="toolbar">
-          <input
-            type="text"
-            placeholder="ファイル名で絞り込む"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            aria-label="ファイル名で絞り込む"
-          />
-          <label>
-            <input
-              type="checkbox"
-              checked={filter.missingOnly}
-              onChange={(e) => setFilter((f) => ({ ...f, missingOnly: e.target.checked }))}
+            <div className="toolbar">
+              <input
+                type="text"
+                placeholder="ファイル名で絞り込む"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                aria-label="ファイル名で絞り込む"
+              />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={filter.missingOnly}
+                  onChange={(e) => setFilter((f) => ({ ...f, missingOnly: e.target.checked }))}
+                />
+                見つからないファイルだけ
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={filter.duplicatesOnly}
+                  onChange={(e) => setFilter((f) => ({ ...f, duplicatesOnly: e.target.checked }))}
+                />
+                重複しているファイルだけ
+              </label>
+              <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
+              {filter.hash && (
+                <span className="chip" data-testid="hash-filter" title={filter.hash}>
+                  同じ音声：{filter.hash.slice(0, 12)}…
+                </span>
+              )}
+              {(filter.tagIds.length > 0 ||
+                filter.untaggedOnly ||
+                filter.missingOnly ||
+                filter.duplicatesOnly ||
+                filter.hash ||
+                filter.sourceIds.length > 0 ||
+                filter.noSource ||
+                filter.licenseIds.length > 0 ||
+                filter.noLicense ||
+                checkedOnly ||
+                text) && (
+                <button
+                  onClick={() => {
+                    setText("");
+                    setCheckedOnly(false);
+                    setFilter(EMPTY_FILTER);
+                  }}
+                >
+                  絞り込みを解除
+                </button>
+              )}
+              <span className="sub" data-testid="file-count">
+                {files.length}件
+              </span>
+              <span className="checked-count" data-testid="checked-count">
+                チェック {checked.size}件（表示中 {checks.shownChecked}件）
+              </span>
+              <button onClick={checks.clear} disabled={checked.size === 0}>
+                チェックをすべて外す
+              </button>
+              <label>
+                <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
+                チェックしたファイルだけ
+              </label>
+            </div>
+            {searching && (
+              <div className="toolbar">
+                <span className="sub">このファイルと同じ音声のファイルを探す：</span>
+                <input
+                  type="text"
+                  placeholder="音声ファイルのパス"
+                  value={searchPath}
+                  onChange={(e) => setSearchPath(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && searchPath.trim() && searchByFile()}
+                  aria-label="探す音声ファイルのパス"
+                />
+                <button onClick={browseSearchFile} disabled={busy}>
+                  参照
+                </button>
+                <button onClick={searchByFile} disabled={busy || !searchPath.trim()}>
+                  探す
+                </button>
+              </div>
+            )}
+            {checked.size > 0 && (
+              <BulkBar
+                checkedCount={checked.size}
+                summary={checks.summary}
+                tags={tags}
+                sources={sources}
+                licenses={licenses}
+                licenseTypes={licenseTypes}
+                busy={busy}
+                onAddTag={bulkAddTag}
+                onRemoveTag={bulkRemoveTag}
+                onSetCredit={bulkSetCredit}
+                onClearCredit={bulkClearCredit}
+                onRelink={bulkRelink}
+                onRemoveMissing={() => removeMissing(checks.ids(), checks.summary?.missing ?? 0)}
+                onError={showError}
+                playlists={playlists}
+                onAddToPlaylist={bulkAddToPlaylist}
+              />
+            )}
+            <FileList
+              files={files}
+              focusedId={focusedId}
+              checked={checked}
+              playingId={audio.previewId}
+              onFocus={(f) => setFocusedId(f.id)}
+              onCheck={checks.checkRow}
+              onCheckShown={checks.checkShown}
+              onPlay={audio.preview}
+              showHash={filter.duplicatesOnly || filter.hash !== null}
             />
-            見つからないファイルだけ
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={filter.duplicatesOnly}
-              onChange={(e) => setFilter((f) => ({ ...f, duplicatesOnly: e.target.checked }))}
-            />
-            重複しているファイルだけ
-          </label>
-          <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
-          {filter.hash && (
-            <span className="chip" data-testid="hash-filter" title={filter.hash}>
-              同じ音声：{filter.hash.slice(0, 12)}…
-            </span>
-          )}
-          {(filter.tagIds.length > 0 ||
-            filter.untaggedOnly ||
-            filter.missingOnly ||
-            filter.duplicatesOnly ||
-            filter.hash ||
-            filter.sourceIds.length > 0 ||
-            filter.noSource ||
-            filter.licenseIds.length > 0 ||
-            filter.noLicense ||
-            checkedOnly ||
-            text) && (
-            <button
-              onClick={() => {
-                setText("");
-                setCheckedOnly(false);
-                setFilter(EMPTY_FILTER);
-              }}
-            >
-              絞り込みを解除
-            </button>
-          )}
-          <span className="sub" data-testid="file-count">
-            {files.length}件
-          </span>
-          <span className="checked-count" data-testid="checked-count">
-            チェック {checked.size}件（表示中 {shownChecked}件）
-          </span>
-          <button onClick={clearChecks} disabled={checked.size === 0}>
-            チェックをすべて外す
-          </button>
-          <label>
-            <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
-            チェックしたファイルだけ
-          </label>
-        </div>
-        {searching && (
-          <div className="toolbar">
-            <span className="sub">このファイルと同じ音声のファイルを探す：</span>
-            <input
-              type="text"
-              placeholder="音声ファイルのパス"
-              value={searchPath}
-              onChange={(e) => setSearchPath(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && searchPath.trim() && searchByFile()}
-              aria-label="探す音声ファイルのパス"
-            />
-            <button onClick={browseSearchFile} disabled={busy}>
-              参照
-            </button>
-            <button onClick={searchByFile} disabled={busy || !searchPath.trim()}>
-              探す
-            </button>
-          </div>
-        )}
-        {checked.size > 0 && (
-          <BulkBar
-            checkedCount={checked.size}
-            summary={summary}
-            tags={tags}
-            sources={sources}
-            licenses={licenses}
-            licenseTypes={licenseTypes}
-            busy={busy}
-            onAddTag={bulkAddTag}
-            onRemoveTag={bulkRemoveTag}
-            onSetCredit={bulkSetCredit}
-            onClearCredit={bulkClearCredit}
-            onRelink={bulkRelink}
-            onRemoveMissing={() => removeMissing(checkedIds(), summary?.missing ?? 0)}
-            onError={showError}
-            playlists={playlists}
-            onAddToPlaylist={bulkAddToPlaylist}
-          />
-        )}
-        <FileList
-          files={files}
-          focusedId={focusedId}
-          checked={checked}
-          playingId={playingId}
-          onFocus={(f) => setFocusedId(f.id)}
-          onCheck={checkRow}
-          onCheckShown={checkShown}
-          onPlay={play}
-          showHash={filter.duplicatesOnly || filter.hash !== null}
-        />
           </>
         )}
       </main>
@@ -949,13 +836,13 @@ export default function App() {
       </aside>
 
       <div className="status-bar">
-        {player && (
+        {audio.player && (
           <PlayerBar
-            player={player}
-            onPrev={() => playAt(player, player.index - 1)}
-            onNext={() => playAt(player, player.index + 1)}
-            onTogglePause={togglePause}
-            onStop={stopPlayer}
+            player={audio.player}
+            onPrev={audio.prev}
+            onNext={audio.next}
+            onTogglePause={audio.togglePause}
+            onStop={audio.stop}
           />
         )}
         <div className={`status${status.error ? " error" : ""}`} data-testid="status">
@@ -968,19 +855,7 @@ export default function App() {
           </div>
         )}
       </div>
-      <audio
-        ref={audioRef}
-        onError={() => {
-          const p = playerRef.current;
-          if (p) skip(p, "ファイルを読めません");
-        }}
-        onEnded={() => {
-          // プレイリストの再生中なら次へ。試聴なら止まる
-          const p = playerRef.current;
-          if (p) playAt(p, p.index + 1);
-          else setPlayingId(null);
-        }}
-      />
+      <audio {...audio.audioProps} />
       {managing && (
         <TagManager
           tags={tags}
