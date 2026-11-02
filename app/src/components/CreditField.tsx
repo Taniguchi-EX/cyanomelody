@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { CountItem, Credit, CreditKind, LicenseType } from "../api";
-import { CREDIT_LABEL, TERM_DEFS, isWebUrl, termValueLabel } from "../credits";
+import { CREDIT_LABEL, isWebUrl } from "../credits";
+import { TermMarks } from "./TermMarks";
 
 type Props = {
   kind: CreditKind;
@@ -27,6 +28,7 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
   const uniform = groups.length === 1 ? groups[0].id : undefined;
   const current = uniform != null ? byId(uniform) : undefined;
   const anySet = groups.some((g) => g.id !== null);
+  const typeName = licenseTypes.find((t) => t.key === current?.licenseType)?.name;
   const prefix = bulk ? "bulk-" : "";
   const listId = `${prefix}${kind}-names`;
 
@@ -74,14 +76,8 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
           {current.note && <div className="note">{current.note}</div>}
           {kind === "license" && (
             <>
-              <div>種類：{licenseTypes.find((t) => t.key === current.licenseType)?.name ?? "独自"}</div>
-              <ul className="terms-list">
-                {TERM_DEFS.map((d) => (
-                  <li key={d.key} className={current.terms[d.key] === null ? "unknown" : ""}>
-                    {d.label}：{termValueLabel(d, current.terms[d.key])}
-                  </li>
-                ))}
-              </ul>
+              {typeName && typeName !== current.name && <div>{typeName}</div>}
+              <TermMarks terms={current.terms} words />
             </>
           )}
         </div>
@@ -105,8 +101,11 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
         <button onClick={set} disabled={busy || !name.trim()}>
           設定
         </button>
-        <button onClick={onClear} disabled={busy || !anySet} aria-label={bulk ? `まとめて${label}を外す` : `${label}を外す`}>
-          外す
+        <button onClick={onClear} disabled={busy || !anySet} className="icon"
+          title="外す"
+          aria-label={bulk ? `まとめて${label}を外す` : `${label}を外す`}
+        >
+          ✕
         </button>
       </div>
     </div>

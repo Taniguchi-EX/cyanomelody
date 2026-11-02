@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Credit, CreditInput, CreditKind, LicenseType } from "../api";
-import { CREDIT_LABEL, TERM_DEFS, UNKNOWN_TERMS, shortTerm } from "../credits";
+import { CREDIT_LABEL, UNKNOWN_TERMS } from "../credits";
+import { TermMarks } from "./TermMarks";
 import { TermsEditor } from "./TermsEditor";
 import { useEscape } from "../hooks/useEscape";
 
@@ -140,7 +141,7 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
                 {isLicense && (
                   <td className="terms-short" data-testid="terms-short">
                     <div>{typeName(c.licenseType)}</div>
-                    <div className="sub">{TERM_DEFS.map((d) => shortTerm(d, c.terms[d.key])).join(" ")}</div>
+                    <TermMarks terms={c.terms} words />
                   </td>
                 )}
                 <td className="num">{c.fileCount}</td>

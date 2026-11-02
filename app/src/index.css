@@ -153,8 +153,7 @@ h2:first-child {
 /* 印を付けずに並べるリスト */
 .tag-list,
 .selected-tags,
-.credit-groups,
-.terms-list {
+.credit-groups {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -550,13 +549,47 @@ h2:first-child {
   white-space: pre-wrap;
 }
 
-.credit-groups,
-.terms-list {
+.credit-groups {
   margin-top: 2px;
 }
 
-.terms-list li.unknown {
-  color: var(--warn);
+/* 条項の色分け（緑は使いやすい側、橙は制約、灰は不明） */
+.term-marks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px;
+  font-weight: normal;
+}
+
+.term-marks.words {
+  margin-left: 0;
+  padding: 0;
+}
+
+.term-mark {
+  display: inline-block;
+  min-width: 1.3em;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-size: 11px;
+  text-align: center;
+}
+
+.term-mark.free {
+  color: #fff;
+  background: #1a7f37;
+}
+
+.term-mark.bound {
+  color: #fff;
+  background: var(--warn);
+}
+
+.term-mark.unknown {
+  color: var(--fg-sub);
+  border: 1px dashed var(--border);
 }
 
 /* ===== 管理画面（重ねて表示する画面） ===== */
@@ -874,4 +907,16 @@ button.icon {
 .player-progress > div {
   height: 100%;
   background: var(--accent);
+}
+
+/* 左の欄のライセンスの行：名前が長いときは名前を省く（条項と件数は残す） */
+.credit-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-list li .term-marks {
+  flex: none;
+  flex-wrap: nowrap;
 }

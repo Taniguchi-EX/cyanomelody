@@ -9,12 +9,11 @@ const formats = path.join(dataDir, "formats");
 const ui = await connect(shotDir);
 const { page, step, shot, status, fileCount, row, waitIdle, addFolder, clearFilter } = ui;
 
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const LABEL = { source: "出典", license: "ライセンス" };
 
-// 左の欄の出典・ライセンスの行。行の文字列は「名前」+「件数」
-const leftItem = (kind, name) => page.getByTestId(kind).filter({ hasText: new RegExp(`^${escape(name)}\\d+$`) });
-const leftCount = async (kind, name) => parseInt((await leftItem(kind, name).innerText()).replace(/^.*?(\d+)$/s, "$1"), 10);
+// 左の欄の出典・ライセンスの行
+const leftItem = (kind, name) => page.locator(`[data-testid=${kind}][data-credit-name="${name}"]`);
+const leftCount = async (kind, name) => parseInt(await leftItem(kind, name).getByTestId("credit-count").innerText(), 10);
 const section = (id) => page.getByTestId(`section-${id}`);
 const manageRow = (name) => page.locator(`[data-testid=manage-credit][data-credit-name="${name}"]`);
 const manageNames = () => page.getByTestId("manage-credit").evaluateAll((rows) => rows.map((r) => r.dataset.creditName));
@@ -25,7 +24,8 @@ const termsDisabled = () =>
   page.getByTestId("terms-editor").locator("button").evaluateAll((bs) => bs.every((b) => b.disabled));
 const termsEnabled = () =>
   page.getByTestId("terms-editor").locator("button").evaluateAll((bs) => bs.every((b) => !b.disabled));
-const shortTerms = (name) => manageRow(name).getByTestId("terms-short").innerText();
+// 種類の名前と条項の言葉を、空白1つでつないだ文字列
+const shortTerms = async (name) => (await manageRow(name).getByTestId("terms-short").innerText()).replace(/\s+/g, " ");
 const current = (kind) => page.getByTestId(`current-${kind}`).innerText();
 const detail = (kind) => page.getByTestId(`detail-${kind}`).innerText();
 
@@ -173,8 +173,8 @@ await step("C10", "まだない名前のライセンスを設定すると、独�
   await bulkSetCredit("license", "新しい規約");
   expect((await current("license")) === "新しい規約", await current("license"));
   const d = await detail("license");
-  expect(d.includes("種類：独自"), d);
-  expect((d.match(/不明/g) ?? []).length === 5, d);
+  expect((d.match(/？/g) ?? []).length === 5, d);
+  expect((await page.getByTestId("detail-license").locator(".term-mark.unknown").count()) === 5, "不明の色");
   expect((await leftCount("license", "新しい規約")) === 2, "左の欄の件数");
 });
 
@@ -305,6 +305,15 @@ await step("C20", "管理画面：名前の欄でEnterを押すと作成でき�
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   expect((await page.getByTestId("credit-form").count()) === 0, "閉じない");
+});
+
+await step("C21", "左の欄のライセンスの行に、条項が色分けした記号で出る（マウスを乗せると言葉）", async () => {
+  const marks = leftItem("license", "サイトC規約").getByTestId("term-marks");
+  const states = await marks.locator(".term-mark").evaluateAll((els) => els.map((e) => e.className.replace("term-mark ", "")).join(","));
+  expect(states === "bound,bound,free,free,unknown", states);
+  const title = await marks.getAttribute("title");
+  expect(title === "商用不可 表記要 改変可 再配布可 継承？", title);
+  await shot("C21_条項の記号");
 });
 
 await ui.finish();

@@ -1,6 +1,7 @@
 import type { CountItem, Credit, CreditKind } from "../api";
 import { CREDIT_LABEL } from "../credits";
 import { Collapsible } from "./Collapsible";
+import { TermMarks } from "./TermMarks";
 
 type Props = {
   kind: CreditKind;
@@ -67,8 +68,11 @@ export function CreditPanel({
               data-testid={kind}
               data-credit-name={c.name}
             >
-              <span>{c.name}</span>
-              <span className="sub">{count}</span>
+              <span className="credit-name">{c.name}</span>
+              {kind === "license" && <TermMarks terms={c.terms} />}
+              <span className="sub" data-testid="credit-count">
+                {count}
+              </span>
             </li>
           );
         })}
