@@ -110,10 +110,14 @@ export async function connect(shotDir) {
     },
     /** 行のチェックボックスを押す（Shift などは opts で） */
     check: (rel, opts) => page.locator(`[data-testid=file-row][data-rel-path="${rel}"]`).getByTestId("file-check").click(opts),
-    checkedCount: () => page.getByTestId("checked-count").innerText(),
+    /** チェックの件数の表示。チェックがないときは表示が消えるので、0件の文字列を返す */
+    async checkedCount() {
+      const el = page.getByTestId("checked-count");
+      return (await el.count()) ? el.innerText() : "チェック 0件（表示中 0件）";
+    },
     async clearChecks() {
       const b = page.getByRole("button", { name: "チェックをすべて外す" });
-      if (await b.isEnabled()) await b.click();
+      if ((await b.count()) && (await b.isEnabled())) await b.click();
       await page.waitForTimeout(200);
     },
     /** 一括操作の欄のボタン（タグを付ける・タグを外す・出典・ライセンス）で、その操作の欄を開く */

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { LibraryFolder } from "../api";
+import { baseName } from "../paths";
 
 type Props = {
   folders: LibraryFolder[];
@@ -14,9 +15,6 @@ type Props = {
   /** 押したフォルダで絞り込む（選んでいるフォルダなら外す） */
   onSelect: (id: number) => void;
 };
-
-/** パスの最後の名前 */
-const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll, selectedId, onSelect }: Props) {
   const [path, setPath] = useState("");

@@ -131,4 +131,23 @@ await step("F09", "グレーアウトしていても、取っ手で並べ替え�
   await clearFilter();
 });
 
+await step("F10", "選んでいる条件が一覧の上にチップで並び、押すとその条件だけ外れる", async () => {
+  const chips = async () => (await page.getByTestId("filter-chips").count()) ? (await page.getByTestId("filter-chips").getByRole("button").allInnerTexts()).map((s) => s.replace(/\s+/g, "")) : [];
+  expect((await chips()).length === 0, "条件がないのにチップがある");
+  await tagItem("環境音").click();
+  await tagItem("雨").click();
+  await page.getByTestId("folder").locator(".folder-name").click();
+  await page.waitForTimeout(500);
+  let c = await chips();
+  expect(c.join(",") === "📁formats✕,🏷環境音✕,🏷雨✕", c.join(","));
+  await shot("F10_条件のチップ");
+  await page.getByRole("button", { name: "雨の条件を外す" }).click();
+  await page.waitForTimeout(500);
+  c = await chips();
+  expect(c.join(",") === "📁formats✕,🏷環境音✕", c.join(","));
+  expect(!(await tagItem("雨").getAttribute("class")).includes("active"), "雨が選ばれたまま");
+  await clearFilter();
+  expect((await chips()).length === 0, "すべて解除で消えない");
+});
+
 await ui.finish();

@@ -78,7 +78,8 @@ await step("B05", "「チェックしたファイルだけ」はほかの条件�
   expect((await fileCount()) === 1, `ファイル名とAND ${await fileCount()}`);
   await row("chime.wav").click();
   await clearFilter();
-  expect(!(await checkedOnly().isChecked()), "チェックしたファイルだけが外れない");
+  // チェックがなくなると「チェックしたファイルだけ」自体が消える
+  expect((await checkedOnly().count()) === 0, "チェックしたファイルだけが残っている");
   expect((await fileCount()) === 5, `解除後 ${await fileCount()}`);
   expect((await ui.checkedCount()).startsWith("チェック 0件"), "チェックが外れない");
   expect((await page.getByTestId("detail-panel").count()) === 0, "右の欄の表示が残る");

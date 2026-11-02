@@ -28,6 +28,8 @@ import { CREDIT_LABEL } from "./credits";
 import { confirmDialog } from "./confirm";
 import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
+import { baseName } from "./paths";
+import { FilterChips, type FilterChip } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
 import { FileList } from "./components/FileList";
 import { BulkBar } from "./components/BulkBar";
@@ -291,6 +293,7 @@ export default function App() {
 
   /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
   const missingTotal = folders.reduce((n, f) => n + f.missingCount, 0);
+
   const anyActive =
     filter.folderId !== null ||
     filter.tagIds.length > 0 ||
@@ -765,6 +768,51 @@ export default function App() {
     }
   };
 
+  // 選んでいる絞り込みの条件（一覧の上にチップで出す。押すとその条件だけ外す）
+  const nameOf = (list: { id: number; name: string }[], id: number) => list.find((x) => x.id === id)?.name ?? "?";
+  const filterChips: FilterChip[] = [];
+  if (filter.folderId !== null) {
+    const folder = folders.find((f) => f.id === filter.folderId);
+    filterChips.push({
+      key: "folder",
+      icon: "📁",
+      label: folder ? baseName(folder.path) : "?",
+      title: folder?.path,
+      onRemove: () => setFilter((f) => ({ ...f, folderId: null })),
+    });
+  }
+  if (filter.untaggedOnly) filterChips.push({ key: "untagged", icon: "🏷", label: "タグなし", onRemove: toggleUntagged });
+  for (const id of filter.tagIds) {
+    filterChips.push({ key: `tag-${id}`, icon: "🏷", label: nameOf(tags, id), onRemove: () => toggleTag(id) });
+  }
+  for (const kind of ["source", "license"] as const) {
+    const k = FILTER_KEYS[kind];
+    const icon = kind === "source" ? "🔗" : "⚖";
+    if (filter[k.none]) {
+      filterChips.push({ key: `${kind}-none`, icon, label: `${CREDIT_LABEL[kind]}なし`, onRemove: () => toggleCreditNone(kind) });
+    }
+    for (const id of filter[k.ids]) {
+      filterChips.push({
+        key: `${kind}-${id}`,
+        icon,
+        label: nameOf(creditsOf(kind), id),
+        title: CREDIT_LABEL[kind],
+        onRemove: () => toggleCredit(kind, id),
+      });
+    }
+  }
+  if (filter.hash) {
+    const hash = filter.hash;
+    filterChips.push({
+      key: "hash",
+      icon: "🔊",
+      label: "同じ音声",
+      title: hash,
+      onRemove: () => setFilter((f) => ({ ...f, hash: null })),
+      testId: "hash-filter",
+    });
+  }
+
   return (
     <div className="app">
       <aside className="side">
@@ -871,11 +919,6 @@ export default function App() {
                 ⧉
               </button>
               <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
-              {filter.hash && (
-                <span className="chip" data-testid="hash-filter" title={filter.hash}>
-                  同じ音声：{filter.hash.slice(0, 12)}…
-                </span>
-              )}
               {anyActive && (
                 <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
                   ✕
@@ -884,17 +927,23 @@ export default function App() {
               <span className="sub" data-testid="file-count">
                 {files.length}件
               </span>
-              <span className="checked-count" data-testid="checked-count">
-                チェック {checked.size}件（表示中 {checks.shownChecked}件）
-              </span>
-              <button onClick={checks.clear} disabled={checked.size === 0}>
-                チェックをすべて外す
-              </button>
-              <label>
-                <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
-                チェックしたファイルだけ
-              </label>
+              {/* チェックの件数と操作は、チェックがあるときだけ出す */}
+              {(checked.size > 0 || checkedOnly) && (
+                <>
+                  <span className="checked-count" data-testid="checked-count">
+                    チェック {checked.size}件（表示中 {checks.shownChecked}件）
+                  </span>
+                  <button onClick={checks.clear} disabled={checked.size === 0}>
+                    チェックをすべて外す
+                  </button>
+                  <label>
+                    <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
+                    チェックしたファイルだけ
+                  </label>
+                </>
+              )}
             </div>
+            <FilterChips chips={filterChips} />
             {searching && (
               <div className="toolbar">
                 <span className="sub">このファイルと同じ音声のファイルを探す：</span>

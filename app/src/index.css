@@ -478,6 +478,34 @@ button.toggle.on {
   user-select: none;
 }
 
+/* 一覧の上の、選んでいる絞り込みの条件 */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 6px;
+}
+
+button.filter-chip {
+  margin-left: 0;
+  cursor: pointer;
+  background: var(--selected);
+  border-color: var(--accent);
+}
+
+.filter-chip .chip-icon {
+  margin-right: 3px;
+}
+
+.filter-chip .chip-x {
+  margin-left: 4px;
+  color: var(--fg-sub);
+}
+
+button.filter-chip:hover .chip-x {
+  color: var(--error);
+}
+
 /* 試聴中の行の下端の進み具合 */
 .row-progress {
   position: absolute;
