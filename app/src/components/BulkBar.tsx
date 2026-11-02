@@ -1,8 +1,9 @@
 import { useState } from "react";
-import type { Credit, CreditKind, FileSummary, LicenseType, Tag } from "../api";
+import type { Credit, CreditKind, FileSummary, LicenseType, PlaylistNode, Tag } from "../api";
 import { CreditField } from "./CreditField";
+import { PlaylistPicker } from "./PlaylistPicker";
 
-type Mode = "addTag" | "removeTag" | CreditKind;
+type Mode = "addTag" | "removeTag" | CreditKind | "playlist";
 
 type Props = {
   /** チェックしている件数（内訳を求める前から正しい件数を出すため、内訳とは別に受け取る） */
@@ -21,6 +22,8 @@ type Props = {
   onRelink: () => void;
   onRemoveMissing: () => void;
   onError: (e: unknown) => void;
+  playlists: PlaylistNode[];
+  onAddToPlaylist: (playlistId: number) => Promise<boolean>;
 };
 
 const MODES: { mode: Mode; label: string }[] = [
@@ -28,6 +31,7 @@ const MODES: { mode: Mode; label: string }[] = [
   { mode: "removeTag", label: "タグを外す" },
   { mode: "source", label: "出典" },
   { mode: "license", label: "ライセンス" },
+  { mode: "playlist", label: "プレイリストに追加" },
 ];
 
 /** 一覧の上の一括操作の欄。チェックしたファイルすべてが対象 */
@@ -46,6 +50,8 @@ export function BulkBar({
   onRelink,
   onRemoveMissing,
   onError,
+  playlists,
+  onAddToPlaylist,
 }: Props) {
   const [mode, setMode] = useState<Mode | null>(null);
   const [name, setName] = useState("");
@@ -125,6 +131,17 @@ export function BulkBar({
               </span>
             );
           })}
+        </div>
+      )}
+
+      {mode === "playlist" && (
+        <div className="toolbar bulk-detail">
+          <PlaylistPicker
+            playlists={playlists}
+            busy={busy}
+            onAdd={onAddToPlaylist}
+            label="チェックしたファイルを加えるプレイリスト"
+          />
         </div>
       )}
 

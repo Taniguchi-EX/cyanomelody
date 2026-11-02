@@ -653,19 +653,26 @@ fn expand_items(conn: &Connection, playlist_id: i64, rng: &mut Rng, path: &mut V
 fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
     ensure_exists(conn, id)?;
     let files = apply_mode(expand_items(conn, id, rng, &mut Vec::new())?, mode, rng);
-    let mut stmt = conn.prepare(
-        "SELECT a.rel_path, f.path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id WHERE a.id = ?1",
-    )?;
-    let mut out = Vec::with_capacity(files.len());
-    for file_id in files {
-        let (rel_path, folder): (String, String) = stmt.query_row([file_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        let path = Path::new(&folder)
-            .join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
-            .to_string_lossy()
-            .into_owned();
-        out.push(PlayEntry { file_id, rel_path, path });
-    }
-    Ok(out)
+    // パスはまとめて1回で引く（数万件でも速く）
+    let ids = serde_json::to_string(&files).unwrap_or_else(|_| "[]".into());
+    let paths: HashMap<i64, (String, String)> = conn
+        .prepare(
+            "SELECT a.id, a.rel_path, f.path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+             WHERE a.id IN (SELECT value FROM json_each(?1))",
+        )?
+        .query_map([ids], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(files
+        .into_iter()
+        .filter_map(|file_id| {
+            let (rel_path, folder) = paths.get(&file_id)?;
+            let path = Path::new(folder)
+                .join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
+                .to_string_lossy()
+                .into_owned();
+            Some(PlayEntry { file_id, rel_path: rel_path.clone(), path })
+        })
+        .collect())
 }
 
 /// 再生順を決める（詳しくは docs の「再生の順番の決め方」）

@@ -657,3 +657,110 @@ textarea {
   padding: 0 6px;
   border-radius: 10px;
 }
+
+.mini-play {
+  font-size: 10px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+.playlist-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.playlist-items {
+  border-bottom: 1px solid var(--border);
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+  min-height: 32px;
+}
+
+.playlist-item.drag-source {
+  opacity: 0.4;
+}
+
+.playlist-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.playlist-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.playlist-item.missing .item-content {
+  color: var(--fg-sub);
+  text-decoration: line-through;
+}
+
+.item-kind {
+  flex: none;
+  width: 110px;
+  font-size: 12px;
+  color: var(--fg-sub);
+}
+
+.item-content {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-count {
+  width: 48px;
+  text-align: right;
+}
+
+.playlist-add {
+  padding: 8px;
+  max-width: 640px;
+}
+
+.playlist-add .row {
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.chip-remove {
+  border: none;
+  background: none;
+  padding: 0 0 0 4px;
+  font-size: 11px;
+}
+
+.player-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  max-width: 55%;
+}
+
+.player-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.player-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-bar button {
+  padding: 0 6px;
+}

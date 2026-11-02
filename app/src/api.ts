@@ -196,3 +196,66 @@ export function describeHashing(p: HashProgress): string {
     ? `ハッシュ値の計算を中止しました（${parts.join("、")}）`
     : `ハッシュ値を計算しました（${parts.join("、")}）`;
 }
+
+/** 抽象的な項目の再生方法 */
+export type PlayMode = "order" | "shuffle" | "random";
+
+export const PLAY_MODES: { mode: PlayMode; label: string }[] = [
+  { mode: "order", label: "順に再生" },
+  { mode: "shuffle", label: "シャッフル再生" },
+  { mode: "random", label: "ランダムセレクト再生" },
+];
+
+/** 左の欄に出すプレイリスト（階層の順） */
+export type PlaylistNode = {
+  id: number;
+  name: string;
+  /** 親（このプレイリストを子として持つプレイリスト）。最上位なら null */
+  parentId: number | null;
+  depth: number;
+  itemCount: number;
+  /** 項目として直接入れているプレイリスト（子と参照） */
+  refs: number[];
+};
+
+export type PlaylistItem = {
+  id: number;
+  kind: "file" | "tags" | "playlist";
+  mode: PlayMode;
+  /** 子のプレイリストの項目か（参照なら false） */
+  owned: boolean;
+  file: { id: number; relPath: string; missing: boolean } | null;
+  tags: { id: number; name: string }[];
+  playlist: { id: number; name: string } | null;
+  /** 再生したときのファイル数 */
+  fileCount: number;
+};
+
+export type PlaylistDetail = {
+  id: number;
+  name: string;
+  items: PlaylistItem[];
+};
+
+/** 再生順の1曲 */
+export type PlayEntry = {
+  fileId: number;
+  relPath: string;
+  path: string;
+};
+
+export const playlistApi = {
+  list: () => invoke<PlaylistNode[]>("list_playlists"),
+  get: (id: number) => invoke<PlaylistDetail>("get_playlist", { id }),
+  create: (name: string, parent: number | null) => invoke<number>("create_playlist", { name, parent }),
+  rename: (id: number, name: string) => invoke<void>("rename_playlist", { id, name }),
+  remove: (id: number) => invoke<void>("delete_playlist", { id }),
+  move: (id: number, target: MoveTarget) => invoke<void>("move_playlist", { id, target }),
+  addFiles: (id: number, fileIds: number[]) => invoke<void>("add_playlist_files", { id, fileIds }),
+  addTags: (id: number, tagIds: number[]) => invoke<number>("add_playlist_tags", { id, tagIds }),
+  addRef: (id: number, refId: number) => invoke<number>("add_playlist_ref", { id, refId }),
+  removeItem: (itemId: number) => invoke<void>("remove_playlist_item", { itemId }),
+  moveItem: (itemId: number, index: number) => invoke<void>("move_playlist_item", { itemId, index }),
+  setItemMode: (itemId: number, mode: PlayMode) => invoke<void>("set_playlist_item_mode", { itemId, mode }),
+  expand: (id: number, mode: PlayMode) => invoke<PlayEntry[]>("expand_playlist", { id, mode }),
+};

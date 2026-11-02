@@ -17,6 +17,11 @@ import {
   type LibraryFolder,
   type LicenseType,
   type MoveTarget,
+  playlistApi,
+  type PlayMode,
+  type PlaylistDetail,
+  type PlaylistItem,
+  type PlaylistNode,
   type Tag,
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
@@ -26,6 +31,9 @@ import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
 import { FileList } from "./components/FileList";
 import { BulkBar } from "./components/BulkBar";
+import { PlaylistPanel } from "./components/PlaylistPanel";
+import { PlaylistEditor } from "./components/PlaylistEditor";
+import { PlayerBar, type Player } from "./components/PlayerBar";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
@@ -82,6 +90,16 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [searchPath, setSearchPath] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
+  const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
+  /** 中央で開いているプレイリスト（null ならファイルの一覧を出す） */
+  const [openPlaylistId, setOpenPlaylistId] = useState<number | null>(null);
+  const [playlistDetail, setPlaylistDetail] = useState<PlaylistDetail | null>(null);
+  /** プレイリストの再生。止まっていれば null */
+  const [player, setPlayer] = useState<Player | null>(null);
+  const playerRef = useRef<Player | null>(null);
+  playerRef.current = player;
+  const openPlaylistRef = useRef<number | null>(null);
+  openPlaylistRef.current = openPlaylistId;
 
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
   const showInfo = (text: string) => setStatus({ text, error: false });
@@ -97,18 +115,32 @@ export default function App() {
     setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
   }, [filter, checkedFilter]);
 
+  /** 開いているプレイリストの中身を読み直す。削除されていたら、ファイルの一覧に戻る */
+  const reloadPlaylistDetail = async () => {
+    const id = openPlaylistRef.current;
+    if (id === null) return;
+    try {
+      setPlaylistDetail(await playlistApi.get(id));
+    } catch {
+      setOpenPlaylistId(null);
+      setPlaylistDetail(null);
+    }
+  };
+
   const reloadAll = useCallback(async () => {
-    const [fs, ts, ss, ls] = await Promise.all([
+    const [fs, ts, ss, ls, ps] = await Promise.all([
       api.listFolders(),
       api.listTags(),
       api.listCredits("source"),
       api.listCredits("license"),
+      playlistApi.list(),
     ]);
     setFolders(fs);
     setTags(ts);
     setSources(ss);
     setLicenses(ls);
-    await reloadFiles();
+    setPlaylists(ps);
+    await Promise.all([reloadFiles(), reloadPlaylistDetail()]);
   }, [reloadFiles]);
 
   useEffect(() => {
@@ -215,6 +247,8 @@ export default function App() {
   const play = (file: AudioFile) => {
     const audio = audioRef.current;
     if (!audio) return;
+    // 試聴を始めると、プレイリストの再生は止まる
+    if (playerRef.current) setPlayer(null);
     if (playingId === file.id) {
       audio.pause();
       setPlayingId(null);
@@ -535,6 +569,167 @@ export default function App() {
 
   const creditKinds: CreditKind[] = ["source", "license"];
 
+  // プレイリスト
+  const openPlaylist = (id: number) => {
+    setOpenPlaylistId(id);
+    playlistApi.get(id).then(setPlaylistDetail).catch(showError);
+  };
+
+  const closePlaylist = () => {
+    setOpenPlaylistId(null);
+    setPlaylistDetail(null);
+  };
+
+  const createPlaylist = async (name: string, parent: number | null = null) => {
+    let ok = false;
+    await run(async () => {
+      await playlistApi.create(name, parent);
+      showInfo(`プレイリスト「${name.trim()}」を作りました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const renamePlaylist = async (id: number, name: string) => {
+    let ok = false;
+    await run(async () => {
+      await playlistApi.rename(id, name);
+      showInfo(`プレイリストの名前を「${name.trim()}」に変えました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const deletePlaylist = async (id: number) => {
+    const node = playlists.find((p) => p.id === id);
+    if (!node) return;
+    const children = playlists.filter((p) => p.parentId === id).length;
+    // 子として持つ親を除いた、参照しているプレイリスト
+    const referrers = playlists.filter((p) => p.id !== node.parentId && p.refs.includes(id)).length;
+    let message = `プレイリスト「${node.name}」を削除しますか？`;
+    if (children > 0) message += `\n子のプレイリスト${children}件は、削除したプレイリストの位置に繰り上がります。`;
+    if (referrers > 0) message += `\nこのプレイリストを入れているプレイリスト${referrers}件から外れます。`;
+    if (!(await confirmDialog(message))) return;
+    await run(async () => {
+      await playlistApi.remove(id);
+      showInfo(`プレイリスト「${node.name}」を削除しました`);
+    });
+  };
+
+  const movePlaylist = (id: number, target: MoveTarget) =>
+    run(async () => {
+      await playlistApi.move(id, target);
+      showInfo(`プレイリスト「${playlists.find((p) => p.id === id)?.name ?? ""}」を移しました`);
+    });
+
+  const playlistName = (id: number) => playlists.find((p) => p.id === id)?.name ?? "";
+
+  /** ファイルをプレイリストの最後に加える */
+  const addToPlaylist = async (playlistId: number, fileIds: number[]) => {
+    let ok = false;
+    await run(async () => {
+      await playlistApi.addFiles(playlistId, fileIds);
+      showInfo(`${fileIds.length}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const bulkAddToPlaylist = (playlistId: number) =>
+    bulk(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しますか？`, async () => {
+      await playlistApi.addFiles(playlistId, checkedIds());
+      showInfo(`チェックした${checked.size}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
+    });
+
+  const addTagsToPlaylist = async (tagIds: number[]) => {
+    if (!playlistDetail) return false;
+    let ok = false;
+    await run(async () => {
+      await playlistApi.addTags(playlistDetail.id, tagIds);
+      showInfo("タグの組み合わせを加えました");
+      ok = true;
+    });
+    return ok;
+  };
+
+  const addRefToPlaylist = (refId: number) =>
+    playlistDetail &&
+    run(async () => {
+      await playlistApi.addRef(playlistDetail.id, refId);
+      showInfo(`プレイリスト「${playlistName(refId)}」を加えました`);
+    });
+
+  const removePlaylistItem = (item: PlaylistItem) =>
+    run(async () => {
+      await playlistApi.removeItem(item.id);
+      showInfo(
+        item.owned
+          ? `子のプレイリスト「${item.playlist?.name}」を外しました（最上位に移りました）`
+          : "項目を外しました",
+      );
+    });
+
+  const movePlaylistItem = (item: PlaylistItem, index: number) =>
+    run(async () => {
+      await playlistApi.moveItem(item.id, index);
+    });
+
+  const setPlaylistItemMode = (item: PlaylistItem, mode: PlayMode) =>
+    run(async () => {
+      await playlistApi.setItemMode(item.id, mode);
+    });
+
+  // 再生。再生順は始めるときに決める
+  /** 再生順の index 番目を再生する。範囲の外なら終わる。再生できなければ飛ばす */
+  const playAt = (p: Player, index: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (index < 0 || index >= p.queue.length) {
+      audio.pause();
+      setPlayer(null);
+      showInfo(`「${p.name}」の再生が終わりました`);
+      return;
+    }
+    const next = { ...p, index, paused: false };
+    setPlayer(next);
+    playerRef.current = next;
+    setPlayingId(null);
+    const entry = p.queue[index];
+    audio.src = convertFileSrc(entry.path);
+    audio.play().catch((e) => {
+      // 別の曲に移った後の失敗は無視する
+      if (playerRef.current !== next) return;
+      showError(`再生できなかったので飛ばしました: ${entry.relPath}（${e}）`);
+      playAt(next, index + 1);
+    });
+  };
+
+  const playPlaylist = async (id: number, mode: PlayMode = "order") => {
+    try {
+      const queue = await playlistApi.expand(id, mode);
+      if (queue.length === 0) {
+        showInfo(`「${playlistName(id)}」には再生するファイルがありません`);
+        return;
+      }
+      playAt({ name: playlistName(id), queue, index: 0, paused: false }, 0);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const stopPlayer = () => {
+    audioRef.current?.pause();
+    setPlayer(null);
+  };
+
+  const togglePause = () => {
+    const audio = audioRef.current;
+    if (!audio || !player) return;
+    if (player.paused) audio.play().catch(showError);
+    else audio.pause();
+    setPlayer({ ...player, paused: !player.paused });
+  };
+
   return (
     <div className="app">
       <aside className="side">
@@ -569,9 +764,39 @@ export default function App() {
             onManage={() => setManagingCredit(kind)}
           />
         ))}
+        <PlaylistPanel
+          playlists={playlists}
+          openId={openPlaylistId}
+          busy={busy}
+          onOpen={openPlaylist}
+          onPlay={(id) => playPlaylist(id)}
+          onCreate={(name) => createPlaylist(name)}
+          onMove={movePlaylist}
+        />
       </aside>
 
       <main className="main">
+        {playlistDetail ? (
+          <PlaylistEditor
+            key={playlistDetail.id}
+            detail={playlistDetail}
+            playlists={playlists}
+            tags={tags}
+            filterTagIds={filter.tagIds}
+            busy={busy}
+            onClose={closePlaylist}
+            onRename={(name) => renamePlaylist(playlistDetail.id, name)}
+            onDelete={() => deletePlaylist(playlistDetail.id)}
+            onPlay={(mode) => playPlaylist(playlistDetail.id, mode)}
+            onRemoveItem={removePlaylistItem}
+            onMoveItem={movePlaylistItem}
+            onSetMode={setPlaylistItemMode}
+            onAddTags={addTagsToPlaylist}
+            onAddRef={addRefToPlaylist}
+            onCreateChild={(name) => createPlaylist(name, playlistDetail.id)}
+          />
+        ) : (
+          <>
         <div className="toolbar">
           <input
             type="text"
@@ -672,6 +897,8 @@ export default function App() {
             onRelink={bulkRelink}
             onRemoveMissing={() => removeMissing(checkedIds(), summary?.missing ?? 0)}
             onError={showError}
+            playlists={playlists}
+            onAddToPlaylist={bulkAddToPlaylist}
           />
         )}
         <FileList
@@ -685,6 +912,8 @@ export default function App() {
           onPlay={play}
           showHash={filter.duplicatesOnly || filter.hash !== null}
         />
+          </>
+        )}
       </main>
 
       <aside className="detail">
@@ -697,6 +926,8 @@ export default function App() {
           onRemoveMissing={() => removeMissing(focusedIds(), 1)}
           onRelink={() => relink(focusedIds())}
           onShowSameAudio={showSameAudio}
+          playlists={playlists}
+          onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
         >
           {creditKinds.map((kind) => (
             <CreditField
@@ -715,6 +946,15 @@ export default function App() {
       </aside>
 
       <div className="status-bar">
+        {player && (
+          <PlayerBar
+            player={player}
+            onPrev={() => playAt(player, player.index - 1)}
+            onNext={() => playAt(player, player.index + 1)}
+            onTogglePause={togglePause}
+            onStop={stopPlayer}
+          />
+        )}
         <div className={`status${status.error ? " error" : ""}`} data-testid="status">
           {busy ? "処理中…" : status.text || " "}
         </div>
@@ -725,7 +965,15 @@ export default function App() {
           </div>
         )}
       </div>
-      <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
+      <audio
+        ref={audioRef}
+        onEnded={() => {
+          // プレイリストの再生中なら次へ。試聴なら止まる
+          const p = playerRef.current;
+          if (p) playAt(p, p.index + 1);
+          else setPlayingId(null);
+        }}
+      />
       {managing && (
         <TagManager
           tags={tags}

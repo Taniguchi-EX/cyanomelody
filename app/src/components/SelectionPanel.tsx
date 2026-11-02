@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
-import type { AudioFile, Tag } from "../api";
+import type { AudioFile, PlaylistNode, Tag } from "../api";
+import { PlaylistPicker } from "./PlaylistPicker";
 
 type Props = {
   /** 一覧でクリックしたファイル。なければ null */
@@ -13,6 +14,8 @@ type Props = {
   onShowSameAudio: (hash: string) => void;
   /** タグの下に出す欄（出典・ライセンス） */
   children?: ReactNode;
+  playlists: PlaylistNode[];
+  onAddToPlaylist: (playlistId: number) => Promise<boolean>;
 };
 
 /** 右の欄。一覧でクリックした1件のファイルの詳細と操作 */
@@ -26,6 +29,8 @@ export function SelectionPanel({
   onRelink,
   onShowSameAudio,
   children,
+  playlists,
+  onAddToPlaylist,
 }: Props) {
   const [name, setName] = useState("");
 
@@ -103,6 +108,9 @@ export function SelectionPanel({
       </ul>
 
       {children}
+
+      <h2>プレイリストに追加</h2>
+      <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} label="このファイルを加えるプレイリスト" />
 
       {file.missing && (
         <>
