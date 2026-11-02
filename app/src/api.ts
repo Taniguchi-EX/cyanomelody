@@ -201,10 +201,10 @@ export function describeHashing(p: HashProgress): string {
 /** 抽象的な項目の再生方法 */
 export type PlayMode = "order" | "shuffle" | "random";
 
-export const PLAY_MODES: { mode: PlayMode; label: string }[] = [
-  { mode: "order", label: "順に再生" },
-  { mode: "shuffle", label: "シャッフル再生" },
-  { mode: "random", label: "ランダムセレクト再生" },
+export const PLAY_MODES: { mode: PlayMode; icon: string; label: string; short: string }[] = [
+  { mode: "order", icon: "▶", label: "順に再生", short: "順に" },
+  { mode: "shuffle", icon: "🔀", label: "シャッフル再生", short: "シャッフル" },
+  { mode: "random", icon: "🎲", label: "ランダムセレクト再生", short: "1曲" },
 ];
 
 /** 左の欄に出すプレイリスト（階層の順） */

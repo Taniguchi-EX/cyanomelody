@@ -29,6 +29,8 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
   const [player, setPlayerState] = useState<Player | null>(null);
   // audio のイベントから今の再生の状態を見るため、状態と同じものを ref にも持つ
   const playerRef = useRef<Player | null>(null);
+  /** 再生中の位置と長さ（秒） */
+  const [time, setTime] = useState({ current: 0, duration: 0 });
 
   const setPlayer = (p: Player | null) => {
     playerRef.current = p;
@@ -113,6 +115,12 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     setPlayer(null);
   };
 
+  /** 0〜1 の位置へ移る */
+  const seek = (ratio: number) => {
+    const audio = audioRef.current;
+    if (audio && Number.isFinite(audio.duration)) audio.currentTime = audio.duration * Math.min(Math.max(ratio, 0), 1);
+  };
+
   const togglePause = () => {
     const audio = audioRef.current;
     const p = playerRef.current;
@@ -125,6 +133,8 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
   /** audio 要素に渡す属性 */
   const audioProps = {
     ref: audioRef,
+    onTimeUpdate: (e: React.SyntheticEvent<HTMLAudioElement>) =>
+      setTime({ current: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0 }),
     onError: () => {
       const p = playerRef.current;
       if (p) skip(p, "ファイルを読めません");
@@ -147,6 +157,8 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     prev: () => move(-1),
     stop,
     togglePause,
+    time,
+    seek,
     audioProps,
   };
 }

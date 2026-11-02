@@ -158,7 +158,7 @@ await step("P10", "子の項目を外すと、その子は最上位に移る（�
 await step("P11", "再生：再生の欄に名前・何曲目か・ファイル名が出て、次へ・前へ・一時停止・停止ができる", async () => {
   await open("戦闘");
   // 剣（空）、ogg・wav・flac、雨から1つ、風の1つ（flac）、環境（空）
-  await page.getByRole("button", { name: "▶ 再生" }).click();
+  await page.getByRole("button", { name: "順に再生" }).click();
   await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
   expect((await position()) === "1/5", await position());
   expect((await page.getByTestId("player-file").innerText()) === "chime.ogg", await page.getByTestId("player-file").innerText());
@@ -266,7 +266,7 @@ await step("P17", "3万件が対象のタグの組み合わせを再生し始め
   // 裏でのハッシュ値の計算（3万件）とデータベースを取り合うと時間がばらつくので、終わるのを待ってから測る
   await ui.waitHashing(120000);
   const t0 = Date.now();
-  await page.getByRole("button", { name: "▶ 再生" }).click();
+  await page.getByRole("button", { name: "順に再生" }).click();
   await page.getByTestId("player-bar").waitFor({ timeout: 30000 });
   const ms = Date.now() - t0;
   // formats の5件にも「大量」を付けたので 30005件
@@ -305,7 +305,7 @@ await step("P19", "項目に別名を付けると、編集画面と再生の欄�
   await waitIdle();
   expect((await items())[0] === "ファイル:激しめの雨（chime.wav）", (await items())[0]);
   await shot("P19_別名");
-  await page.getByRole("button", { name: "▶ 再生" }).click();
+  await page.getByRole("button", { name: "順に再生" }).click();
   await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
   const label = await page.getByTestId("player-file").innerText();
   expect(label === "激しめの雨（chime.wav）", label);
@@ -330,6 +330,27 @@ await step("P20", "ファイルの行を左の欄のプレイリストへドラ�
   expect(list === "ファイル:chime.flac / ファイル:chime.mp3 / ファイル:chime.ogg", list);
   await back();
   await ui.clearChecks();
+});
+
+await step("P21", "シャッフル・1曲のボタンで、再生方法を選んですぐ再生できる。進み具合のバーを押すとその位置へ移る", async () => {
+  await open("ドラッグ");
+  await page.getByRole("button", { name: "シャッフル再生" }).click();
+  await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
+  expect((await position()).endsWith("/3"), await position());
+  await page.waitForFunction(() => document.querySelector("audio").duration > 0, null, { timeout: 5000 });
+  const bar = page.getByTestId("player-progress");
+  const box = await bar.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
+  const ratio = await page.evaluate(() => {
+    const a = document.querySelector("audio");
+    return a.currentTime / a.duration;
+  });
+  expect(ratio > 0.4, `移っていない: ${ratio}`);
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await page.getByRole("button", { name: "ランダムセレクト再生" }).click();
+  await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
+  expect((await position()) === "1/1", await position());
+  await page.getByRole("button", { name: "停止", exact: true }).click();
 });
 
 await ui.finish();

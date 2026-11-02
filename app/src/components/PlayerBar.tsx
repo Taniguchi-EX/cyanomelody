@@ -2,6 +2,9 @@ import type { Player } from "../hooks/useAudioPlayer";
 
 type Props = {
   player: Player;
+  /** 再生中の位置と長さ（秒） */
+  time: { current: number; duration: number };
+  onSeek: (ratio: number) => void;
   onPrev: () => void;
   onNext: () => void;
   onTogglePause: () => void;
@@ -9,8 +12,11 @@ type Props = {
 };
 
 /** 画面の下の、プレイリストの再生の欄 */
-export function PlayerBar({ player, onPrev, onNext, onTogglePause, onStop }: Props) {
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+export function PlayerBar({ player, time, onSeek, onPrev, onNext, onTogglePause, onStop }: Props) {
   const entry = player.queue[player.index];
+  const ratio = time.duration > 0 ? time.current / time.duration : 0;
   return (
     <div className="player-bar" data-testid="player-bar">
       <span className="player-name">{player.name}</span>
@@ -32,6 +38,17 @@ export function PlayerBar({ player, onPrev, onNext, onTogglePause, onStop }: Pro
           entry?.relPath
         )}
       </span>
+      <div
+        className="player-progress"
+        title={`${clock(time.current)} / ${clock(time.duration)}`}
+        data-testid="player-progress"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          onSeek((e.clientX - r.left) / r.width);
+        }}
+      >
+        <div style={{ width: `${ratio * 100}%` }} />
+      </div>
       <button onClick={onPrev} disabled={player.index === 0} aria-label="前へ">
         ⏮
       </button>

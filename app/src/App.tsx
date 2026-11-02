@@ -955,6 +955,8 @@ export default function App() {
         {audio.player && (
           <PlayerBar
             player={audio.player}
+            time={audio.time}
+            onSeek={audio.seek}
             onPrev={audio.prev}
             onNext={audio.next}
             onTogglePause={audio.togglePause}

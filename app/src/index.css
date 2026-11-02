@@ -853,3 +853,25 @@ button.icon {
 .item-content.editable:hover {
   text-decoration: underline dotted;
 }
+
+/* ===== 再生 ===== */
+
+.play-modes {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.player-progress {
+  flex: none;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.player-progress > div {
+  height: 100%;
+  background: var(--accent);
+}

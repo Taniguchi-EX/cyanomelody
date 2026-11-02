@@ -82,7 +82,6 @@ export function PlaylistEditor({
   onBrowseFolder,
 }: Props) {
   const [name, setName] = useState(detail.name);
-  const [playMode, setPlayMode] = useState<PlayMode>("order");
   const [tagInput, setTagInput] = useState("");
   const [pickedTags, setPickedTags] = useState<Tag[]>([]);
   const [refId, setRefId] = useState("");
@@ -161,16 +160,13 @@ export function PlaylistEditor({
         <button onClick={() => onRename(name)} disabled={!canRename}>
           名前を変える
         </button>
-        <select value={playMode} onChange={(e) => setPlayMode(e.target.value as PlayMode)} aria-label="このプレイリストの再生方法">
+        <span className="play-modes">
           {PLAY_MODES.map((m) => (
-            <option key={m.mode} value={m.mode}>
-              {m.label}
-            </option>
+            <button key={m.mode} className="icon" onClick={() => onPlay(m.mode)} title={m.label} aria-label={m.label}>
+              {m.icon}
+            </button>
           ))}
-        </select>
-        <button onClick={() => onPlay(playMode)} disabled={busy}>
-          ▶ 再生
-        </button>
+        </span>
         <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
           書き出す
         </button>
@@ -272,7 +268,7 @@ export function PlaylistEditor({
                 >
                   {PLAY_MODES.map((m) => (
                     <option key={m.mode} value={m.mode}>
-                      {m.label}
+                      {m.icon} {m.short}
                     </option>
                   ))}
                 </select>
@@ -351,8 +347,8 @@ export function PlaylistEditor({
               <option key={t.id} value={t.name} />
             ))}
           </datalist>
-          <button onClick={pickTag} disabled={!tagInput.trim()}>
-            選ぶ
+          <button className="icon" onClick={pickTag} disabled={!tagInput.trim()} title="組み合わせに入れる" aria-label="選ぶ">
+            ＋
           </button>
         </div>
         <div className="row picked-tags" data-testid="picked-tags">
