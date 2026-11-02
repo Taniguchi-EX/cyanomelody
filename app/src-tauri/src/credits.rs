@@ -275,7 +275,7 @@ pub fn delete_credit(conn: &Connection, kind: CreditKind, id: i64) -> Result<()>
     Ok(())
 }
 
-/// 選んだファイルに出典・ライセンスを設定する。name が None なら外す。
+/// 指定したファイルに出典・ライセンスを設定する。name が None なら外す。
 /// まだない名前なら、その名前で作る（ライセンスは「独自」、条項はすべて不明）。設定したもののidを返す。
 pub fn set_file_credit(
     conn: &mut Connection,

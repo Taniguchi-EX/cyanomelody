@@ -1,4 +1,4 @@
-//! 音声ファイルの一覧・絞り込みとタグの付け外し
+//! 音声ファイルの一覧・絞り込み、チェックしたファイルの内訳、タグの付け外し
 
 use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ pub struct AudioFile {
     pub id: i64,
     pub folder_id: i64,
     pub rel_path: String,
-    /// 絶対パス（試聴に使う）
+    /// 絶対パス（再生に使う）
     pub path: String,
     pub size: i64,
     pub modified_at: i64,
@@ -35,7 +35,7 @@ pub struct AudioFile {
 pub struct FileFilter {
     /// ファイル名（相対パス）の部分一致
     pub text: String,
-    /// すべてのタグが付いたファイルに絞り込む
+    /// 選んだタグごとに、そのタグか子孫のタグが付いたファイルに絞り込む（AND）
     pub tag_ids: Vec<i64>,
     pub untagged_only: bool,
     pub missing_only: bool,

@@ -44,12 +44,6 @@ export function shortTerm(def: TermDef, value: boolean | null): string {
   return def.short + word.replace("必要", "要");
 }
 
-/** 名前から出典・ライセンスを探す。大文字・小文字は区別しない */
-export function findByName<T extends { name: string }>(items: T[], name: string): T | undefined {
-  const lower = name.trim().toLowerCase();
-  return items.find((c) => c.name.toLowerCase() === lower);
-}
-
 /** ブラウザで開けるURLか */
 export function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);

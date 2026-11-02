@@ -99,7 +99,7 @@ pub struct RelinkResult {
 }
 
 /// 見つからないファイルを、同じハッシュ値の見つかっているファイルにひも付け直す。
-/// タグを移して、見つからないファイルの情報を消す。見つからない印がないファイルは無視する。
+/// タグ・出典・ライセンス・プレイリストの項目を移して、見つからないファイルの情報を消す。見つからない印がないファイルは無視する。
 pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
     let tx = conn.transaction()?;
     let mut result = RelinkResult::default();

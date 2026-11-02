@@ -107,7 +107,7 @@ pub fn add_folder(conn: &Connection, path: &Path) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
-/// フォルダの登録を解除する。ファイルの情報と付けたタグも消える。実際のファイルは消さない。
+/// フォルダの登録を解除する。ファイルの情報と、付けたタグ・出典・ライセンスの設定、プレイリストの項目も消える。実際のファイルは消さない。
 pub fn remove_folder(conn: &Connection, folder_id: i64) -> Result<()> {
     let n = conn.execute("DELETE FROM library_folders WHERE id = ?1", [folder_id])?;
     if n == 0 {

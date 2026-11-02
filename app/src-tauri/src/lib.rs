@@ -260,7 +260,7 @@ async fn delete_credit(state: State<'_, AppState>, kind: CreditKind, id: i64) ->
     credits::delete_credit(&state.conn(), kind, id)
 }
 
-/// 選んだファイルに出典・ライセンスを設定する。name が null なら外す
+/// 指定したファイルに出典・ライセンスを設定する。name が null なら外す
 #[tauri::command]
 async fn set_file_credit(
     state: State<'_, AppState>,

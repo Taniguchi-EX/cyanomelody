@@ -137,7 +137,7 @@ pub fn normalize_tag_name(name: &str) -> Result<String> {
     normalize_name(name, "タグ")
 }
 
-/// タグ・出典・ライセンスの名前の決まり。前後の空白を除き、空や制御文字を含む名前はエラー。
+/// タグ・出典・ライセンス・プレイリストの名前の決まり。前後の空白を除き、空や制御文字を含む名前はエラー。
 /// what はエラーの文言に入れる、名前の持ち主（「タグ」など）
 pub fn normalize_name(name: &str, what: &str) -> Result<String> {
     let name = name.trim();
@@ -289,7 +289,7 @@ pub fn rename_tag(conn: &mut Connection, tag_id: i64, new_name: &str, merge: boo
     Ok(result)
 }
 
-/// タグを削除する。付いていたファイルからも外れる。子のタグは、削除したタグがあった位置に繰り上がる。
+/// タグを削除する。付いていたファイルや、プレイリストのタグの組み合わせからも外れる。子のタグは、削除したタグがあった位置に繰り上がる。
 pub fn delete_tag(conn: &mut Connection, tag_id: i64) -> Result<()> {
     let tx = conn.transaction()?;
     let parent = parent_of(&tx, tag_id)?;

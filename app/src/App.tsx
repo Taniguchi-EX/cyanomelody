@@ -149,7 +149,7 @@ export default function App() {
     api.licenseTypes().then(setLicenseTypes).catch(showError);
   }, []);
 
-  // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、選んだファイルのハッシュ値が変わるため）
+  // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、右の欄のファイルのハッシュ値が変わるため）
   const reloadAllRef = useRef(reloadAll);
   useEffect(() => {
     reloadAllRef.current = reloadAll;
