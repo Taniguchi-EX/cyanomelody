@@ -358,16 +358,21 @@ pub fn delete_playlist(conn: &mut Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// プレイリストの最後に、ファイルを加える
+/// プレイリストの最後に、ファイルを加える。加える順は、指定した順ではなくファイルの一覧と同じ順（フォルダ、相対パス）。
+/// ライブラリにないidは無視する
 pub fn add_files(conn: &mut Connection, playlist_id: i64, file_ids: &[i64]) -> Result<()> {
     let tx = conn.transaction()?;
     ensure_exists(&tx, playlist_id)?;
-    for &f in file_ids {
-        let exists: bool =
-            tx.query_row("SELECT EXISTS (SELECT 1 FROM audio_files WHERE id = ?1)", [f], |r| r.get(0))?;
-        if exists {
-            append_item(&tx, playlist_id, "file", Some(f), None, false)?;
-        }
+    let ids = serde_json::to_string(file_ids).unwrap_or_else(|_| "[]".into());
+    let sorted: Vec<i64> = tx
+        .prepare(
+            "SELECT a.id FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+             WHERE a.id IN (SELECT value FROM json_each(?1)) ORDER BY f.path, a.rel_path",
+        )?
+        .query_map([ids], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    for f in sorted {
+        append_item(&tx, playlist_id, "file", Some(f), None, false)?;
     }
     tx.commit()?;
     Ok(())
@@ -1026,5 +1031,15 @@ mod tests {
         assert_eq!(get_playlist(&conn, a).unwrap().items.len(), 1);
         crate::library::remove_folder(&conn, 1).unwrap();
         assert!(get_playlist(&conn, a).unwrap().items.is_empty());
+    }
+
+    #[test]
+    fn files_are_added_in_list_order() {
+        let mut conn = setup();
+        let a = create_playlist(&mut conn, "A", None).unwrap();
+        add_files(&mut conn, a, &[3, 1, 2]).unwrap();
+        let names: Vec<String> =
+            get_playlist(&conn, a).unwrap().items.into_iter().map(|i| i.file.unwrap().rel_path).collect();
+        assert_eq!(names, vec!["a.wav", "b.wav", "c.wav"]);
     }
 }

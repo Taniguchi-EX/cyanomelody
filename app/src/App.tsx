@@ -696,12 +696,15 @@ export default function App() {
     setPlayingId(null);
     const entry = p.queue[index];
     audio.src = convertFileSrc(entry.path);
-    audio.play().catch((e) => {
-      // 別の曲に移った後の失敗は無視する
-      if (playerRef.current !== next) return;
-      showError(`再生できなかったので飛ばしました: ${entry.relPath}（${e}）`);
-      playAt(next, index + 1);
-    });
+    audio.play().catch((e) => skip(next, String(e)));
+  };
+
+  /** 再生できなかった曲を飛ばす。再生の失敗は play() の失敗と audio の error の両方で届くので、
+   *  すでに別の曲に移っていれば何もしない */
+  const skip = (p: Player, reason: string) => {
+    if (playerRef.current !== p) return;
+    showError(`再生できなかったので飛ばしました: ${p.queue[p.index].relPath}（${reason}）`);
+    playAt(p, p.index + 1);
   };
 
   const playPlaylist = async (id: number, mode: PlayMode = "order") => {
@@ -967,6 +970,10 @@ export default function App() {
       </div>
       <audio
         ref={audioRef}
+        onError={() => {
+          const p = playerRef.current;
+          if (p) skip(p, "ファイルを読めません");
+        }}
         onEnded={() => {
           // プレイリストの再生中なら次へ。試聴なら止まる
           const p = playerRef.current;
