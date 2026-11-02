@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
-use rusqlite::{params, params_from_iter, types::Value, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
 
-use crate::db::now;
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::tags::{get_or_create_tag, TAG_SEPARATOR};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,17 +32,6 @@ pub struct FileFilter {
     pub untagged_only: bool,
     pub missing_only: bool,
 }
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Tag {
-    pub id: i64,
-    pub name: String,
-    pub file_count: i64,
-}
-
-/// タグ名を区切るための文字（タグ名には入らない制御文字）
-const TAG_SEPARATOR: char = '\u{1f}';
 
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
     let mut sql = String::from(
@@ -109,49 +98,6 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
-    let mut stmt = conn.prepare(
-        "SELECT t.id, t.name, (SELECT count(*) FROM file_tags ft WHERE ft.tag_id = t.id)
-         FROM tags t ORDER BY t.name COLLATE NOCASE",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(Tag {
-            id: r.get(0)?,
-            name: r.get(1)?,
-            file_count: r.get(2)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
-}
-
-pub fn normalize_tag_name(name: &str) -> Result<String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err(Error::invalid("タグの名前が空です"));
-    }
-    if name.contains(TAG_SEPARATOR) || name.chars().any(char::is_control) {
-        return Err(Error::invalid("タグの名前に使えない文字が含まれています"));
-    }
-    Ok(name.to_owned())
-}
-
-/// 名前でタグを探し、なければ作る。大文字・小文字は区別しない。
-pub fn get_or_create_tag(conn: &Connection, name: &str) -> Result<i64> {
-    let name = normalize_tag_name(name)?;
-    let id: Option<i64> = conn
-        .query_row("SELECT id FROM tags WHERE name = ?1", [&name], |r| r.get(0))
-        .optional()?;
-    if let Some(id) = id {
-        return Ok(id);
-    }
-    conn.execute(
-        "INSERT INTO tags (name, created_at) VALUES (?1, ?2)",
-        params![name, now()],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-/// 選んだファイルにタグを付ける。まだないタグなら作る。付いたタグのidを返す。
 pub fn add_tag(conn: &mut Connection, file_ids: &[i64], tag_name: &str) -> Result<i64> {
     let tx = conn.transaction()?;
     let tag_id = get_or_create_tag(&tx, tag_name)?;
@@ -200,6 +146,7 @@ mod tests {
     use super::*;
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};
+    use crate::tags::{list_tags, Tag};
     use std::fs;
 
     /// a.wav, b.mp3, sub/c_100%.flac を置いたフォルダを登録・スキャンしたDB

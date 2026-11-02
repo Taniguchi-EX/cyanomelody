@@ -5,6 +5,7 @@ import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
 import { FileList, type SelectMode } from "./components/FileList";
 import { SelectionPanel } from "./components/SelectionPanel";
+import { TagManager } from "./components/TagManager";
 
 type Status = { text: string; error: boolean };
 
@@ -21,6 +22,7 @@ export default function App() {
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
+  const [managing, setManaging] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
@@ -174,6 +176,70 @@ export default function App() {
 
   const toggleUntagged = () => setFilter((f) => ({ ...f, tagIds: [], untaggedOnly: !f.untaggedOnly }));
 
+  /** 削除・統合したタグを、絞り込みの条件から外す・置き換える */
+  const replaceFilterTag = (from: number, to: number | null) =>
+    setFilter((f) => {
+      if (!f.tagIds.includes(from)) return f;
+      const ids = f.tagIds.filter((id) => id !== from);
+      if (to !== null && !ids.includes(to)) ids.push(to);
+      return { ...f, tagIds: ids };
+    });
+
+  const createTag = async (name: string) => {
+    let ok = false;
+    await run(async () => {
+      await api.createTag(name);
+      showInfo(`タグ「${name.trim()}」を作成しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const renameTag = async (tag: Tag, name: string) => {
+    const newName = name.trim();
+    const other = tags.find((t) => t.id !== tag.id && t.name.toLowerCase() === newName.toLowerCase());
+    if (
+      other &&
+      !window.confirm(
+        `タグ「${other.name}」が既にあります。\n「${tag.name}」を「${other.name}」に統合しますか？\n` +
+          `「${tag.name}」が付いたファイル${tag.fileCount}件に「${other.name}」が付き、「${tag.name}」は削除されます。`,
+      )
+    ) {
+      return false;
+    }
+    let ok = false;
+    await run(async () => {
+      const r = await api.renameTag(tag.id, newName, other !== undefined);
+      if (r.merged) {
+        replaceFilterTag(tag.id, r.tagId);
+        showInfo(`タグ「${tag.name}」を「${other?.name}」に統合しました`);
+      } else {
+        showInfo(`タグ「${tag.name}」の名前を「${newName}」に変えました`);
+      }
+      ok = true;
+    });
+    return ok;
+  };
+
+  const deleteTag = (tag: Tag) => {
+    if (!window.confirm(`タグ「${tag.name}」を削除しますか？\n付いているファイル${tag.fileCount}件から外れます。`)) return;
+    run(async () => {
+      await api.deleteTag(tag.id);
+      replaceFilterTag(tag.id, null);
+      showInfo(`タグ「${tag.name}」を削除しました`);
+    });
+  };
+
+  const deleteUnusedTags = () => {
+    const unused = tags.filter((t) => t.fileCount === 0);
+    if (!window.confirm(`どのファイルにも付いていないタグ${unused.length}件を削除しますか？`)) return;
+    run(async () => {
+      const n = await api.deleteUnusedTags();
+      for (const t of unused) replaceFilterTag(t.id, null);
+      showInfo(`使われていないタグ${n}件を削除しました`);
+    });
+  };
+
   return (
     <div className="app">
       <aside className="side">
@@ -185,7 +251,13 @@ export default function App() {
           onScan={(f) => scan([f])}
           onScanAll={() => scan(folders)}
         />
-        <TagPanel tags={tags} filter={filter} onToggleTag={toggleTag} onToggleUntagged={toggleUntagged} />
+        <TagPanel
+          tags={tags}
+          filter={filter}
+          onToggleTag={toggleTag}
+          onToggleUntagged={toggleUntagged}
+          onManage={() => setManaging(true)}
+        />
       </aside>
 
       <main className="main">
@@ -244,6 +316,17 @@ export default function App() {
         {busy ? "処理中…" : status.text || " "}
       </div>
       <audio ref={audioRef} onEnded={() => setPlayingId(null)} />
+      {managing && (
+        <TagManager
+          tags={tags}
+          busy={busy}
+          onCreate={createTag}
+          onRename={renameTag}
+          onDelete={deleteTag}
+          onDeleteUnused={deleteUnusedTags}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </div>
   );
 }

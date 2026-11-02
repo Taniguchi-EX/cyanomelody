@@ -247,6 +247,76 @@ h2:first-child {
   padding: 2px 0;
 }
 
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 48px;
+  z-index: 10;
+}
+
+.dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100% - 96px);
+  overflow-y: auto;
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+}
+
+.tag-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.tag-table th,
+.tag-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-table th {
+  font-size: 12px;
+  color: var(--fg-sub);
+  font-weight: normal;
+}
+
+.tag-table .num {
+  text-align: right;
+  width: 80px;
+}
+
+.tag-table .actions {
+  text-align: right;
+  white-space: nowrap;
+  width: 150px;
+}
+
+.tag-table .actions button + button {
+  margin-left: 4px;
+}
+
+.tag-table input[type="text"] {
+  width: 100%;
+}
+
 .empty {
   padding: 16px;
   color: var(--fg-sub);

@@ -6,74 +6,16 @@
 //   CYANOMELODY_DATA_DIR=<空のフォルダ> WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 npx tauri dev
 // 実行:
 //   node e2e/tag-management.mjs <テストデータ> <スクリーンショットの保存先>
-import { chromium } from "playwright";
 import fs from "node:fs";
 import path from "node:path";
+import { connect, expect, parseArgs } from "./helpers.mjs";
 
-const [dataDir, shotDir] = process.argv.slice(2);
-if (!dataDir || !shotDir) {
-  console.error("usage: node e2e/tag-management.mjs <テストデータ> <スクリーンショットの保存先>");
-  process.exit(2);
-}
-const formats = path.resolve(dataDir, "formats");
-const large = path.resolve(dataDir, "large");
-fs.mkdirSync(shotDir, { recursive: true });
+const { dataDir, shotDir } = parseArgs("tag-management.mjs");
+const formats = path.join(dataDir, "formats");
+const large = path.join(dataDir, "large");
 
-const browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
-const page = browser.contexts()[0].pages()[0];
-page.on("dialog", (d) => d.accept());
-
-const results = [];
-async function step(id, name, fn) {
-  try {
-    const note = await fn();
-    results.push({ id, name, ok: true, note: note ?? "" });
-    console.log(`OK   ${id} ${name}${note ? `（${note}）` : ""}`);
-  } catch (e) {
-    results.push({ id, name, ok: false, note: String(e.message ?? e).split("\n")[0] });
-    console.log(`FAIL ${id} ${name}: ${e.message ?? e}`);
-  }
-}
-function expect(cond, message) {
-  if (!cond) throw new Error(message);
-}
-const shot = (name) => page.screenshot({ path: path.join(shotDir, `${name}.png`) });
-
-const status = () => page.getByTestId("status").innerText();
-const fileCount = async () => parseInt(await page.getByTestId("file-count").innerText(), 10);
-const row = (rel) => page.locator(`[data-testid=file-row][data-rel-path="${rel}"]`);
-const tagItem = (name) => page.getByTestId("tag").filter({ hasText: name });
-async function waitIdle() {
-  // 処理中の表示が出るのを少し待ってから（出ないほど速い処理もある）、消えるのを待つ
-  await page
-    .waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent === "処理中…", null, {
-      timeout: 1000,
-    })
-    .catch(() => {});
-  await page.waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent !== "処理中…", null, {
-    timeout: 120000,
-  });
-  await page.waitForTimeout(300);
-}
-async function addFolder(p) {
-  await page.getByLabel("フォルダのパス").fill(p);
-  await page.getByRole("button", { name: "登録", exact: true }).click();
-  await waitIdle();
-}
-async function clearFilter() {
-  const b = page.getByRole("button", { name: "絞り込みを解除" });
-  if (await b.count()) await b.click();
-  await page.waitForTimeout(400);
-}
-async function addTag(name) {
-  await page.getByLabel("付けるタグ名").fill(name);
-  await page.getByRole("button", { name: "付ける" }).click();
-  await waitIdle();
-}
-
-await page.reload();
-await page.waitForLoadState("domcontentloaded");
-await page.waitForTimeout(500);
+const ui = await connect(shotDir);
+const { page, step, shot, status, fileCount, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
 
 await step("T01", "フォルダを登録すると、スキャンして5つの形式のファイルが取り込まれる", async () => {
   await addFolder(formats);
@@ -267,10 +209,4 @@ await step("T19", "空のタグ名では付けられない", async () => {
   expect(await page.getByRole("button", { name: "付ける" }).isDisabled(), "ボタンが押せる");
 });
 
-await shot("最後の状態");
-await browser.close();
-
-const failed = results.filter((r) => !r.ok).length;
-fs.writeFileSync(path.join(shotDir, "results.json"), JSON.stringify(results, null, 2));
-console.log(`\n${results.length - failed}/${results.length} 件成功`);
-process.exit(failed ? 1 : 0);
+await ui.finish();

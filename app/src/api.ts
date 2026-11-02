@@ -49,6 +49,16 @@ export const api = {
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),
   removeMissingFiles: (fileIds: number[]) => invoke<number>("remove_missing_files", { fileIds }),
+  createTag: (name: string) => invoke<number>("create_tag", { name }),
+  renameTag: (tagId: number, name: string, merge: boolean) =>
+    invoke<RenameResult>("rename_tag", { tagId, name, merge }),
+  deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),
+  deleteUnusedTags: () => invoke<number>("delete_unused_tags"),
+};
+
+export type RenameResult = {
+  tagId: number;
+  merged: boolean;
 };
 
 export function describeScan(path: string, r: ScanResult): string {

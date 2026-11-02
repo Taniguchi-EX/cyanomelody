@@ -2,6 +2,7 @@ mod db;
 mod error;
 mod files;
 mod library;
+mod tags;
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -10,8 +11,9 @@ use rusqlite::Connection;
 use tauri::{AppHandle, Manager, State};
 
 use error::Result;
-use files::{AudioFile, FileFilter, Tag};
+use files::{AudioFile, FileFilter};
 use library::{LibraryFolder, ScanResult};
+use tags::{RenameResult, Tag};
 
 struct AppState {
     conn: Mutex<Connection>,
@@ -63,7 +65,32 @@ async fn list_files(state: State<'_, AppState>, filter: FileFilter) -> Result<Ve
 
 #[tauri::command]
 async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>> {
-    files::list_tags(&state.conn())
+    tags::list_tags(&state.conn())
+}
+
+#[tauri::command]
+async fn create_tag(state: State<'_, AppState>, name: String) -> Result<i64> {
+    tags::create_tag(&state.conn(), &name)
+}
+
+#[tauri::command]
+async fn rename_tag(
+    state: State<'_, AppState>,
+    tag_id: i64,
+    name: String,
+    merge: bool,
+) -> Result<RenameResult> {
+    tags::rename_tag(&mut state.conn(), tag_id, &name, merge)
+}
+
+#[tauri::command]
+async fn delete_tag(state: State<'_, AppState>, tag_id: i64) -> Result<()> {
+    tags::delete_tag(&state.conn(), tag_id)
+}
+
+#[tauri::command]
+async fn delete_unused_tags(state: State<'_, AppState>) -> Result<usize> {
+    tags::delete_unused_tags(&state.conn())
 }
 
 #[tauri::command]
@@ -119,6 +146,10 @@ pub fn run() {
             scan_folder,
             list_files,
             list_tags,
+            create_tag,
+            rename_tag,
+            delete_tag,
+            delete_unused_tags,
             add_tag,
             remove_tag,
             remove_missing_files,

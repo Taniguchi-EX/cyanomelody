@@ -5,12 +5,16 @@ type Props = {
   filter: FileFilter;
   onToggleTag: (tagId: number) => void;
   onToggleUntagged: () => void;
+  onManage: () => void;
 };
 
-export function TagPanel({ tags, filter, onToggleTag, onToggleUntagged }: Props) {
+export function TagPanel({ tags, filter, onToggleTag, onToggleUntagged, onManage }: Props) {
   return (
     <section>
-      <h2>タグで絞り込む</h2>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h2>タグで絞り込む</h2>
+        <button onClick={onManage}>タグを管理</button>
+      </div>
       <ul className="tag-list">
         <li className={filter.untaggedOnly ? "active" : ""} onClick={onToggleUntagged} data-testid="untagged">
           <span>（タグなし）</span>
