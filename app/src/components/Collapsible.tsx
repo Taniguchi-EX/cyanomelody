@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { useStoredFlag } from "../storage";
 
 type Props = {
   /** たたんだ状態を覚えておくための名前 */
@@ -11,34 +12,9 @@ type Props = {
   children: ReactNode;
 };
 
-const storageKey = (id: string) => `cyanomelody.collapsed.${id}`;
-
-function loadCollapsed(id: string): boolean {
-  try {
-    return localStorage.getItem(storageKey(id)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function saveCollapsed(id: string, collapsed: boolean) {
-  try {
-    localStorage.setItem(storageKey(id), collapsed ? "1" : "0");
-  } catch {
-    // 覚えておけなくても動作には困らない
-  }
-}
-
 /** 見出しを押すとたためる、左の欄の1つの欄 */
 export function Collapsible({ id, title, selectedCount, actions, children }: Props) {
-  const [collapsed, setCollapsed] = useState(() => loadCollapsed(id));
-
-  const toggle = () => {
-    setCollapsed((c) => {
-      saveCollapsed(id, !c);
-      return !c;
-    });
-  };
+  const [collapsed, toggle] = useStoredFlag(`cyanomelody.collapsed.${id}`);
 
   return (
     <section className="collapsible" data-testid={`section-${id}`} data-collapsed={collapsed}>

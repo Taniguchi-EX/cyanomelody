@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
 import type { MoveTarget, PlaylistNode } from "../api";
 import { reachable } from "../playlistGraph";
+import { useStoredIdSet } from "../storage";
+import { descendantsAndSelf, parentIds, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
+import { DragHandle, Twisty } from "./TreeParts";
 
 type Props = {
   playlists: PlaylistNode[];
@@ -15,44 +18,16 @@ type Props = {
   onMove: (id: number, target: MoveTarget) => void;
 };
 
-const COLLAPSED_KEY = "cyanomelody.playlistTree.collapsed";
-
-function loadCollapsed(): Set<number> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? "[]") as number[]);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveCollapsed(ids: Set<number>) {
-  try {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...ids]));
-  } catch {
-    // 覚えておけなくても動作には困らない
-  }
-}
-
 /** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成、再生 */
 export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreate, onMove }: Props) {
-  const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
 
-  const parents = useMemo(() => new Set(playlists.flatMap((p) => (p.parentId === null ? [] : [p.parentId]))), [playlists]);
+  const parents = useMemo(() => parentIds(playlists), [playlists]);
   const byId = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists]);
 
-  // たたんでいるプレイリストの子孫は出さない
-  const shown = useMemo(() => {
-    const hidden = new Set<number>();
-    return playlists.filter((p) => {
-      if (p.parentId !== null && (hidden.has(p.parentId) || collapsed.has(p.parentId))) {
-        hidden.add(p.id);
-        return false;
-      }
-      return true;
-    });
-  }, [playlists, collapsed]);
+  const shown = useMemo(() => visibleNodes(playlists, collapsed), [playlists, collapsed]);
 
   /** 落とした先で入る親（最上位なら null） */
   const containerOf = (target: number, pos: "before" | "after" | "child") =>
@@ -70,23 +45,10 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreat
     onMove,
   });
   // 一緒に移る（薄く表示する）のは、移すプレイリストと子孫。参照先は移らない
-  const moving = useMemo(() => {
-    const set = new Set<number>();
-    if (drag.dragId === null) return set;
-    set.add(drag.dragId);
-    // playlists は階層の順（親の次にその子孫）に並んでいるので、1回なめれば足りる
-    for (const p of playlists) if (p.parentId !== null && set.has(p.parentId)) set.add(p.id);
-    return set;
-  }, [playlists, drag.dragId]);
-
-  const toggleCollapsed = (id: number) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      saveCollapsed(next);
-      return next;
-    });
+  const moving = useMemo(
+    () => (drag.dragId === null ? new Set<number>() : descendantsAndSelf(playlists, drag.dragId)),
+    [playlists, drag.dragId],
+  );
 
   const create = async () => {
     if (await onCreate(name)) {
@@ -140,18 +102,12 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreat
             data-depth={p.depth}
             style={{ paddingLeft: 6 + p.depth * 14 }}
           >
-            <span
-              className="twisty"
-              onClick={(e) => {
-                if (!parents.has(p.id)) return;
-                e.stopPropagation();
-                toggleCollapsed(p.id);
-              }}
-              role={parents.has(p.id) ? "button" : undefined}
-              aria-label={parents.has(p.id) ? `${p.name}を${collapsed.has(p.id) ? "開く" : "たたむ"}` : undefined}
-            >
-              {parents.has(p.id) ? (collapsed.has(p.id) ? "▶" : "▼") : ""}
-            </span>
+            <Twisty
+              name={p.name}
+              hasChildren={parents.has(p.id)}
+              collapsed={collapsed.has(p.id)}
+              onToggle={() => toggleCollapsed(p.id)}
+            />
             <span className="tag-name">{p.name}</span>
             <span className="sub">{p.itemCount}</span>
             <button
@@ -165,15 +121,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreat
             >
               ▶
             </button>
-            <span
-              className="drag-handle"
-              title="ドラッグして並べ替え"
-              aria-label={`${p.name}を移す`}
-              data-testid="drag-handle"
-              {...drag.handleProps(p.id)}
-            >
-              ≡
-            </span>
+            <DragHandle name={p.name} handlers={drag.handleProps(p.id)} />
           </li>
         ))}
       </ul>
