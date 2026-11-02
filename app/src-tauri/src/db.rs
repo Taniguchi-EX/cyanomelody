@@ -42,6 +42,33 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE audio_files ADD COLUMN hash_error TEXT;
     CREATE INDEX audio_files_hash ON audio_files(hash);
     "#,
+    // 3: 出典とライセンスの管理。条項は 1：可・必要、0：不可・不要、NULL：不明
+    r#"
+    CREATE TABLE sources (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        url TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE licenses (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        url TEXT NOT NULL DEFAULT '',
+        note TEXT NOT NULL DEFAULT '',
+        license_type TEXT,
+        commercial INTEGER,
+        credit INTEGER,
+        modify INTEGER,
+        redistribute INTEGER,
+        share_alike INTEGER,
+        created_at INTEGER NOT NULL
+    );
+    ALTER TABLE audio_files ADD COLUMN source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL;
+    ALTER TABLE audio_files ADD COLUMN license_id INTEGER REFERENCES licenses(id) ON DELETE SET NULL;
+    CREATE INDEX audio_files_source ON audio_files(source_id);
+    CREATE INDEX audio_files_license ON audio_files(license_id);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

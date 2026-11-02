@@ -127,6 +127,14 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
                      SELECT ?2, tag_id FROM file_tags WHERE file_id = ?1",
                     params![id, target],
                 )?;
+                // 出典・ライセンスは、ひも付け直し先に設定がなければ移す
+                tx.execute(
+                    "UPDATE audio_files SET
+                       source_id = coalesce(source_id, (SELECT source_id FROM audio_files WHERE id = ?1)),
+                       license_id = coalesce(license_id, (SELECT license_id FROM audio_files WHERE id = ?1))
+                     WHERE id = ?2",
+                    params![id, target],
+                )?;
                 tx.execute("DELETE FROM audio_files WHERE id = ?1", [id])?;
                 result.relinked += 1;
             }
@@ -140,6 +148,7 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::files::{add_tag, list_files, FileFilter};
     use crate::library::{add_folder, scan_folder};
@@ -234,6 +243,27 @@ mod tests {
         assert!(files.iter().all(|f| f.rel_path != "b.mp3"));
         let target = files.iter().find(|f| f.id == moved).unwrap();
         assert_eq!(target.tags, vec!["移動前", "移動後"]);
+    }
+
+    #[test]
+    fn relink_moves_credits_unless_target_has_them() {
+        let (dir, mut conn, folder) = setup();
+        hash_all(&mut conn);
+        let b = id_of(&conn, "b.mp3");
+        set_file_credit(&mut conn, CreditKind::Source, &[b], Some("移動前の出典")).unwrap();
+        let license = set_file_credit(&mut conn, CreditKind::License, &[b], Some("移動前のライセンス")).unwrap();
+        fs::rename(dir.path().join("b.mp3"), dir.path().join("sub/b_moved.mp3")).unwrap();
+        scan_folder(&mut conn, folder).unwrap();
+        hash_all(&mut conn);
+        let moved = id_of(&conn, "sub/b_moved.mp3");
+        let source = set_file_credit(&mut conn, CreditKind::Source, &[moved], Some("移動後の出典")).unwrap();
+
+        relink(&mut conn, &[b]).unwrap();
+        let files = list_files(&conn, &FileFilter::default()).unwrap();
+        let target = files.iter().find(|f| f.id == moved).unwrap();
+        // 移動先に設定があれば残し、なければ移す
+        assert_eq!(target.source_id, source);
+        assert_eq!(target.license_id, license);
     }
 
     #[test]

@@ -41,12 +41,18 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
 }
 
 pub fn normalize_tag_name(name: &str) -> Result<String> {
+    normalize_name(name, "タグ")
+}
+
+/// タグ・出典・ライセンスの名前の決まり。前後の空白を除き、空や制御文字を含む名前はエラー。
+/// what はエラーの文言に入れる、名前の持ち主（「タグ」など）
+pub fn normalize_name(name: &str, what: &str) -> Result<String> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(Error::invalid("タグの名前が空です"));
+        return Err(Error::invalid(format!("{what}の名前が空です")));
     }
     if name.contains(TAG_SEPARATOR) || name.chars().any(char::is_control) {
-        return Err(Error::invalid("タグの名前に使えない文字が含まれています"));
+        return Err(Error::invalid(format!("{what}の名前に使えない文字が含まれています")));
     }
     Ok(name.to_owned())
 }

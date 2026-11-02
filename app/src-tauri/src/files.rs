@@ -24,6 +24,8 @@ pub struct AudioFile {
     pub hash: Option<String>,
     /// ハッシュ値を計算できなかった理由
     pub hash_error: Option<String>,
+    pub source_id: Option<i64>,
+    pub license_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -39,6 +41,12 @@ pub struct FileFilter {
     pub duplicates_only: bool,
     /// このハッシュ値のファイルに絞り込む
     pub hash: Option<String>,
+    /// どれかの出典が設定されたファイルに絞り込む
+    pub source_ids: Vec<i64>,
+    pub no_source: bool,
+    /// どれかのライセンスが設定されたファイルに絞り込む
+    pub license_ids: Vec<i64>,
+    pub no_license: bool,
 }
 
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
@@ -46,7 +54,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
                 (SELECT group_concat(t.name, char(31)) FROM file_tags ft
                    JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
-                a.hash, a.hash_error
+                a.hash, a.hash_error, a.source_id, a.license_id
          FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
          WHERE 1 = 1",
     );
@@ -78,6 +86,18 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         sql.push_str(" AND a.hash = ?");
         args.push(Value::Text(hash.clone()));
     }
+    for (column, ids, none) in [
+        ("a.source_id", &filter.source_ids, filter.no_source),
+        ("a.license_id", &filter.license_ids, filter.no_license),
+    ] {
+        if none {
+            sql.push_str(&format!(" AND {column} IS NULL"));
+        } else if !ids.is_empty() {
+            let marks = vec!["?"; ids.len()].join(", ");
+            sql.push_str(&format!(" AND {column} IN ({marks})"));
+            args.extend(ids.iter().map(|id| Value::Integer(*id)));
+        }
+    }
     // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
     sql.push_str(if filter.duplicates_only {
         " ORDER BY a.hash, f.path, a.rel_path"
@@ -108,6 +128,8 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             tags,
             hash: r.get(8)?,
             hash_error: r.get(9)?,
+            source_id: r.get(10)?,
+            license_id: r.get(11)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -170,6 +192,7 @@ pub fn remove_missing_files(conn: &mut Connection, file_ids: &[i64]) -> Result<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};
     use crate::tags::{list_tags, Tag};
@@ -251,6 +274,32 @@ mod tests {
         assert_eq!(list_files(&conn, &one).unwrap().len(), 0);
         // 使われなくなってもタグ自体は残る
         assert_eq!(list_tags(&conn).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn filter_by_source_and_license() {
+        let (_dir, mut conn) = setup();
+        let a = id_of(&conn, "a.wav");
+        let b = id_of(&conn, "b.mp3");
+        let s1 = set_file_credit(&mut conn, CreditKind::Source, &[a], Some("s1")).unwrap().unwrap();
+        let s2 = set_file_credit(&mut conn, CreditKind::Source, &[b], Some("s2")).unwrap().unwrap();
+        let l1 = set_file_credit(&mut conn, CreditKind::License, &[a], Some("l1")).unwrap().unwrap();
+
+        let f = |source_ids: Vec<i64>, no_source: bool, license_ids: Vec<i64>, no_license: bool| {
+            let filter = FileFilter { source_ids, no_source, license_ids, no_license, ..Default::default() };
+            rels(&list_files(&conn, &filter).unwrap()).iter().map(|s| s.to_string()).collect::<Vec<_>>()
+        };
+        // 出典どうしはOR
+        assert_eq!(f(vec![s1], false, vec![], false), vec!["a.wav"]);
+        assert_eq!(f(vec![s1, s2], false, vec![], false), vec!["a.wav", "b.mp3"]);
+        assert_eq!(f(vec![], true, vec![], false), vec!["sub/c_100%.flac"]);
+        // 出典とライセンスはAND
+        assert_eq!(f(vec![s1, s2], false, vec![l1], false), vec!["a.wav"]);
+        assert_eq!(f(vec![s1, s2], false, vec![], true), vec!["b.mp3"]);
+
+        let all = list_files(&conn, &FileFilter::default()).unwrap();
+        assert_eq!((all[0].source_id, all[0].license_id), (Some(s1), Some(l1)));
+        assert_eq!((all[2].source_id, all[2].license_id), (None, None));
     }
 
     #[test]

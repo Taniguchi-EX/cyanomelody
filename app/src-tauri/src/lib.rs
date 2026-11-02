@@ -1,4 +1,5 @@
 mod audio_hash;
+mod credits;
 mod db;
 mod error;
 mod files;
@@ -14,6 +15,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use credits::{Credit, CreditInput, CreditKind, LicenseType};
 use error::Result;
 use error::Error;
 use files::{AudioFile, FileFilter};
@@ -211,6 +213,42 @@ async fn remove_missing_files(state: State<'_, AppState>, file_ids: Vec<i64>) ->
     files::remove_missing_files(&mut state.conn(), &file_ids)
 }
 
+#[tauri::command]
+async fn license_types() -> Result<&'static [LicenseType]> {
+    Ok(credits::LICENSE_TYPES)
+}
+
+#[tauri::command]
+async fn list_credits(state: State<'_, AppState>, kind: CreditKind) -> Result<Vec<Credit>> {
+    credits::list_credits(&state.conn(), kind)
+}
+
+#[tauri::command]
+async fn create_credit(state: State<'_, AppState>, kind: CreditKind, input: CreditInput) -> Result<i64> {
+    credits::create_credit(&state.conn(), kind, &input)
+}
+
+#[tauri::command]
+async fn update_credit(state: State<'_, AppState>, kind: CreditKind, id: i64, input: CreditInput) -> Result<()> {
+    credits::update_credit(&state.conn(), kind, id, &input)
+}
+
+#[tauri::command]
+async fn delete_credit(state: State<'_, AppState>, kind: CreditKind, id: i64) -> Result<()> {
+    credits::delete_credit(&state.conn(), kind, id)
+}
+
+/// 選んだファイルに出典・ライセンスを設定する。name が null なら外す
+#[tauri::command]
+async fn set_file_credit(
+    state: State<'_, AppState>,
+    kind: CreditKind,
+    file_ids: Vec<i64>,
+    name: Option<String>,
+) -> Result<Option<i64>> {
+    credits::set_file_credit(&mut state.conn(), kind, &file_ids, name.as_deref())
+}
+
 /// データの置き場所。テストなどで分けたいときは環境変数 CYANOMELODY_DATA_DIR で変えられる。
 fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(dir) = std::env::var_os("CYANOMELODY_DATA_DIR") {
@@ -223,6 +261,7 @@ fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error:
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -262,6 +301,12 @@ pub fn run() {
             hashing_progress,
             hash_file,
             relink_files,
+            license_types,
+            list_credits,
+            create_credit,
+            update_credit,
+            delete_credit,
+            set_file_credit,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");
