@@ -109,6 +109,8 @@ pub struct PlaylistItem {
     pub file_count: i64,
     /// 別名（このプレイリストの中でだけ使う名前）。なければ None
     pub alias: Option<String>,
+    /// 結び付けたエフェクトのまとまり。なければ None
+    pub effect_chain: Option<NamedRef>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -129,6 +131,8 @@ pub struct PlayEntry {
     pub path: String,
     /// ファイルの項目の別名。タグの組み合わせから選ばれた曲や、別名のない項目は None
     pub alias: Option<String>,
+    /// かけるエフェクトのまとまり（内側の項目のものから外側へ、かける順）。空ならエフェクトなし
+    pub effects: Vec<i64>,
 }
 
 fn not_found() -> Error {
@@ -546,6 +550,7 @@ struct ItemRow {
     file_id: Option<i64>,
     ref_id: Option<i64>,
     alias: Option<String>,
+    effect_chain_id: Option<i64>,
 }
 
 /// 再生順の1曲（展開の途中）。別名は、ファイルの項目から来た曲だけが持つ
@@ -553,11 +558,19 @@ struct ItemRow {
 struct Track {
     file_id: i64,
     alias: Option<String>,
+    /// かけるエフェクトのまとまり（内側から外側の順）
+    chains: Vec<i64>,
 }
 
 impl Track {
     fn plain(file_id: i64) -> Track {
-        Track { file_id, alias: None }
+        Track { file_id, alias: None, chains: Vec::new() }
+    }
+
+    /// 外側の項目のまとまりを、最後に足す
+    fn with_chain(mut self, chain: Option<i64>) -> Track {
+        self.chains.extend(chain);
+        self
     }
 }
 
@@ -581,7 +594,7 @@ impl<'a> Catalog<'a> {
         let mut items: HashMap<i64, Vec<ItemRow>> = HashMap::new();
         for row in conn
             .prepare(
-                "SELECT playlist_id, id, kind, mode, owned, file_id, ref_id, alias FROM playlist_items
+                "SELECT playlist_id, id, kind, mode, owned, file_id, ref_id, alias, effect_chain_id FROM playlist_items
                  ORDER BY playlist_id, position, id",
             )?
             .query_map([], |r| {
@@ -595,6 +608,7 @@ impl<'a> Catalog<'a> {
                         file_id: r.get(5)?,
                         ref_id: r.get(6)?,
                         alias: r.get(7)?,
+                        effect_chain_id: r.get(8)?,
                     },
                 ))
             })?
@@ -711,17 +725,19 @@ fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut V
         match item.kind {
             ItemKind::File => {
                 if let (true, Some(file_id)) = (cat.file_ok(item.file_id), item.file_id) {
-                    out.push(Track { file_id, alias: item.alias.clone() });
+                    out.push(Track { file_id, alias: item.alias.clone(), chains: Vec::from_iter(item.effect_chain_id) });
                 }
             }
             ItemKind::Tags => {
-                let tracks = cat.files_for_tags(item.id)?.into_iter().map(Track::plain).collect();
+                let tracks =
+                    cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
                 out.extend(apply_mode(tracks, item.mode, rng));
             }
             ItemKind::Playlist => {
                 if let Some(r) = item.ref_id {
-                    let files = expand_items(cat, r, rng, path)?;
-                    out.extend(apply_mode(files, item.mode, rng));
+                    let tracks: Vec<Track> =
+                        expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
+                    out.extend(apply_mode(tracks, item.mode, rng));
                 }
             }
         }
@@ -748,7 +764,7 @@ fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Res
         .filter_map(|t| {
             let (rel_path, folder) = paths.get(&t.file_id)?;
             let path = absolute_path(folder, rel_path).to_string_lossy().into_owned();
-            Some(PlayEntry { file_id: t.file_id, rel_path: rel_path.clone(), path, alias: t.alias })
+            Some(PlayEntry { file_id: t.file_id, rel_path: rel_path.clone(), path, alias: t.alias, effects: t.chains })
         })
         .collect())
 }
@@ -796,6 +812,10 @@ pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
         .prepare("SELECT id, name FROM tags")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    let chain_names: HashMap<i64, String> = conn
+        .prepare("SELECT id, name FROM effect_chains")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
     let mut memo = HashMap::new();
     let mut items = Vec::new();
     for row in cat.items(id) {
@@ -824,6 +844,9 @@ pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
             playlist,
             file_count,
             alias: row.alias.clone(),
+            effect_chain: row
+                .effect_chain_id
+                .and_then(|c| chain_names.get(&c).map(|name| NamedRef { id: c, name: name.clone() })),
         });
     }
     Ok(PlaylistDetail { id, name, items })
@@ -1210,5 +1233,31 @@ mod tests {
         // 空にすると外れる
         set_item_alias(&conn, items[0].id, "  ").unwrap();
         assert_eq!(get_playlist(&conn, b).unwrap().items[0].alias, None);
+    }
+
+    #[test]
+    fn effects_go_from_inner_to_outer_items() {
+        let mut conn = setup();
+        let inner = crate::chains::create_chain(&conn, "内").unwrap();
+        let outer = crate::chains::create_chain(&conn, "外").unwrap();
+        let tagc = crate::chains::create_chain(&conn, "タグ").unwrap();
+        let a = create_playlist(&mut conn, "A", None).unwrap();
+        let b = create_playlist(&mut conn, "B", Some(a)).unwrap();
+        add_files(&mut conn, b, &[1, 2]).unwrap();
+        let rain = add_tag(&mut conn, &[3], "雨").unwrap();
+        let tag_item = add_tags(&mut conn, a, &[rain]).unwrap();
+        let b_items = get_playlist(&conn, b).unwrap().items;
+        crate::chains::set_item_chain(&conn, b_items[0].id, Some(inner)).unwrap();
+        // A の中の B の項目（子）にまとまりを結び付ける
+        let child_item = get_playlist(&conn, a).unwrap().items[0].id;
+        crate::chains::set_item_chain(&conn, child_item, Some(outer)).unwrap();
+        crate::chains::set_item_chain(&conn, tag_item, Some(tagc)).unwrap();
+        let entries = expand_with(&conn, a, PlayMode::Order, &mut Rng(1)).unwrap();
+        let effects: Vec<Vec<i64>> = entries.iter().map(|e| e.effects.clone()).collect();
+        assert_eq!(effects, vec![vec![inner, outer], vec![outer], vec![tagc]]);
+        // B を直接再生すると、A の中の項目のまとまりはかからない
+        let entries = expand_with(&conn, b, PlayMode::Order, &mut Rng(1)).unwrap();
+        assert_eq!(entries[0].effects, vec![inner]);
+        assert!(entries[1].effects.is_empty());
     }
 }

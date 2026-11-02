@@ -27,6 +27,7 @@ impl Audio {
         self.channels.first().map_or(0, Vec::len)
     }
 
+    #[cfg(test)]
     pub fn seconds(&self) -> f64 {
         self.len() as f64 / self.rate as f64
     }
@@ -396,7 +397,7 @@ fn reverb(mut audio: Audio, seconds: f32, mix: f32) -> Audio {
                 let fb = if i >= d { buf[i - d] } else { 0.0 };
                 lp = fb * 0.8 + lp * 0.2;
                 buf[i] = c[i] + g * lp;
-                wet[i] += buf[i - 0] * 0.125;
+                wet[i] += buf[i] * 0.125;
             }
         }
         for base in ALLPASS {

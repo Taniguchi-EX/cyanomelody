@@ -1,4 +1,6 @@
 mod audio_hash;
+mod chains;
+mod effect_cache;
 mod credits;
 mod db;
 mod effects;
@@ -20,6 +22,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use credits::{Credit, CreditInput, CreditKind, LicenseType};
+use chains::EffectChain;
+use effects::Effect;
 use error::Result;
 use error::Error;
 use facets::Facets;
@@ -33,6 +37,8 @@ use tree::MoveTarget;
 struct AppState {
     conn: Mutex<Connection>,
     hashing: Arc<HashJob>,
+    /// エフェクトをかけた音の置き場所
+    effect_cache: PathBuf,
 }
 
 /// 裏で行うハッシュ値の計算の状態
@@ -345,6 +351,73 @@ async fn expand_playlist(state: State<'_, AppState>, id: i64, mode: PlayMode) ->
     playlists::expand_playlist(&state.conn(), id, mode)
 }
 
+#[tauri::command]
+async fn list_effect_chains(state: State<'_, AppState>) -> Result<Vec<EffectChain>> {
+    chains::list_chains(&state.conn())
+}
+
+#[tauri::command]
+async fn create_effect_chain(state: State<'_, AppState>, name: String) -> Result<i64> {
+    chains::create_chain(&state.conn(), &name)
+}
+
+#[tauri::command]
+async fn rename_effect_chain(state: State<'_, AppState>, id: i64, name: String) -> Result<()> {
+    chains::rename_chain(&state.conn(), id, &name)
+}
+
+#[tauri::command]
+async fn delete_effect_chain(state: State<'_, AppState>, id: i64) -> Result<()> {
+    chains::delete_chain(&state.conn(), id)
+}
+
+#[tauri::command]
+async fn set_effect_chain_effects(state: State<'_, AppState>, id: i64, effects: Vec<Effect>) -> Result<()> {
+    chains::set_chain_effects(&mut state.conn(), id, &effects)
+}
+
+/// プレイリストの項目にエフェクトのまとまりを結び付ける。null なら外す
+#[tauri::command]
+async fn set_playlist_item_chain(state: State<'_, AppState>, item_id: i64, chain_id: Option<i64>) -> Result<()> {
+    chains::set_item_chain(&state.conn(), item_id, chain_id)
+}
+
+/// ファイルの絶対パス
+fn file_path(conn: &Connection, file_id: i64) -> Result<PathBuf> {
+    let (folder, rel): (String, String) = conn
+        .query_row(
+            "SELECT f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id WHERE a.id = ?1",
+            [file_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| Error::invalid("ファイルが見つかりません"))?;
+    Ok(library::absolute_path(&folder, &rel))
+}
+
+/// ファイルに、まとまり（chain_ids の順）をかけた音を用意して、そのパスを返す。
+/// 処理に時間がかかることがあるので、データベースを使うのは最初だけにする
+#[tauri::command]
+async fn render_effects(state: State<'_, AppState>, file_id: i64, chain_ids: Vec<i64>) -> Result<String> {
+    let (source, effects) = {
+        let conn = state.conn();
+        let mut effects = Vec::new();
+        for c in &chain_ids {
+            effects.extend(chains::chain_effects(&conn, *c)?);
+        }
+        (file_path(&conn, file_id)?, effects)
+    };
+    let out = effect_cache::render(&state.effect_cache, &source, &effects).map_err(Error::invalid)?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
+/// 保存する前のエフェクトの並びを、ファイルにかけて試聴するための音を用意する
+#[tauri::command]
+async fn preview_effects(state: State<'_, AppState>, file_id: i64, effects: Vec<Effect>) -> Result<String> {
+    let source = file_path(&state.conn(), file_id)?;
+    let out = effect_cache::render(&state.effect_cache, &source, &effects).map_err(Error::invalid)?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
 /// データの置き場所。テストなどで分けたいときは環境変数 CYANOMELODY_DATA_DIR で変えられる。
 fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(dir) = std::env::var_os("CYANOMELODY_DATA_DIR") {
@@ -372,9 +445,14 @@ pub fn run() {
             for folder in library::list_folders(&conn)? {
                 allow_asset_dir(app.handle(), Path::new(&folder.path));
             }
+            let effect_cache = dir.join("effects-cache");
+            std::fs::create_dir_all(&effect_cache)?;
+            // エフェクトをかけた音を画面から鳴らせるようにする
+            allow_asset_dir(app.handle(), &effect_cache);
             app.manage(AppState {
                 conn: Mutex::new(conn),
                 hashing: Arc::new(HashJob::default()),
+                effect_cache,
             });
             Ok(())
         })
@@ -419,6 +497,14 @@ pub fn run() {
             move_playlist_item,
             set_playlist_item_mode,
             set_playlist_item_alias,
+            list_effect_chains,
+            create_effect_chain,
+            rename_effect_chain,
+            delete_effect_chain,
+            set_effect_chain_effects,
+            set_playlist_item_chain,
+            render_effects,
+            preview_effects,
             expand_playlist,
         ])
         .run(tauri::generate_context!())

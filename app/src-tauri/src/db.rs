@@ -110,6 +110,23 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE playlist_items ADD COLUMN alias TEXT;
     "#,
+    // 7: エフェクト。まとまりの中のエフェクトは、種類と設定をJSONで持つ
+    r#"
+    CREATE TABLE effect_chains (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE effect_steps (
+        id INTEGER PRIMARY KEY,
+        chain_id INTEGER NOT NULL REFERENCES effect_chains(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        effect TEXT NOT NULL
+    );
+    CREATE INDEX effect_steps_chain ON effect_steps(chain_id, position);
+    ALTER TABLE playlist_items ADD COLUMN effect_chain_id INTEGER REFERENCES effect_chains(id) ON DELETE SET NULL;
+    CREATE INDEX playlist_items_chain ON playlist_items(effect_chain_id);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
