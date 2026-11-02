@@ -17,13 +17,21 @@ const large = path.join(dataDir, "large");
 const ui = await connect(shotDir);
 const { page, step, shot, status, fileCount, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
 
-await step("T01", "フォルダを登録すると、スキャンして5つの形式のファイルが取り込まれる", async () => {
-  await addFolder(formats);
+await step("T01", "フォルダを登録すると、スキャンして5つの形式のファイルが取り込まれ、そのフォルダだけの表示になる", async () => {
+  await ui.addFolderOnly(formats);
   const s = await status();
   expect(s.includes("5件"), `status: ${s}`);
   expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
   expect((await row("サブフォルダ/チャイム.m4a").count()) === 1, "サブフォルダのm4aがない");
+  const folder = page.getByTestId("folder");
+  expect((await folder.getAttribute("class")).includes("active"), "フォルダが選ばれていない");
+  expect((await folder.locator(".folder-name").innerText()) === "formats", await folder.innerText());
+  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 1, "すべて解除が出ない");
   await shot("T01_フォルダ登録");
+  // もう一度押すと外れる
+  await folder.locator(".folder-name").click();
+  await page.waitForTimeout(400);
+  expect(!(await folder.getAttribute("class")).includes("active"), "外れない");
 });
 
 await step("T02", "登録済みのフォルダの中のフォルダは登録できない", async () => {

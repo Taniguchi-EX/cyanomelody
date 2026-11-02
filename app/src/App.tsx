@@ -58,6 +58,7 @@ const EMPTY_FILTER: FileFilter = {
   licenseIds: [],
   noLicense: false,
   fileIds: null,
+  folderId: null,
 };
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
@@ -214,6 +215,9 @@ export default function App() {
       const r = await api.addFolder(path);
       showInfo(describeScan(path, r));
       ok = true;
+      // 取り込んだファイルを整理できるよう、そのフォルダだけを表示する
+      clearAll();
+      setFilter({ ...EMPTY_FILTER, folderId: r.folderId });
       startHashing();
     });
     return ok;
@@ -227,6 +231,7 @@ export default function App() {
     if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.removeFolder(folder.id);
+      setFilter((f) => (f.folderId === folder.id ? { ...f, folderId: null } : f));
       showInfo(`登録を解除しました: ${folder.path}`);
     });
   };
@@ -286,6 +291,7 @@ export default function App() {
 
   /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
   const anyActive =
+    filter.folderId !== null ||
     filter.tagIds.length > 0 ||
     filter.untaggedOnly ||
     filter.missingOnly ||
@@ -768,6 +774,8 @@ export default function App() {
           onRemove={removeFolder}
           onScan={(f) => scan([f])}
           onScanAll={() => scan(folders)}
+          selectedId={filter.folderId}
+          onSelect={(id) => setFilter((f) => ({ ...f, folderId: f.folderId === id ? null : id }))}
         />
         <TagPanel
           tags={tags}

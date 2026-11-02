@@ -46,6 +46,8 @@ export type FileFilter = {
   noLicense: boolean;
   /** 指定したidのファイルだけ（チェックしたファイルだけの表示）。null なら絞り込まない */
   fileIds: number[] | null;
+  /** このライブラリフォルダのファイルだけ。null なら絞り込まない */
+  folderId: number | null;
 };
 
 /** 絞り込みの各項目を選んだときの件数。0件の項目は入らない */

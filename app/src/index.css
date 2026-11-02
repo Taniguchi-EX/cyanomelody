@@ -272,9 +272,31 @@ h2:first-child {
 
 /* ===== 左の欄（たためる欄、木、絞り込みの一覧） ===== */
 
+/* ライブラリフォルダの行。押すとそのフォルダで絞り込む（名前だけ出し、パスはマウスを乗せると出る） */
 .folder {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  margin-top: 2px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.folder:hover {
+  background: var(--bg);
+}
+
+.folder.active {
+  background: var(--selected);
+  font-weight: 600;
+}
+
+.folder-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .collapsible {

@@ -89,6 +89,18 @@ export async function connect(shotDir) {
       await page.getByLabel("フォルダのパス").fill(p);
       await page.getByRole("button", { name: "登録", exact: true }).click();
       await ui.waitIdle();
+      // 登録したフォルダだけの表示になるので、ほかのテストのために外す
+      const active = page.locator("[data-testid=folder].active .folder-name");
+      if (await active.count()) {
+        await active.click();
+        await page.waitForTimeout(400);
+      }
+    },
+    /** 登録だけして、絞り込みは外さない */
+    async addFolderOnly(p) {
+      await page.getByLabel("フォルダのパス").fill(p);
+      await page.getByRole("button", { name: "登録", exact: true }).click();
+      await ui.waitIdle();
     },
     async clearFilter() {
       // 「すべて解除」は、絞り込みと一緒にチェックと右の欄の表示も外す

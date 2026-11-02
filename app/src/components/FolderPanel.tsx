@@ -9,9 +9,16 @@ type Props = {
   onRemove: (folder: LibraryFolder) => void;
   onScan: (folder: LibraryFolder) => void;
   onScanAll: () => void;
+  /** 絞り込みに選んでいるフォルダ */
+  selectedId: number | null;
+  /** 押したフォルダで絞り込む（選んでいるフォルダなら外す） */
+  onSelect: (id: number) => void;
 };
 
-export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll }: Props) {
+/** パスの最後の名前 */
+const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll, selectedId, onSelect }: Props) {
   const [path, setPath] = useState("");
 
   const browse = async () => {
@@ -43,20 +50,48 @@ export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll 
         </button>
       </div>
       {folders.map((f) => (
-        <div className="folder" key={f.id} data-testid="folder">
-          <div className="folder-path">{f.path}</div>
-          <div className="row">
-            <span className="sub" style={{ flex: 1 }}>
-              {f.fileCount}件
-              {f.missingCount > 0 && <span className="warn">（見つからない {f.missingCount}件）</span>}
-            </span>
-            <button onClick={() => onScan(f)} disabled={busy}>
-              スキャン
-            </button>
-            <button onClick={() => onRemove(f)} disabled={busy}>
-              登録解除
-            </button>
-          </div>
+        <div
+          className={"folder" + (selectedId === f.id ? " active" : "")}
+          key={f.id}
+          data-testid="folder"
+          data-folder-path={f.path}
+          title={f.path}
+          onClick={() => onSelect(f.id)}
+        >
+          <span className="folder-name">{baseName(f.path)}</span>
+          <span className="sub">
+            {f.fileCount}
+            {f.missingCount > 0 && (
+              <span className="warn" title={`見つからない ${f.missingCount}件`}>
+                {" "}
+                ⚠{f.missingCount}
+              </span>
+            )}
+          </span>
+          <button
+            className="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onScan(f);
+            }}
+            disabled={busy}
+            title="スキャン"
+            aria-label="スキャン"
+          >
+            ⟳
+          </button>
+          <button
+            className="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(f);
+            }}
+            disabled={busy}
+            title="登録解除"
+            aria-label="登録解除"
+          >
+            ✕
+          </button>
         </div>
       ))}
       {folders.length > 1 && (

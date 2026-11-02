@@ -51,6 +51,8 @@ pub struct FileFilter {
     pub no_license: bool,
     /// 指定したidのファイルだけに絞り込む（チェックしたファイルだけの表示）
     pub file_ids: Option<Vec<i64>>,
+    /// このライブラリフォルダのファイルに絞り込む
+    pub folder_id: Option<i64>,
 }
 
 /// まとめて操作するファイル（チェックしたファイル）の内訳
@@ -135,6 +137,10 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     if let Some(ids) = &filter.file_ids {
         sql.push_str(" AND a.id IN (SELECT value FROM json_each(?))");
         args.push(Value::Text(ids_json(ids)));
+    }
+    if let Some(folder) = filter.folder_id {
+        sql.push_str(" AND a.folder_id = ?");
+        args.push(Value::Integer(folder));
     }
     if filter.missing_only {
         sql.push_str(" AND a.missing = 1");
@@ -400,6 +406,18 @@ mod tests {
         let all = list_files(&conn, &FileFilter::default()).unwrap();
         assert_eq!((all[0].source_id, all[0].license_id), (Some(s1), Some(l1)));
         assert_eq!((all[2].source_id, all[2].license_id), (None, None));
+    }
+
+    #[test]
+    fn filter_by_folder() {
+        let (_dir, conn) = setup();
+        let folder: i64 = conn.query_row("SELECT id FROM library_folders", [], |r| r.get(0)).unwrap();
+        let f = FileFilter { folder_id: Some(folder), ..Default::default() };
+        assert_eq!(list_files(&conn, &f).unwrap().len(), 3);
+        let other = FileFilter { folder_id: Some(folder + 1), ..Default::default() };
+        assert!(list_files(&conn, &other).unwrap().is_empty());
+        let and = FileFilter { folder_id: Some(folder), text: "mp3".into(), ..Default::default() };
+        assert_eq!(rels(&list_files(&conn, &and).unwrap()), vec!["b.mp3"]);
     }
 
     #[test]
