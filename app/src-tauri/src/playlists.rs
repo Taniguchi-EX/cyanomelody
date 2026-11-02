@@ -517,6 +517,7 @@ pub fn move_playlist(conn: &mut Connection, id: i64, target: MoveTarget) -> Resu
 }
 
 /// 項目の行（展開や表示に使う）
+#[derive(Clone)]
 struct ItemRow {
     id: i64,
     kind: ItemKind,
@@ -526,46 +527,101 @@ struct ItemRow {
     ref_id: Option<i64>,
 }
 
-fn item_rows(conn: &Connection, playlist_id: i64) -> Result<Vec<ItemRow>> {
-    Ok(conn
-        .prepare(
-            "SELECT id, kind, mode, owned, file_id, ref_id FROM playlist_items
-             WHERE playlist_id = ?1 ORDER BY position, id",
-        )?
-        .query_map([playlist_id], |r| {
-            Ok(ItemRow {
-                id: r.get(0)?,
-                kind: ItemKind::parse(&r.get::<_, String>(1)?),
-                mode: PlayMode::parse(&r.get::<_, String>(2)?),
-                owned: r.get(3)?,
-                file_id: r.get(4)?,
-                ref_id: r.get(5)?,
-            })
-        })?
-        .collect::<rusqlite::Result<_>>()?)
+/// 展開や表示に使うデータを、まとめて読んだもの。項目ごとに問い合わせると、項目の多いプレイリストで遅くなるため
+struct Catalog<'a> {
+    conn: &'a Connection,
+    /// プレイリストごとの項目（順番どおり）
+    items: HashMap<i64, Vec<ItemRow>>,
+    /// タグの組み合わせの項目ごとのタグ
+    item_tags: HashMap<i64, Vec<i64>>,
+    /// ファイルの項目が指すファイルの、相対パスと見つからない印
+    files: HashMap<i64, (String, bool)>,
+    /// プレイリストの名前
+    names: HashMap<i64, String>,
+    /// タグの組み合わせごとの対象のファイル（同じ組み合わせを何度も問い合わせない）
+    tag_files: HashMap<Vec<i64>, Vec<i64>>,
 }
 
-/// タグの組み合わせの項目のタグ（タグの一覧の順）
-fn item_tags(conn: &Connection, item_id: i64, order: &HashMap<i64, usize>) -> Result<Vec<NamedRef>> {
-    let mut tags: Vec<NamedRef> = conn
-        .prepare("SELECT t.id, t.name FROM playlist_item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.item_id = ?1")?
-        .query_map([item_id], |r| Ok(NamedRef { id: r.get(0)?, name: r.get(1)? }))?
-        .collect::<rusqlite::Result<_>>()?;
-    tags.sort_by_key(|t| order.get(&t.id).copied().unwrap_or(usize::MAX));
-    Ok(tags)
-}
+impl<'a> Catalog<'a> {
+    fn load(conn: &'a Connection) -> Result<Catalog<'a>> {
+        let mut items: HashMap<i64, Vec<ItemRow>> = HashMap::new();
+        for row in conn
+            .prepare(
+                "SELECT playlist_id, id, kind, mode, owned, file_id, ref_id FROM playlist_items
+                 ORDER BY playlist_id, position, id",
+            )?
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    ItemRow {
+                        id: r.get(1)?,
+                        kind: ItemKind::parse(&r.get::<_, String>(2)?),
+                        mode: PlayMode::parse(&r.get::<_, String>(3)?),
+                        owned: r.get(4)?,
+                        file_id: r.get(5)?,
+                        ref_id: r.get(6)?,
+                    },
+                ))
+            })?
+        {
+            let (playlist, item) = row?;
+            items.entry(playlist).or_default().push(item);
+        }
+        let mut item_tags: HashMap<i64, Vec<i64>> = HashMap::new();
+        for row in conn
+            .prepare("SELECT item_id, tag_id FROM playlist_item_tags")?
+            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))?
+        {
+            let (item, tag) = row?;
+            item_tags.entry(item).or_default().push(tag);
+        }
+        let files = conn
+            .prepare(
+                "SELECT a.id, a.rel_path, a.missing FROM audio_files a
+                 WHERE a.id IN (SELECT file_id FROM playlist_items WHERE file_id IS NOT NULL)",
+            )?
+            .query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+            .collect::<rusqlite::Result<_>>()?;
+        let names = conn
+            .prepare("SELECT id, name FROM playlists")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(Catalog { conn, items, item_tags, files, names, tag_files: HashMap::new() })
+    }
 
-/// タグの組み合わせに当てはまる、見つかっているファイル（ファイルの一覧と同じ順）
-fn files_for_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<i64>> {
-    let filter = FileFilter { tag_ids: tag_ids.to_vec(), ..Default::default() };
-    let (conditions, args) = filter_conditions(conn, &filter)?;
-    Ok(conn
-        .prepare(&format!(
-            "SELECT a.id FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
-             WHERE a.missing = 0{conditions} ORDER BY {FILE_ORDER}"
-        ))?
-        .query_map(params_from_iter(args), |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?)
+    /// プレイリストの項目（順番どおり）
+    fn items(&self, playlist_id: i64) -> Vec<ItemRow> {
+        self.items.get(&playlist_id).cloned().unwrap_or_default()
+    }
+
+    /// 見つかっているファイルか（ライブラリにないファイルも false）
+    fn file_ok(&self, file_id: Option<i64>) -> bool {
+        file_id.and_then(|f| self.files.get(&f)).is_some_and(|(_, missing)| !missing)
+    }
+
+    /// タグの組み合わせに当てはまる、見つかっているファイル（ファイルの一覧と同じ順）
+    fn files_for_tags(&mut self, item_id: i64) -> Result<Vec<i64>> {
+        let mut tags = self.item_tags.get(&item_id).cloned().unwrap_or_default();
+        if tags.is_empty() {
+            return Ok(Vec::new());
+        }
+        tags.sort_unstable();
+        if let Some(files) = self.tag_files.get(&tags) {
+            return Ok(files.clone());
+        }
+        let filter = FileFilter { tag_ids: tags.clone(), ..Default::default() };
+        let (conditions, args) = filter_conditions(self.conn, &filter)?;
+        let files: Vec<i64> = self
+            .conn
+            .prepare(&format!(
+                "SELECT a.id FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+                 WHERE a.missing = 0{conditions} ORDER BY {FILE_ORDER}"
+            ))?
+            .query_map(params_from_iter(args), |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        self.tag_files.insert(tags, files.clone());
+        Ok(files)
+    }
 }
 
 /// 再生順を決めるときの乱数（xorshift）。テストでは種を決めて同じ結果にする
@@ -606,36 +662,24 @@ fn apply_mode(mut files: Vec<i64>, mode: PlayMode, rng: &mut Rng) -> Vec<i64> {
 }
 
 /// プレイリストの項目を展開して、再生するファイルの並びにする（プレイリスト自体の再生方法は当てはめない）
-fn expand_items(conn: &Connection, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<i64>> {
+fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<i64>> {
     // ループは保存できないが、念のため同じプレイリストを二重にたどらない
     if path.contains(&playlist_id) {
         return Ok(Vec::new());
     }
     path.push(playlist_id);
     let mut out = Vec::new();
-    for item in item_rows(conn, playlist_id)? {
+    for item in cat.items(playlist_id) {
         match item.kind {
             ItemKind::File => {
-                let ok: bool = conn
-                    .query_row("SELECT missing = 0 FROM audio_files WHERE id = ?1", [item.file_id], |r| r.get(0))
-                    .optional()?
-                    .unwrap_or(false);
-                if ok {
+                if cat.file_ok(item.file_id) {
                     out.extend(item.file_id);
                 }
             }
-            ItemKind::Tags => {
-                let tags: Vec<i64> = conn
-                    .prepare("SELECT tag_id FROM playlist_item_tags WHERE item_id = ?1")?
-                    .query_map([item.id], |r| r.get(0))?
-                    .collect::<rusqlite::Result<_>>()?;
-                if !tags.is_empty() {
-                    out.extend(apply_mode(files_for_tags(conn, &tags)?, item.mode, rng));
-                }
-            }
+            ItemKind::Tags => out.extend(apply_mode(cat.files_for_tags(item.id)?, item.mode, rng)),
             ItemKind::Playlist => {
                 if let Some(r) = item.ref_id {
-                    let files = expand_items(conn, r, rng, path)?;
+                    let files = expand_items(cat, r, rng, path)?;
                     out.extend(apply_mode(files, item.mode, rng));
                 }
             }
@@ -647,15 +691,15 @@ fn expand_items(conn: &Connection, playlist_id: i64, rng: &mut Rng, path: &mut V
 
 fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
     ensure_exists(conn, id)?;
-    let files = apply_mode(expand_items(conn, id, rng, &mut Vec::new())?, mode, rng);
+    let mut cat = Catalog::load(conn)?;
+    let files = apply_mode(expand_items(&mut cat, id, rng, &mut Vec::new())?, mode, rng);
     // パスはまとめて1回で引く（数万件でも速く）
-    let ids = ids_json(&files);
     let paths: HashMap<i64, (String, String)> = conn
         .prepare(
             "SELECT a.id, a.rel_path, f.path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
              WHERE a.id IN (SELECT value FROM json_each(?1))",
         )?
-        .query_map([ids], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+        .query_map([ids_json(&files)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(files
         .into_iter()
@@ -673,7 +717,7 @@ pub fn expand_playlist(conn: &Connection, id: i64, mode: PlayMode) -> Result<Vec
 }
 
 /// 再生したときのファイル数（乱数を使わずに数える。ランダムセレクトは1）
-fn count_items(conn: &Connection, playlist_id: i64, memo: &mut HashMap<i64, i64>, path: &mut Vec<i64>) -> Result<i64> {
+fn count_items(cat: &mut Catalog, playlist_id: i64, memo: &mut HashMap<i64, i64>, path: &mut Vec<i64>) -> Result<i64> {
     if let Some(&n) = memo.get(&playlist_id) {
         return Ok(n);
     }
@@ -682,29 +726,20 @@ fn count_items(conn: &Connection, playlist_id: i64, memo: &mut HashMap<i64, i64>
     }
     path.push(playlist_id);
     let mut total = 0;
-    for item in item_rows(conn, playlist_id)? {
-        total += count_item(conn, &item, memo, path)?;
+    for item in cat.items(playlist_id) {
+        total += count_item(cat, &item, memo, path)?;
     }
     path.pop();
     memo.insert(playlist_id, total);
     Ok(total)
 }
 
-fn count_item(conn: &Connection, item: &ItemRow, memo: &mut HashMap<i64, i64>, path: &mut Vec<i64>) -> Result<i64> {
+fn count_item(cat: &mut Catalog, item: &ItemRow, memo: &mut HashMap<i64, i64>, path: &mut Vec<i64>) -> Result<i64> {
     let n = match item.kind {
-        ItemKind::File => conn
-            .query_row("SELECT missing = 0 FROM audio_files WHERE id = ?1", [item.file_id], |r| r.get::<_, bool>(0))
-            .optional()?
-            .map_or(0, i64::from),
-        ItemKind::Tags => {
-            let tags: Vec<i64> = conn
-                .prepare("SELECT tag_id FROM playlist_item_tags WHERE item_id = ?1")?
-                .query_map([item.id], |r| r.get(0))?
-                .collect::<rusqlite::Result<_>>()?;
-            if tags.is_empty() { 0 } else { files_for_tags(conn, &tags)?.len() as i64 }
-        }
+        ItemKind::File => i64::from(cat.file_ok(item.file_id)),
+        ItemKind::Tags => cat.files_for_tags(item.id)?.len() as i64,
         ItemKind::Playlist => match item.ref_id {
-            Some(r) => count_items(conn, r, memo, path)?,
+            Some(r) => count_items(cat, r, memo, path)?,
             None => 0,
         },
     };
@@ -712,30 +747,31 @@ fn count_item(conn: &Connection, item: &ItemRow, memo: &mut HashMap<i64, i64>, p
 }
 
 pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
-    let name: String = conn
-        .query_row("SELECT name FROM playlists WHERE id = ?1", [id], |r| r.get(0))
-        .optional()?
-        .ok_or_else(not_found)?;
+    let mut cat = Catalog::load(conn)?;
+    let name = cat.names.get(&id).cloned().ok_or_else(not_found)?;
     let order = tag_rank(conn)?;
+    let tag_names: HashMap<i64, String> = conn
+        .prepare("SELECT id, name FROM tags")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
     let mut memo = HashMap::new();
     let mut items = Vec::new();
-    for row in item_rows(conn, id)? {
-        let file = match row.file_id {
-            Some(f) => conn
-                .query_row("SELECT rel_path, missing FROM audio_files WHERE id = ?1", [f], |r| {
-                    Ok(ItemFile { id: f, rel_path: r.get(0)?, missing: r.get(1)? })
-                })
-                .optional()?,
-            None => None,
-        };
-        let playlist = match row.ref_id {
-            Some(r) => conn
-                .query_row("SELECT name FROM playlists WHERE id = ?1", [r], |x| Ok(NamedRef { id: r, name: x.get(0)? }))
-                .optional()?,
-            None => None,
-        };
-        let tags = if row.kind == ItemKind::Tags { item_tags(conn, row.id, &order)? } else { Vec::new() };
-        let file_count = count_item(conn, &row, &mut memo, &mut vec![id])?;
+    for row in cat.items(id) {
+        let file = row.file_id.and_then(|f| {
+            cat.files.get(&f).map(|(rel_path, missing)| ItemFile { id: f, rel_path: rel_path.clone(), missing: *missing })
+        });
+        let playlist = row.ref_id.and_then(|r| cat.names.get(&r).map(|name| NamedRef { id: r, name: name.clone() }));
+        let mut tags: Vec<NamedRef> = cat
+            .item_tags
+            .get(&row.id)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|t| tag_names.get(t).map(|name| NamedRef { id: *t, name: name.clone() }))
+                    .collect()
+            })
+            .unwrap_or_default();
+        tags.sort_by_key(|t| order.get(&t.id).copied().unwrap_or(usize::MAX));
+        let file_count = count_item(&mut cat, &row, &mut memo, &mut vec![id])?;
         items.push(PlaylistItem {
             id: row.id,
             kind: row.kind,
@@ -1027,5 +1063,47 @@ mod tests {
         let names: Vec<String> =
             get_playlist(&conn, a).unwrap().items.into_iter().map(|i| i.file.unwrap().rel_path).collect();
         assert_eq!(names, vec!["a.wav", "b.wav", "c.wav"]);
+    }
+
+    /// 項目の多いプレイリストの表示と展開の速さを測る。cargo test --release playlist_speed -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn playlist_speed() {
+        use std::time::Instant;
+        let mut conn = setup();
+        {
+            let tx = conn.transaction().unwrap();
+            let mut stmt = tx
+                .prepare("INSERT INTO audio_files (id, folder_id, rel_path, size, modified_at, added_at) VALUES (?1, 1, ?2, 0, 0, 0)")
+                .unwrap();
+            for i in 100..30_100i64 {
+                stmt.execute(rusqlite::params![i, format!("se_{i:05}.wav")]).unwrap();
+            }
+            drop(stmt);
+            tx.commit().unwrap();
+        }
+        let tags: Vec<i64> = (0..20)
+            .map(|k| {
+                let ids: Vec<i64> = (100..30_100).filter(|i| i % 20 == k).collect();
+                add_tag(&mut conn, &ids, &format!("t{k}")).unwrap()
+            })
+            .collect();
+        // 子を10個持ち、それぞれにファイル100件・タグの組み合わせ5つ。親にもファイル1000件
+        let top = create_playlist(&mut conn, "top", None).unwrap();
+        add_files(&mut conn, top, &(100..1_100).collect::<Vec<_>>()).unwrap();
+        for c in 0..10 {
+            let child = create_playlist(&mut conn, &format!("c{c}"), Some(top)).unwrap();
+            add_files(&mut conn, child, &(1_100 + c * 100..1_200 + c * 100).collect::<Vec<_>>()).unwrap();
+            for k in 0..5 {
+                add_tags(&mut conn, child, &[tags[(c as usize + k) % 20]]).unwrap();
+            }
+        }
+        let t0 = Instant::now();
+        let detail = get_playlist(&conn, top).unwrap();
+        let get_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        let t1 = Instant::now();
+        let n = expand_playlist(&conn, top, PlayMode::Shuffle).unwrap().len();
+        let expand_ms = t1.elapsed().as_secs_f64() * 1000.0;
+        println!("編集画面の表示 {get_ms:.1}ms（項目{}件）、展開 {expand_ms:.1}ms（{n}曲）", detail.items.len());
     }
 }
