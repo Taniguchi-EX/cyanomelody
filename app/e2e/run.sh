@@ -9,7 +9,7 @@ data="${1:?テストデータのフォルダを指定してください}"
 work="${2:?作業用フォルダを指定してください}"
 shift 2
 scripts=("$@")
-[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tag-admin.mjs hash-features.mjs)
+[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tag-admin.mjs hash-features.mjs credits.mjs)
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 exe="$app_dir/src-tauri/target/release/cyanomelody.exe"

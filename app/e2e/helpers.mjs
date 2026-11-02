@@ -22,6 +22,8 @@ export async function connect(shotDir) {
   const page = browser.contexts()[0].pages()[0];
   // 確認ダイアログはすべて「OK」で答える
   page.on("dialog", (d) => d.accept());
+  // 画面の状態（左の欄のたたみ具合など）は WebView2 の保存領域に残るので、テストごとに消す
+  await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
   await page.waitForTimeout(500);

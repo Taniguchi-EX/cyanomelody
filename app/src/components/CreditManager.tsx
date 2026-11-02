@@ -21,17 +21,19 @@ export function CreditManager({ kind, credits, licenseTypes, busy, onCreate, onU
   const label = CREDIT_LABEL[kind];
   const isLicense = kind === "license";
   const [input, setInput] = useState<CreditInput>(EMPTY_INPUT);
-  const [editing, setEditing] = useState<Credit | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  // 編集中のものが削除されたら、編集をやめた扱いにする
+  const editing = credits.find((c) => c.id === editingId) ?? null;
 
   const typeName = (key: string | null) => licenseTypes.find((t) => t.key === key)?.name ?? "独自";
 
   const startEdit = (c: Credit) => {
-    setEditing(c);
+    setEditingId(c.id);
     setInput({ name: c.name, url: c.url, note: c.note, licenseType: c.licenseType, terms: c.terms });
   };
 
   const reset = () => {
-    setEditing(null);
+    setEditingId(null);
     setInput(EMPTY_INPUT);
   };
 

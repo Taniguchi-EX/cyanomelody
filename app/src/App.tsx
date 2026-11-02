@@ -193,7 +193,7 @@ export default function App() {
   const removeFolder = (folder: LibraryFolder) => {
     const message =
       `「${folder.path}」の登録を解除しますか？\n` +
-      `このフォルダのファイル${folder.fileCount}件の情報と、付けたタグがアプリから消えます。\n` +
+      `このフォルダのファイル${folder.fileCount}件の情報と、付けたタグ・出典・ライセンスの設定がアプリから消えます。\n` +
       "実際のファイルは消えません。";
     if (!window.confirm(message)) return;
     run(async () => {
@@ -236,7 +236,7 @@ export default function App() {
 
   const removeMissing = () => {
     const targets = selectedFiles.filter((f) => f.missing);
-    if (!window.confirm(`見つからないファイル${targets.length}件をライブラリから外しますか？\n付けたタグも消えます。`)) return;
+    if (!window.confirm(`見つからないファイル${targets.length}件をライブラリから外しますか？\n付けたタグ・出典・ライセンスの設定も消えます。`)) return;
     run(async () => {
       const n = await api.removeMissingFiles(targets.map((f) => f.id));
       showInfo(`${n}件をライブラリから外しました`);
