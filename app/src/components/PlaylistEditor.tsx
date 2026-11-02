@@ -166,9 +166,12 @@ export function PlaylistEditor({
           onKeyDown={(e) => e.key === "Enter" && canRename && onRename(name)}
           aria-label="プレイリストの名前"
         />
-        <button onClick={() => onRename(name)} disabled={!canRename}>
-          名前を変える
-        </button>
+        {/* 名前を書き換えたときだけ出す（Enterでも変えられる） */}
+        {name.trim() !== detail.name && (
+          <button onClick={() => onRename(name)} disabled={!canRename}>
+            名前を変える
+          </button>
+        )}
         <span className="play-modes">
           {PLAY_MODES.map((m) => (
             <button key={m.mode} className="icon" onClick={() => onPlay(m.mode)} title={m.label} aria-label={m.label}>
@@ -179,8 +182,9 @@ export function PlaylistEditor({
         <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
           書き出す
         </button>
-        <button onClick={onDelete} disabled={busy}>
-          このプレイリストを削除
+        <span style={{ flex: 1 }} />
+        <button className="icon" onClick={onDelete} disabled={busy} title="このプレイリストを削除" aria-label="このプレイリストを削除">
+          🗑
         </button>
       </div>
       {exporting && (

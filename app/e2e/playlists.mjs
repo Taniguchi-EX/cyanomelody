@@ -234,6 +234,8 @@ await step("P15", "名前を変えられる（同じ名前はエラー）", asyn
   await page.getByRole("button", { name: "名前を変える" }).click();
   await waitIdle();
   expect((await tree()).includes("足音（短い）:0"), await tree());
+  // 名前を書き換えていないときは「名前を変える」を出さない
+  expect((await page.getByRole("button", { name: "名前を変える" }).count()) === 0, "名前を変えるが残っている");
 });
 
 await step("P16", "削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {

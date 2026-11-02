@@ -295,5 +295,5 @@ export function describeExport(p: ExportProgress): string {
   if (p.running) return `書き出し中 ${p.done}/${p.total}`;
   const parts = [`${p.done - p.failed}件`];
   if (p.failed) parts.push(`書き出せなかったファイル ${p.failed}件`);
-  return `${p.cancelled ? "書き出しを中止しました" : "書き出しました"}（${parts.join("、")}）: ${p.folder}`;
+  return `${p.cancelled ? "書き出しを中止しました" : "書き出しました"}（${parts.join("、")}）: `;
 }

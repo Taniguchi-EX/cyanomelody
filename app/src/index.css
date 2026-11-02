@@ -924,6 +924,10 @@ button.filter-chip:hover .chip-x {
   flex-wrap: wrap;
 }
 
+.folder-link {
+  color: var(--accent);
+}
+
 /* 保存していない変更があるときの「保存」 */
 button.primary {
   color: #fff;

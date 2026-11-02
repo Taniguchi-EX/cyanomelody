@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
   describeHashing,
@@ -1048,6 +1049,21 @@ export default function App() {
         {exportProgress && (
           <div className="hash-status" data-testid="export-status">
             {describeExport(exportProgress)}
+            {/* 書き出したフォルダは、押すとエクスプローラーで見せる（渡すときに探さなくてよい） */}
+            {!exportProgress.running && (
+              <a
+                href="#"
+                className="folder-link"
+                title="エクスプローラーで見せる"
+                data-testid="export-folder"
+                onClick={(e) => {
+                  e.preventDefault();
+                  revealItemInDir(exportProgress.folder).catch(showError);
+                }}
+              >
+                {exportProgress.folder}
+              </a>
+            )}
             {exportProgress.running && (
               <button onClick={() => playlistApi.cancelExport().catch(showError)}>中止</button>
             )}

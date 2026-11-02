@@ -106,4 +106,10 @@ await step("X05", "書き出し先の欄には、前に書き出したフォル�
   expect(v === out, v);
 });
 
+await step("X06", "書き出し終わると、書き出したフォルダがリンクで出る（押すとエクスプローラーで見せる）", async () => {
+  const link = page.getByTestId("export-folder");
+  const text = await link.innerText();
+  expect(text === path.join(out, "TRPG_ 第1話 (2)"), text);
+});
+
 await ui.finish();
