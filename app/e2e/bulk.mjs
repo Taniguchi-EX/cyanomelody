@@ -21,14 +21,6 @@ async function scan() {
   await page.getByRole("button", { name: "スキャン", exact: true }).click();
   await waitIdle();
 }
-/** 裏でのハッシュ値の計算が終わるのを待つ */
-async function waitHashing() {
-  await page.waitForTimeout(500);
-  await page.waitForFunction(() => document.querySelector("[data-testid=hash-status]")?.textContent?.includes("計算しました"), null, {
-    timeout: 60000,
-  });
-  await page.waitForTimeout(500);
-}
 
 await step("B01", "準備：チェックの件数は0件でも常に出て、一括操作の欄は出ない", async () => {
   await addFolder(formats);
@@ -166,11 +158,11 @@ await step("B11", "見つからないファイルをチェックすると、一�
 
 await step("B12", "移動したファイルを、一括操作の欄からひも付け直せる", async () => {
   await scan();
-  await waitHashing();
+  await ui.waitHashing();
   fs.renameSync(path.join(formats, "chime.mp3"), path.join(formats, "chime_moved.mp3"));
   try {
     await scan();
-    await waitHashing();
+    await ui.waitHashing();
     await ui.clearChecks();
     await ui.check("chime.mp3");
     await page.getByTestId("bulk-bar").getByRole("button", { name: "ひも付け直す" }).click();

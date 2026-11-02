@@ -155,22 +155,14 @@ pub fn facet_counts(conn: &Connection, filter: &FileFilter) -> Result<Facets> {
 mod tests {
     use super::*;
     use crate::credits::{set_file_credit, CreditKind};
-    use crate::db::open_in_memory;
+    use crate::db::test_db;
     use crate::files::{add_tag, list_files};
     use crate::tags::{create_tag, move_tag};
     use crate::tree::MoveTarget;
 
     /// ファイル5件（id 1〜5）を入れたDB
     fn setup() -> Connection {
-        let conn = open_in_memory().unwrap();
-        conn.execute_batch(
-            "INSERT INTO library_folders (id, path, added_at) VALUES (1, 'C:\\lib', 0);
-             INSERT INTO audio_files (id, folder_id, rel_path, size, modified_at, added_at) VALUES
-               (1, 1, 'a.wav', 0, 0, 0), (2, 1, 'b.wav', 0, 0, 0), (3, 1, 'c.wav', 0, 0, 0),
-               (4, 1, 'd.wav', 0, 0, 0), (5, 1, 'e.mp3', 0, 0, 0);",
-        )
-        .unwrap();
-        conn
+        test_db(&["a.wav", "b.wav", "c.wav", "d.wav", "e.mp3"], &[])
     }
 
     fn map(items: &[CountItem]) -> HashMap<Option<i64>, i64> {

@@ -114,6 +114,38 @@ export async function connect(shotDir) {
       await page.getByTestId("bulk-bar").getByRole("button", { name: "付ける", exact: true }).click();
       await ui.waitIdle();
     },
+    /** 取っ手 handle をつかんで、target の行の高さの ratio の位置まで動かして離す。
+     *  release が false なら離さない（落とす前の表示を確かめるとき。後で page.mouse.up() する） */
+    async dragTo(handle, target, ratio, release = true) {
+      const h = await handle.boundingBox();
+      const r = await target.boundingBox();
+      await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(r.x + r.width / 2, r.y + r.height * ratio, { steps: 6 });
+      if (!release) return;
+      await page.mouse.up();
+      await ui.waitIdle();
+    },
+    /** 裏でのハッシュ値の計算が終わるのを待つ（終わると一覧を読み直すので、それも少し待つ） */
+    async waitHashing(timeout = 60000) {
+      await page.waitForTimeout(500);
+      await page.waitForFunction(
+        () => document.querySelector("[data-testid=hash-status]")?.textContent?.includes("計算しました"),
+        null,
+        { timeout },
+      );
+      await page.waitForTimeout(1000);
+    },
+    /** タグの管理画面で、ファイルに付けずにタグを作る（作った順に並ぶ） */
+    async createTags(names) {
+      await page.getByRole("button", { name: "タグを管理" }).click();
+      for (const n of names) {
+        await page.getByLabel("新しいタグの名前").fill(n);
+        await page.getByRole("button", { name: "作成" }).click();
+        await ui.waitIdle();
+      }
+      await page.getByRole("button", { name: "閉じる" }).click();
+    },
     async addTag(name) {
       await page.getByLabel("付けるタグ名", { exact: true }).fill(name);
       await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).click();

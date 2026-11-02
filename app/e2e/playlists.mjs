@@ -42,15 +42,6 @@ async function back() {
   await b.click();
   await page.waitForTimeout(300);
 }
-async function drag(handle, target, ratio) {
-  const h = await handle.boundingBox();
-  const r = await target.boundingBox();
-  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(r.x + r.width / 2, r.y + r.height * ratio, { steps: 6 });
-  await page.mouse.up();
-  await waitIdle();
-}
 const position = () => page.getByTestId("player-position").innerText();
 
 await step("P01", "準備：フォルダを登録し、タグを付け、左の欄でプレイリストを作る（最上位の最後に入る）", async () => {
@@ -138,21 +129,17 @@ await step("P07", "子のプレイリストを作ると、左の欄に子とし�
 
 await step("P08", "項目を取っ手で並べ替えられる", async () => {
   const handles = page.getByTestId("item-handle");
-  await drag(handles.last(), page.getByTestId("playlist-item").first(), 0.2);
+  await ui.dragTo(handles.last(), page.getByTestId("playlist-item").first(), 0.2);
   expect((await items())[0] === "子のプレイリスト:剣", (await items()).join(" / "));
   // 子の項目の位置は、左の欄の子の並びにもなる
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:0", await tree());
 });
 
 await step("P09", "左の欄の取っ手で、プレイリストを別のプレイリストの子にできる。ループになる位置には落とせない", async () => {
-  await drag(playlistItem("足音").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
+  await ui.dragTo(playlistItem("足音").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:1", await tree());
   // 戦闘は環境を参照しているので、戦闘を環境の子にするとループになる
-  const h = await playlistItem("戦闘").getByTestId("drag-handle").boundingBox();
-  const r = await playlistItem("環境").boundingBox();
-  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps: 6 });
+  await ui.dragTo(playlistItem("戦闘").getByTestId("drag-handle"), playlistItem("環境"), 0.5, false);
   const cls = await playlistItem("環境").getAttribute("class");
   expect(!/drop-/.test(cls), `ループになる位置に表示が出た: ${cls}`);
   await page.mouse.up();
@@ -251,7 +238,7 @@ await step("P15", "名前を変えられる（同じ名前はエラー）", asyn
 
 await step("P16", "削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {
   // 環境の子に足音（短い）を入れてから、環境を削除する
-  await drag(playlistItem("足音（短い）").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
+  await ui.dragTo(playlistItem("足音（短い）").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
   await open("環境");
   await page.getByRole("button", { name: "このプレイリストを削除" }).click();
   await waitIdle();
@@ -277,11 +264,7 @@ await step("P17", "3万件が対象のタグの組み合わせを再生し始め
   await page.getByRole("button", { name: "この組み合わせを加える" }).click();
   await waitIdle();
   // 裏でのハッシュ値の計算（3万件）とデータベースを取り合うと時間がばらつくので、終わるのを待ってから測る
-  await page.waitForFunction(() => document.querySelector("[data-testid=hash-status]")?.textContent?.includes("計算しました"), null, {
-    timeout: 120000,
-  });
-  // 計算が終わると一覧（3万件）を読み直すので、それも待つ
-  await page.waitForTimeout(1000);
+  await ui.waitHashing(120000);
   const t0 = Date.now();
   await page.getByRole("button", { name: "▶ 再生" }).click();
   await page.getByTestId("player-bar").waitFor({ timeout: 30000 });

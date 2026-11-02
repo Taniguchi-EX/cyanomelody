@@ -33,26 +33,12 @@ async function setCredit(rel, name) {
 await step("F01", "準備。条件がないときは総数を出し、どのファイルにも付いていないタグはグレーアウトする", async () => {
   await addFolder(formats);
   // 環境音 > 雨・風、鳥、爆発（どのファイルにも付けない）
-  await page.getByRole("button", { name: "タグを管理" }).click();
-  for (const n of ["環境音", "雨", "風", "鳥", "爆発"]) {
-    await page.getByLabel("新しいタグの名前").fill(n);
-    await page.getByRole("button", { name: "作成" }).click();
-    await waitIdle();
-  }
-  await page.getByRole("button", { name: "閉じる" }).click();
+  await ui.createTags(["環境音", "雨", "風", "鳥", "爆発"]);
   for (const [file, tags] of [["chime.wav", ["雨"]], ["chime.mp3", ["雨", "風"]], ["chime.flac", ["風", "鳥"]]]) {
     await row(file).click();
     for (const t of tags) await addTag(t);
   }
-  for (const n of ["雨", "風"]) {
-    const h = await tagItem(n).getByTestId("drag-handle").boundingBox();
-    const r = await tagItem("環境音").boundingBox();
-    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2, { steps: 5 });
-    await page.mouse.up();
-    await waitIdle();
-  }
+  for (const n of ["雨", "風"]) await ui.dragTo(tagItem(n).getByTestId("drag-handle"), tagItem("環境音"), 0.5);
   await setCredit("chime.wav", "s1");
   await setCredit("chime.mp3", "s2");
   const s = await tagState();
@@ -139,13 +125,7 @@ await step("F09", "グレーアウトしていても、取っ手で並べ替え�
   await tagItem("雨").click();
   await page.waitForTimeout(500);
   expect(await disabled(tagItem("爆発")), "爆発がグレーアウトしていない");
-  const h = await tagItem("爆発").getByTestId("drag-handle").boundingBox();
-  const r = await tagItem("環境音").boundingBox();
-  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(r.x + r.width / 2, r.y + r.height * 0.1, { steps: 5 });
-  await page.mouse.up();
-  await waitIdle();
+  await ui.dragTo(tagItem("爆発").getByTestId("drag-handle"), tagItem("環境音"), 0.1);
   const names = await ui.tagNames();
   expect(names[0] === "爆発", names.join(","));
   await clearFilter();

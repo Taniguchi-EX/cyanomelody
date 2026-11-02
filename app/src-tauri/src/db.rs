@@ -121,6 +121,23 @@ pub fn open_in_memory() -> Result<Connection> {
     Ok(conn)
 }
 
+/// テスト用のDB。フォルダ（id 1、実体はいらない）に、相対パスのファイルを id 1 から順に入れる。
+/// missing に入れた相対パスのファイルには、見つからない印を付ける
+#[cfg(test)]
+pub fn test_db(files: &[&str], missing: &[&str]) -> Connection {
+    let conn = open_in_memory().unwrap();
+    conn.execute("INSERT INTO library_folders (id, path, added_at) VALUES (1, 'C:\\lib', 0)", []).unwrap();
+    for (i, rel) in files.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO audio_files (id, folder_id, rel_path, size, modified_at, added_at, missing)
+             VALUES (?1, 1, ?2, 0, 0, 0, ?3)",
+            rusqlite::params![i as i64 + 1, rel, missing.contains(rel)],
+        )
+        .unwrap();
+    }
+    conn
+}
+
 fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;

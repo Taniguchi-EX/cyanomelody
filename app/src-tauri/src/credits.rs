@@ -307,18 +307,11 @@ pub fn set_file_credit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::open_in_memory;
+    use crate::db::test_db;
 
     /// ファイル3件（id 1〜3）を入れたDB
     fn setup() -> Connection {
-        let conn = open_in_memory().unwrap();
-        conn.execute_batch(
-            "INSERT INTO library_folders (id, path, added_at) VALUES (1, 'C:\\lib', 0);
-             INSERT INTO audio_files (id, folder_id, rel_path, size, modified_at, added_at)
-               VALUES (1, 1, 'a.wav', 0, 0, 0), (2, 1, 'b.wav', 0, 0, 0), (3, 1, 'c.wav', 0, 0, 0);",
-        )
-        .unwrap();
-        conn
+        test_db(&["a.wav", "b.wav", "c.wav"], &[])
     }
 
     fn input(name: &str) -> CreditInput {

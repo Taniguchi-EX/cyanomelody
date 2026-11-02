@@ -15,27 +15,12 @@ const tree = () =>
   page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => `${r.dataset.tagName}:${r.dataset.depth}`).join(" "));
 const handle = (name) => tagItem(name).getByTestId("drag-handle");
 
-/** 取っ手をつかんで、落とす先の行の高さの ratio の位置まで動かす。release が false なら離さない */
-async function dragTo(name, target, ratio, release = true) {
-  const h = await handle(name).boundingBox();
-  const r = await target.boundingBox();
-  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(r.x + r.width / 2, r.y + r.height * ratio, { steps: 6 });
-  if (!release) return;
-  await page.mouse.up();
-  await waitIdle();
-}
+/** タグ name の取っ手をつかんで、target の行の高さの ratio の位置まで動かす。release が false なら離さない */
+const dragTo = (name, target, ratio, release = true) => ui.dragTo(handle(name), target, ratio, release);
 
 await step("G01", "準備：フォルダを登録し、タグを作ってファイルに付ける", async () => {
   await addFolder(formats);
-  await page.getByRole("button", { name: "タグを管理" }).click();
-  for (const n of ["環境音", "雨", "風", "強風", "爆発"]) {
-    await page.getByLabel("新しいタグの名前").fill(n);
-    await page.getByRole("button", { name: "作成" }).click();
-    await waitIdle();
-  }
-  await page.getByRole("button", { name: "閉じる" }).click();
+  await ui.createTags(["環境音", "雨", "風", "強風", "爆発"]);
   for (const [file, tag] of [["chime.ogg", "環境音"], ["chime.wav", "雨"], ["chime.mp3", "強風"], ["chime.flac", "爆発"]]) {
     await row(file).click();
     await addTag(tag);
