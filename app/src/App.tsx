@@ -602,6 +602,16 @@ export default function App() {
       await playlistApi.moveItem(item.id, index);
     });
 
+  const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => {
+    let ok = false;
+    await run(async () => {
+      await playlistApi.setItemAlias(item.id, alias);
+      showInfo(alias.trim() ? `別名を「${alias.trim()}」にしました` : "別名を外しました");
+      ok = true;
+    });
+    return ok;
+  };
+
   const setPlaylistItemMode = (item: PlaylistItem, mode: PlayMode) =>
     run(async () => {
       await playlistApi.setItemMode(item.id, mode);
@@ -681,6 +691,7 @@ export default function App() {
             onRemoveItem={removePlaylistItem}
             onMoveItem={movePlaylistItem}
             onSetMode={setPlaylistItemMode}
+            onSetAlias={setPlaylistItemAlias}
             onAddTags={addTagsToPlaylist}
             onAddRef={addRefToPlaylist}
             onCreateChild={(name) => createPlaylist(name, playlistDetail.id)}

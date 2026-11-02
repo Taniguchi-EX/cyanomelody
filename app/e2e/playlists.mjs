@@ -287,4 +287,34 @@ await step("P18", "編集画面：名前や子のプレイリストの名前の�
   expect((await tree()).includes("Enterの子:1"), await tree());
 });
 
+await step("P19", "項目に別名を付けると、編集画面と再生の欄に別名と元の名前が出る。Escでやめ、空にすると外れる", async () => {
+  await back();
+  await createPlaylist("別名");
+  await row("chime.wav").click();
+  await page.getByLabel("このファイルを加えるプレイリスト").selectOption({ label: "別名" });
+  await page.getByTestId("detail-panel").getByRole("button", { name: "追加", exact: true }).click();
+  await waitIdle();
+  await open("別名");
+  await page.getByRole("button", { name: "chime.wavの別名を付ける" }).click();
+  await page.getByLabel("chime.wavの別名", { exact: true }).fill("途中でやめる");
+  await page.getByLabel("chime.wavの別名", { exact: true }).press("Escape");
+  expect((await items())[0] === "ファイル:chime.wav", (await items())[0]);
+  await page.getByRole("button", { name: "chime.wavの別名を付ける" }).click();
+  await page.getByLabel("chime.wavの別名", { exact: true }).fill(" 激しめの雨 ");
+  await page.getByLabel("chime.wavの別名", { exact: true }).press("Enter");
+  await waitIdle();
+  expect((await items())[0] === "ファイル:激しめの雨（chime.wav）", (await items())[0]);
+  await shot("P19_別名");
+  await page.getByRole("button", { name: "▶ 再生" }).click();
+  await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
+  const label = await page.getByTestId("player-file").innerText();
+  expect(label === "激しめの雨（chime.wav）", label);
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await page.getByRole("button", { name: "chime.wavの別名を付ける" }).click();
+  await page.getByLabel("chime.wavの別名", { exact: true }).fill("");
+  await page.getByLabel("chime.wavの別名", { exact: true }).press("Enter");
+  await waitIdle();
+  expect((await items())[0] === "ファイル:chime.wav", (await items())[0]);
+});
+
 await ui.finish();

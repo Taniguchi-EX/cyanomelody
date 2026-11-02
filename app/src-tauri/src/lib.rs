@@ -327,6 +327,12 @@ async fn move_playlist_item(state: State<'_, AppState>, item_id: i64, index: usi
     playlists::move_item(&mut state.conn(), item_id, index)
 }
 
+/// 項目の別名を変える。空なら外す
+#[tauri::command]
+async fn set_playlist_item_alias(state: State<'_, AppState>, item_id: i64, alias: String) -> Result<()> {
+    playlists::set_item_alias(&state.conn(), item_id, &alias)
+}
+
 #[tauri::command]
 async fn set_playlist_item_mode(state: State<'_, AppState>, item_id: i64, mode: PlayMode) -> Result<()> {
     playlists::set_item_mode(&state.conn(), item_id, mode)
@@ -411,6 +417,7 @@ pub fn run() {
             remove_playlist_item,
             move_playlist_item,
             set_playlist_item_mode,
+            set_playlist_item_alias,
             expand_playlist,
         ])
         .run(tauri::generate_context!())

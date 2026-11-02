@@ -107,6 +107,8 @@ pub struct PlaylistItem {
     pub playlist: Option<NamedRef>,
     /// 再生したときのファイル数（ランダムセレクトは1。見つからないファイルは数えない）
     pub file_count: i64,
+    /// 別名（このプレイリストの中でだけ使う名前）。なければ None
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -125,6 +127,8 @@ pub struct PlayEntry {
     pub rel_path: String,
     /// 絶対パス
     pub path: String,
+    /// ファイルの項目の別名。タグの組み合わせから選ばれた曲や、別名のない項目は None
+    pub alias: Option<String>,
 }
 
 fn not_found() -> Error {
@@ -445,6 +449,16 @@ pub fn move_item(conn: &mut Connection, item_id: i64, index: usize) -> Result<()
     Ok(())
 }
 
+/// 項目の別名を変える。空（空白だけを含む）なら外す
+pub fn set_item_alias(conn: &Connection, item_id: i64, alias: &str) -> Result<()> {
+    let alias = alias.trim();
+    let alias = if alias.is_empty() { None } else { Some(normalize_name(alias, "別名")?) };
+    if conn.execute("UPDATE playlist_items SET alias = ?2 WHERE id = ?1", params![item_id, alias])? == 0 {
+        return Err(Error::invalid("項目が見つかりません"));
+    }
+    Ok(())
+}
+
 pub fn set_item_mode(conn: &Connection, item_id: i64, mode: PlayMode) -> Result<()> {
     let n = conn.execute(
         "UPDATE playlist_items SET mode = ?2 WHERE id = ?1 AND kind <> 'file'",
@@ -531,6 +545,20 @@ struct ItemRow {
     owned: bool,
     file_id: Option<i64>,
     ref_id: Option<i64>,
+    alias: Option<String>,
+}
+
+/// 再生順の1曲（展開の途中）。別名は、ファイルの項目から来た曲だけが持つ
+#[derive(Clone)]
+struct Track {
+    file_id: i64,
+    alias: Option<String>,
+}
+
+impl Track {
+    fn plain(file_id: i64) -> Track {
+        Track { file_id, alias: None }
+    }
 }
 
 /// 展開や表示に使うデータを、まとめて読んだもの。項目ごとに問い合わせると、項目の多いプレイリストで遅くなるため
@@ -553,7 +581,7 @@ impl<'a> Catalog<'a> {
         let mut items: HashMap<i64, Vec<ItemRow>> = HashMap::new();
         for row in conn
             .prepare(
-                "SELECT playlist_id, id, kind, mode, owned, file_id, ref_id FROM playlist_items
+                "SELECT playlist_id, id, kind, mode, owned, file_id, ref_id, alias FROM playlist_items
                  ORDER BY playlist_id, position, id",
             )?
             .query_map([], |r| {
@@ -566,6 +594,7 @@ impl<'a> Catalog<'a> {
                         owned: r.get(4)?,
                         file_id: r.get(5)?,
                         ref_id: r.get(6)?,
+                        alias: r.get(7)?,
                     },
                 ))
             })?
@@ -653,7 +682,7 @@ impl Rng {
     }
 }
 
-fn apply_mode(mut files: Vec<i64>, mode: PlayMode, rng: &mut Rng) -> Vec<i64> {
+fn apply_mode<T>(mut files: Vec<T>, mode: PlayMode, rng: &mut Rng) -> Vec<T> {
     match mode {
         PlayMode::Order => files,
         PlayMode::Shuffle => {
@@ -663,12 +692,15 @@ fn apply_mode(mut files: Vec<i64>, mode: PlayMode, rng: &mut Rng) -> Vec<i64> {
             files
         }
         PlayMode::Random if files.is_empty() => files,
-        PlayMode::Random => vec![files[rng.below(files.len())]],
+        PlayMode::Random => {
+            let i = rng.below(files.len());
+            vec![files.swap_remove(i)]
+        }
     }
 }
 
 /// プレイリストの項目を展開して、再生するファイルの並びにする（プレイリスト自体の再生方法は当てはめない）
-fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<i64>> {
+fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<Track>> {
     // ループは保存できないが、念のため同じプレイリストを二重にたどらない
     if path.contains(&playlist_id) {
         return Ok(Vec::new());
@@ -678,11 +710,14 @@ fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut V
     for item in cat.items(playlist_id) {
         match item.kind {
             ItemKind::File => {
-                if cat.file_ok(item.file_id) {
-                    out.extend(item.file_id);
+                if let (true, Some(file_id)) = (cat.file_ok(item.file_id), item.file_id) {
+                    out.push(Track { file_id, alias: item.alias.clone() });
                 }
             }
-            ItemKind::Tags => out.extend(apply_mode(cat.files_for_tags(item.id)?, item.mode, rng)),
+            ItemKind::Tags => {
+                let tracks = cat.files_for_tags(item.id)?.into_iter().map(Track::plain).collect();
+                out.extend(apply_mode(tracks, item.mode, rng));
+            }
             ItemKind::Playlist => {
                 if let Some(r) = item.ref_id {
                     let files = expand_items(cat, r, rng, path)?;
@@ -698,7 +733,8 @@ fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut V
 fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
     ensure_exists(conn, id)?;
     let mut cat = Catalog::load(conn)?;
-    let files = apply_mode(expand_items(&mut cat, id, rng, &mut Vec::new())?, mode, rng);
+    let tracks = apply_mode(expand_items(&mut cat, id, rng, &mut Vec::new())?, mode, rng);
+    let files: Vec<i64> = tracks.iter().map(|t| t.file_id).collect();
     // パスはまとめて1回で引く（数万件でも速く）
     let paths: HashMap<i64, (String, String)> = conn
         .prepare(
@@ -707,12 +743,12 @@ fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Res
         )?
         .query_map([ids_json(&files)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
         .collect::<rusqlite::Result<_>>()?;
-    Ok(files
+    Ok(tracks
         .into_iter()
-        .filter_map(|file_id| {
-            let (rel_path, folder) = paths.get(&file_id)?;
+        .filter_map(|t| {
+            let (rel_path, folder) = paths.get(&t.file_id)?;
             let path = absolute_path(folder, rel_path).to_string_lossy().into_owned();
-            Some(PlayEntry { file_id, rel_path: rel_path.clone(), path })
+            Some(PlayEntry { file_id: t.file_id, rel_path: rel_path.clone(), path, alias: t.alias })
         })
         .collect())
 }
@@ -787,6 +823,7 @@ pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
             tags,
             playlist,
             file_count,
+            alias: row.alias.clone(),
         });
     }
     Ok(PlaylistDetail { id, name, items })
@@ -1144,5 +1181,34 @@ mod tests {
             let n = expand_playlist(&conn, p, PlayMode::Order).unwrap().len();
             println!("{round}回目：展開 {:.1}ms（{n}曲）", t0.elapsed().as_secs_f64() * 1000.0);
         }
+    }
+
+    #[test]
+    fn aliases_are_kept_on_items_and_tracks() {
+        let mut conn = setup();
+        let a = create_playlist(&mut conn, "A", None).unwrap();
+        let b = create_playlist(&mut conn, "B", Some(a)).unwrap();
+        add_files(&mut conn, b, &[1, 2]).unwrap();
+        let rain = add_tag(&mut conn, &[3], "雨").unwrap();
+        add_tags(&mut conn, b, &[rain]).unwrap();
+        let items = get_playlist(&conn, b).unwrap().items;
+        set_item_alias(&conn, items[0].id, " 激しめの雨 ").unwrap();
+        set_item_alias(&conn, items[2].id, "雨の音").unwrap();
+        assert!(set_item_alias(&conn, items[1].id, "a\u{7}b").is_err());
+        assert!(set_item_alias(&conn, 999, "x").is_err());
+        let items = get_playlist(&conn, b).unwrap().items;
+        assert_eq!(items[0].alias.as_deref(), Some("激しめの雨"));
+        assert_eq!(items[1].alias, None);
+        // 親から再生しても、項目の別名は使う。タグの組み合わせから選ばれた曲には付かない
+        let entries = expand_with(&conn, a, PlayMode::Order, &mut Rng(1)).unwrap();
+        let aliases: Vec<Option<&str>> = entries.iter().map(|e| e.alias.as_deref()).collect();
+        assert_eq!(aliases, vec![Some("激しめの雨"), None, None]);
+        // 同じファイルを別のプレイリストに入れても、別名は付かない
+        let other = create_playlist(&mut conn, "C", None).unwrap();
+        add_files(&mut conn, other, &[1]).unwrap();
+        assert_eq!(expand_with(&conn, other, PlayMode::Order, &mut Rng(1)).unwrap()[0].alias, None);
+        // 空にすると外れる
+        set_item_alias(&conn, items[0].id, "  ").unwrap();
+        assert_eq!(get_playlist(&conn, b).unwrap().items[0].alias, None);
     }
 }

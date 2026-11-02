@@ -23,6 +23,8 @@ type Props = {
   onRemoveItem: (item: PlaylistItem) => void;
   onMoveItem: (item: PlaylistItem, index: number) => void;
   onSetMode: (item: PlaylistItem, mode: PlayMode) => void;
+  /** 別名を変える（空なら外す）。終わったら true */
+  onSetAlias: (item: PlaylistItem, alias: string) => Promise<boolean>;
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
   onCreateChild: (name: string) => Promise<boolean>;
@@ -56,6 +58,7 @@ export function PlaylistEditor({
   onRemoveItem,
   onMoveItem,
   onSetMode,
+  onSetAlias,
   onAddTags,
   onAddRef,
   onCreateChild,
@@ -66,6 +69,18 @@ export function PlaylistEditor({
   const [pickedTags, setPickedTags] = useState<Tag[]>([]);
   const [refId, setRefId] = useState("");
   const [childName, setChildName] = useState("");
+  // 別名を入力している項目
+  const [aliasItemId, setAliasItemId] = useState<number | null>(null);
+  const [aliasText, setAliasText] = useState("");
+
+  const startAlias = (item: PlaylistItem) => {
+    setAliasItemId(item.id);
+    setAliasText(item.alias ?? "");
+  };
+
+  const commitAlias = async (item: PlaylistItem) => {
+    if (await onSetAlias(item, aliasText)) setAliasItemId(null);
+  };
 
   // 項目の並べ替え（取っ手のドラッグ。前・後ろだけ）
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -153,10 +168,34 @@ export function PlaylistEditor({
             data-item-kind={item.kind}
           >
             <span className="item-kind">{kindLabel(item)}</span>
-            <span className="item-content" title={itemContent(item)}>
-              {itemContent(item)}
-              {item.file?.missing && <span className="warn"> ⚠見つからない</span>}
-            </span>
+            {aliasItemId === item.id ? (
+              <input
+                type="text"
+                className="item-content"
+                autoFocus
+                placeholder={`別名（空にすると外す）：${itemContent(item)}`}
+                value={aliasText}
+                onChange={(e) => setAliasText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !busy) commitAlias(item);
+                  if (e.key === "Escape") setAliasItemId(null);
+                }}
+                onBlur={() => setAliasItemId(null)}
+                aria-label={`${itemContent(item)}の別名`}
+              />
+            ) : (
+              <span className="item-content" title={itemContent(item)} data-testid="item-content">
+                {item.alias ? (
+                  <>
+                    <span className="item-alias">{item.alias}</span>
+                    <span className="sub">（{itemContent(item)}）</span>
+                  </>
+                ) : (
+                  itemContent(item)
+                )}
+                {item.file?.missing && <span className="warn"> ⚠見つからない</span>}
+              </span>
+            )}
             {item.kind !== "file" && (
               <>
                 <select
@@ -176,6 +215,13 @@ export function PlaylistEditor({
                 </span>
               </>
             )}
+            <button
+              onClick={() => startAlias(item)}
+              disabled={busy || aliasItemId === item.id}
+              aria-label={`${itemContent(item)}の別名を付ける`}
+            >
+              別名
+            </button>
             <button onClick={() => onRemoveItem(item)} disabled={busy} aria-label={`${itemContent(item)}を外す`}>
               外す
             </button>

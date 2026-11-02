@@ -106,6 +106,10 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
     CREATE INDEX playlist_item_tags_tag ON playlist_item_tags(tag_id);
     "#,
+    // 6: プレイリストの項目の別名
+    r#"
+    ALTER TABLE playlist_items ADD COLUMN alias TEXT;
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

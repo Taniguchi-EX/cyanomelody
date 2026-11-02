@@ -230,6 +230,8 @@ export type PlaylistItem = {
   playlist: { id: number; name: string } | null;
   /** 再生したときのファイル数 */
   fileCount: number;
+  /** 別名（このプレイリストの中でだけ使う名前） */
+  alias: string | null;
 };
 
 export type PlaylistDetail = {
@@ -243,6 +245,8 @@ export type PlayEntry = {
   fileId: number;
   relPath: string;
   path: string;
+  /** ファイルの項目の別名 */
+  alias: string | null;
 };
 
 export const playlistApi = {
@@ -258,5 +262,7 @@ export const playlistApi = {
   removeItem: (itemId: number) => invoke<void>("remove_playlist_item", { itemId }),
   moveItem: (itemId: number, index: number) => invoke<void>("move_playlist_item", { itemId, index }),
   setItemMode: (itemId: number, mode: PlayMode) => invoke<void>("set_playlist_item_mode", { itemId, mode }),
+  /** 空なら外す */
+  setItemAlias: (itemId: number, alias: string) => invoke<void>("set_playlist_item_alias", { itemId, alias }),
   expand: (id: number, mode: PlayMode) => invoke<PlayEntry[]>("expand_playlist", { id, mode }),
 };

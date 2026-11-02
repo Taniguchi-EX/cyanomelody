@@ -18,7 +18,14 @@ export function PlayerBar({ player, onPrev, onNext, onTogglePause, onStop }: Pro
         {player.index + 1}/{player.queue.length}
       </span>
       <span className="player-file" title={entry?.path} data-testid="player-file">
-        {entry?.relPath}
+        {entry?.alias ? (
+          <>
+            {entry.alias}
+            <span className="sub">（{entry.relPath}）</span>
+          </>
+        ) : (
+          entry?.relPath
+        )}
       </span>
       <button onClick={onPrev} disabled={player.index === 0} aria-label="前へ">
         ⏮

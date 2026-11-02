@@ -742,6 +742,11 @@ h2:first-child {
   flex: 1;
 }
 
+.item-alias {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 .item-count {
   width: 48px;
   text-align: right;
