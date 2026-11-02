@@ -13,7 +13,8 @@ use serde::{Deserialize, Serialize};
 use crate::db::now;
 use crate::error::{Error, Result};
 use crate::files::{filter_conditions, FileFilter};
-use crate::tags::{normalize_name, MoveTarget};
+use crate::tags::{normalize_name, tag_rank};
+use crate::tree::{MoveTarget, NamedRef};
 
 /// 抽象的な項目（タグの組み合わせ、プレイリスト）の再生方法
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -84,13 +85,6 @@ pub struct ItemFile {
     pub id: i64,
     pub rel_path: String,
     pub missing: bool,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct NamedRef {
-    pub id: i64,
-    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -729,8 +723,7 @@ pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
         .query_row("SELECT name FROM playlists WHERE id = ?1", [id], |r| r.get(0))
         .optional()?
         .ok_or_else(not_found)?;
-    let order: HashMap<i64, usize> =
-        crate::tags::list_tags(conn)?.into_iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+    let order = tag_rank(conn)?;
     let mut memo = HashMap::new();
     let mut items = Vec::new();
     for row in item_rows(conn, id)? {

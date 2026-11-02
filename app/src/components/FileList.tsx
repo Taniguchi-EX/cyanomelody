@@ -118,8 +118,8 @@ export function FileList({
                   </span>
                   <span>
                     {f.tags.map((t) => (
-                      <span className="chip" key={t}>
-                        {t}
+                      <span className="chip" key={t.id}>
+                        {t.name}
                       </span>
                     ))}
                   </span>

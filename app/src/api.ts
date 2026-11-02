@@ -23,7 +23,8 @@ export type AudioFile = {
   size: number;
   modifiedAt: number;
   missing: boolean;
-  tags: string[];
+  /** 付いているタグ（タグの一覧の順） */
+  tags: { id: number; name: string }[];
   hash: string | null;
   hashError: string | null;
   sourceId: number | null;
@@ -81,11 +82,11 @@ export type Tag = {
   fileCount: number;
 };
 
-/** タグを移す先 */
+/** 木（タグ・プレイリスト）の並べ替えで、移す先 */
 export type MoveTarget =
-  | { kind: "before"; tagId: number }
-  | { kind: "after"; tagId: number }
-  | { kind: "child"; tagId: number }
+  | { kind: "before"; id: number }
+  | { kind: "after"; id: number }
+  | { kind: "child"; id: number }
   | { kind: "root" };
 
 export const api = {

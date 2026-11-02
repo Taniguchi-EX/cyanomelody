@@ -3,10 +3,11 @@
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::db::now;
 use crate::error::{Error, Result};
+use crate::tree::MoveTarget;
 
 /// タグ名を区切るための文字（タグ名には入らない制御文字）
 pub const TAG_SEPARATOR: char = '\u{1f}';
@@ -30,20 +31,6 @@ pub struct RenameResult {
     /// 名前変更後のタグのid。統合したときは統合先のid
     pub tag_id: i64,
     pub merged: bool,
-}
-
-/// タグを移す先
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "tagId")]
-pub enum MoveTarget {
-    /// 指定したタグの前（同じ親の兄弟）
-    Before(i64),
-    /// 指定したタグの後ろ（同じ親の兄弟）
-    After(i64),
-    /// 指定したタグの子の最後
-    Child(i64),
-    /// 最上位の最後
-    Root,
 }
 
 /// tags の行（階層を組み立てる前）
@@ -128,10 +115,10 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
         .collect())
 }
 
-/// タグの名前から、階層の順での位置を引く表（ファイルに付いたタグを並べるのに使う）
-pub fn tag_rank(conn: &Connection) -> Result<HashMap<String, usize>> {
+/// タグのidから、階層の順での位置を引く表（ファイルやプレイリストの項目に付いたタグを並べるのに使う）
+pub fn tag_rank(conn: &Connection) -> Result<HashMap<i64, usize>> {
     let (rows, order) = tree_order(conn)?;
-    Ok(order.into_iter().enumerate().map(|(rank, (i, _))| (rows[i].name.clone(), rank)).collect())
+    Ok(order.into_iter().enumerate().map(|(rank, (i, _))| (rows[i].id, rank)).collect())
 }
 
 /// タグ自身と、その子孫のタグのid

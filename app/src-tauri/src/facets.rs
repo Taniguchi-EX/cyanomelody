@@ -157,7 +157,8 @@ mod tests {
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::files::{add_tag, list_files};
-    use crate::tags::{create_tag, move_tag, MoveTarget};
+    use crate::tags::{create_tag, move_tag};
+    use crate::tree::MoveTarget;
 
     /// ファイル5件（id 1〜5）を入れたDB
     fn setup() -> Connection {

@@ -244,7 +244,7 @@ mod tests {
         let files = list_files(&conn, &FileFilter::default()).unwrap();
         assert!(files.iter().all(|f| f.rel_path != "b.mp3"));
         let target = files.iter().find(|f| f.id == moved).unwrap();
-        assert_eq!(target.tags, vec!["移動前", "移動後"]);
+        assert_eq!(target.tags.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), vec!["移動前", "移動後"]);
     }
 
     #[test]

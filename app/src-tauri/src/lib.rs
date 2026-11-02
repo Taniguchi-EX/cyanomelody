@@ -8,6 +8,7 @@ mod hashing;
 mod library;
 mod playlists;
 mod tags;
+mod tree;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,7 +26,8 @@ use files::{AudioFile, FileFilter, FileSummary};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
 use playlists::{PlayEntry, PlayMode, PlaylistDetail, PlaylistNode};
-use tags::{MoveTarget, RenameResult, Tag};
+use tags::{RenameResult, Tag};
+use tree::MoveTarget;
 
 struct AppState {
     conn: Mutex<Connection>,

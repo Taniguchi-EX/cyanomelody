@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 use crate::tags::{descendants_and_self, get_or_create_tag, list_tags, tag_rank, TAG_SEPARATOR};
+use crate::tree::NamedRef;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,7 +20,8 @@ pub struct AudioFile {
     pub size: i64,
     pub modified_at: i64,
     pub missing: bool,
-    pub tags: Vec<String>,
+    /// 付いているタグ（タグの一覧の順）
+    pub tags: Vec<NamedRef>,
     /// 音声データ部分のハッシュ値。未計算・計算できなかったときは None
     pub hash: Option<String>,
     /// ハッシュ値を計算できなかった理由
@@ -171,7 +173,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     let (conditions, args) = filter_conditions(conn, filter)?;
     let mut sql = format!(
         "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
-                (SELECT group_concat(t.name, char(31)) FROM file_tags ft
+                (SELECT group_concat(t.id || char(30) || t.name, char(31)) FROM file_tags ft
                    JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
                 a.hash, a.hash_error, a.source_id, a.license_id
          FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
@@ -190,11 +192,19 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     let rows = stmt.query_map(params_from_iter(args), |r| {
         let folder_path: String = r.get(3)?;
         let rel_path: String = r.get(2)?;
+        // 「id、区切り（char(30)）、名前」をタグの区切り（char(31)）でつないだもの
         let tags: Option<String> = r.get(7)?;
-        let mut tags: Vec<String> = tags
-            .map(|s| s.split(TAG_SEPARATOR).map(str::to_owned).collect())
+        let mut tags: Vec<NamedRef> = tags
+            .map(|s| {
+                s.split(TAG_SEPARATOR)
+                    .filter_map(|pair| {
+                        let (id, name) = pair.split_once('\u{1e}')?;
+                        Some(NamedRef { id: id.parse().ok()?, name: name.to_owned() })
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
-        tags.sort_by_key(|t| rank.get(t).copied().unwrap_or(usize::MAX));
+        tags.sort_by_key(|t| rank.get(&t.id).copied().unwrap_or(usize::MAX));
         Ok(AudioFile {
             id: r.get(0)?,
             folder_id: r.get(1)?,
@@ -276,7 +286,8 @@ mod tests {
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};
-    use crate::tags::{move_tag, MoveTarget};
+    use crate::tags::move_tag;
+    use crate::tree::MoveTarget;
     use std::fs;
 
     /// a.wav, b.mp3, sub/c_100%.flac を置いたフォルダを登録・スキャンしたDB
@@ -291,6 +302,10 @@ mod tests {
         let id = add_folder(&conn, dir.path()).unwrap();
         scan_folder(&mut conn, id).unwrap();
         (dir, conn)
+    }
+
+    fn tag_names(file: &AudioFile) -> Vec<&str> {
+        file.tags.iter().map(|t| t.name.as_str()).collect()
     }
 
     fn rels(files: &[AudioFile]) -> Vec<&str> {
@@ -345,10 +360,10 @@ mod tests {
 
         // ファイルに付いたタグは、タグの一覧の順に並ぶ
         let all = list_files(&conn, &FileFilter::default()).unwrap();
-        assert_eq!(all[0].tags, vec!["爆発", "Short"]);
+        assert_eq!(tag_names(&all[0]), vec!["爆発", "Short"]);
         move_tag(&mut conn, short, MoveTarget::Before(explosion)).unwrap();
         let all = list_files(&conn, &FileFilter::default()).unwrap();
-        assert_eq!(all[0].tags, vec!["Short", "爆発"]);
+        assert_eq!(tag_names(&all[0]), vec!["Short", "爆発"]);
 
         // 親のタグで絞り込むと、子孫のタグが付いたファイルも含める
         let parent = crate::tags::create_tag(&conn, "親").unwrap();
@@ -461,7 +476,7 @@ mod tests {
         assert_eq!(rels(&files), vec!["a.wav"]);
         assert!(files[0].missing);
         // 付けたタグは残っている
-        assert_eq!(files[0].tags, vec!["tag"]);
+        assert_eq!(tag_names(&files[0]), vec!["tag"]);
 
         // 印のないファイルは外れない
         assert_eq!(remove_missing_files(&mut conn, &[a, b]).unwrap(), 1);

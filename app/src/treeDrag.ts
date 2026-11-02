@@ -48,7 +48,7 @@ export function useTreeDrag({ tree, busy, canDrop, onMove }: Options) {
     if (!s?.moving || !commit) return;
     const d = dropAt(e.clientX, e.clientY, s.id);
     if (!d) return;
-    onMove(s.id, d.id === null ? { kind: "root" } : { kind: d.pos, tagId: d.id });
+    onMove(s.id, d.id === null ? { kind: "root" } : { kind: d.pos, id: d.id });
   };
 
   /** 取っ手に付けるイベント */

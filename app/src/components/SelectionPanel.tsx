@@ -43,8 +43,6 @@ export function SelectionPanel({
     );
   }
 
-  const tagId = (tagName: string) => tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())?.id;
-
   const add = async () => {
     if (await onAddTag(name)) setName("");
   };
@@ -91,15 +89,12 @@ export function SelectionPanel({
       {file.tags.length === 0 && <div className="sub">タグは付いていません</div>}
       <ul className="selected-tags">
         {file.tags.map((t) => (
-          <li key={t} data-testid="selected-tag">
-            <span>{t}</span>
+          <li key={t.id} data-testid="selected-tag">
+            <span>{t.name}</span>
             <button
-              onClick={() => {
-                const id = tagId(t);
-                if (id !== undefined) onRemoveTag(id);
-              }}
+              onClick={() => onRemoveTag(t.id)}
               disabled={busy}
-              aria-label={`${t}を外す`}
+              aria-label={`${t.name}を外す`}
             >
               外す
             </button>
