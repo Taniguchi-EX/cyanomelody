@@ -11,6 +11,7 @@ import {
   type CreditInput,
   type CreditKind,
   type FileFilter,
+  type FileSummary,
   type HashProgress,
   type LibraryFolder,
   type LicenseType,
@@ -22,7 +23,8 @@ import { confirmDialog } from "./confirm";
 import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
 import { TagPanel } from "./components/TagPanel";
-import { FileList, type SelectMode } from "./components/FileList";
+import { FileList } from "./components/FileList";
+import { BulkBar } from "./components/BulkBar";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
@@ -42,6 +44,7 @@ const EMPTY_FILTER: FileFilter = {
   noSource: false,
   licenseIds: [],
   noLicense: false,
+  fileIds: null,
 };
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
@@ -56,8 +59,14 @@ export default function App() {
   const [files, setFiles] = useState<AudioFile[]>([]);
   const [filter, setFilter] = useState<FileFilter>(EMPTY_FILTER);
   const [text, setText] = useState("");
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [anchor, setAnchor] = useState<number | null>(null);
+  /** クリックして右の欄に出しているファイル */
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  /** チェックしたファイル。絞り込みを変えても外れない */
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  /** Shift+クリックでの範囲のチェックの起点（ファイルのid。絞り込みを変えても同じファイルを指す） */
+  const [checkAnchor, setCheckAnchor] = useState<number | null>(null);
+  const [checkedOnly, setCheckedOnly] = useState(false);
+  const [summary, setSummary] = useState<FileSummary | null>(null);
   const [playingId, setPlayingId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
@@ -74,13 +83,14 @@ export default function App() {
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
   const showInfo = (text: string) => setStatus({ text, error: false });
 
+  // 「チェックしたファイルだけ」のときだけ、チェックが変わったら読み直す
+  const checkedFilter = checkedOnly ? checked : null;
   const reloadFiles = useCallback(async () => {
-    const list = await api.listFiles(filter);
+    const list = await api.listFiles({ ...filter, fileIds: checkedFilter ? [...checkedFilter] : null });
     setFiles(list);
-    // 絞り込みで消えたファイルは選択から外す
-    const ids = new Set(list.map((f) => f.id));
-    setSelected((prev) => new Set([...prev].filter((id) => ids.has(id))));
-  }, [filter]);
+    // 絞り込みで消えたファイルは、右の欄からも消す
+    setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
+  }, [filter, checkedFilter]);
 
   const reloadAll = useCallback(async () => {
     const [fs, ts, ss, ls] = await Promise.all([
@@ -123,6 +133,27 @@ export default function App() {
 
   const startHashing = () => api.startHashing().catch(showError);
 
+  // チェックしたファイルの内訳。データが変わると一覧も読み直されるので、一覧が変わるたびに求め直す。
+  // ライブラリから消えたファイル（登録解除など）は、チェックから外す
+  useEffect(() => {
+    if (checked.size === 0) {
+      setSummary(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .summarizeFiles([...checked])
+      .then((s) => {
+        if (cancelled) return;
+        setSummary(s);
+        if (s.ids.length !== checked.size) setChecked(new Set(s.ids));
+      })
+      .catch(showError);
+    return () => {
+      cancelled = true;
+    };
+  }, [checked, files]);
+
   // ファイル名の入力は少し待ってから絞り込む
   useEffect(() => {
     const timer = setTimeout(() => setFilter((f) => (f.text === text ? f : { ...f, text })), 200);
@@ -142,27 +173,40 @@ export default function App() {
     }
   };
 
-  const selectedFiles = useMemo(() => files.filter((f) => selected.has(f.id)), [files, selected]);
-  const selectedIds = () => selectedFiles.map((f) => f.id);
+  const focusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
+  const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
+  const shownChecked = useMemo(() => files.reduce((n, f) => n + (checked.has(f.id) ? 1 : 0), 0), [files, checked]);
 
-  const select = (index: number, mode: SelectMode) => {
-    const id = files[index].id;
-    if (mode === "range" && anchor !== null) {
-      const [from, to] = anchor < index ? [anchor, index] : [index, anchor];
-      setSelected(new Set(files.slice(from, to + 1).map((f) => f.id)));
-      return;
-    }
-    if (mode === "toggle") {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-    } else {
-      setSelected(new Set([id]));
-    }
-    setAnchor(index);
+  /** 行のチェックボックス。range なら起点との間をまとめて、押した行の新しい状態にそろえる */
+  const checkRow = (index: number, range: boolean) => {
+    const on = !checked.has(files[index].id);
+    // 起点のファイルが今の一覧にないときは、押した行だけ
+    const anchorIndex = range && checkAnchor !== null ? files.findIndex((f) => f.id === checkAnchor) : -1;
+    const [from, to] = anchorIndex >= 0 ? [Math.min(anchorIndex, index), Math.max(anchorIndex, index)] : [index, index];
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const f of files.slice(from, to + 1)) {
+        if (on) next.add(f.id);
+        else next.delete(f.id);
+      }
+      return next;
+    });
+    setCheckAnchor(files[index].id);
+  };
+
+  const checkShown = (on: boolean) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const f of files) {
+        if (on) next.add(f.id);
+        else next.delete(f.id);
+      }
+      return next;
+    });
+
+  const clearChecks = () => {
+    setChecked(new Set());
+    setCheckAnchor(null);
   };
 
   const play = (file: AudioFile) => {
@@ -223,8 +267,8 @@ export default function App() {
   const addTag = async (name: string) => {
     let ok = false;
     await run(async () => {
-      await api.addTag(selectedIds(), name);
-      showInfo(`${selectedFiles.length}件にタグ「${name.trim()}」を付けました`);
+      await api.addTag(focusedIds(), name);
+      showInfo(`タグ「${name.trim()}」を付けました`);
       ok = true;
     });
     return ok;
@@ -232,33 +276,34 @@ export default function App() {
 
   const removeTag = (tagId: number) =>
     run(async () => {
-      await api.removeTag(selectedIds(), tagId);
+      await api.removeTag(focusedIds(), tagId);
       showInfo("タグを外しました");
     });
 
-  const removeMissing = async () => {
-    const targets = selectedFiles.filter((f) => f.missing);
-    if (!(await confirmDialog(`見つからないファイル${targets.length}件をライブラリから外しますか？\n付けたタグ・出典・ライセンスの設定も消えます。`))) return;
+  /** 見つからないファイルをライブラリから外す。ids のうち見つからない印のないファイルは外れない */
+  const removeMissing = async (ids: number[], count: number) => {
+    const message = `見つからないファイル${count}件をライブラリから外しますか？\n付けたタグ・出典・ライセンスの設定も消えます。`;
+    if (!(await confirmDialog(message))) return;
     run(async () => {
-      const n = await api.removeMissingFiles(targets.map((f) => f.id));
+      const n = await api.removeMissingFiles(ids);
       showInfo(`${n}件をライブラリから外しました`);
     });
   };
 
-  const relink = () => {
-    const targets = selectedFiles.filter((f) => f.missing);
+  /** ひも付け直す。ids のうち見つからない印のないファイルは何もしない */
+  const relink = (ids: number[]) =>
     run(async () => {
-      const r = await api.relinkFiles(targets.map((f) => f.id));
+      const r = await api.relinkFiles(ids);
       const parts = [`ひも付け直した ${r.relinked}件`];
       if (r.notFound) parts.push(`同じ音声のファイルがない ${r.notFound}件`);
       if (r.ambiguous) parts.push(`候補が複数ある ${r.ambiguous}件`);
       if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
       showInfo(parts.join("、"));
     });
-  };
 
   const showSameAudio = (hash: string) => {
     setText("");
+    setCheckedOnly(false);
     setFilter({ ...EMPTY_FILTER, hash });
   };
 
@@ -424,8 +469,8 @@ export default function App() {
   const setFileCredit = async (kind: CreditKind, name: string) => {
     let ok = false;
     await run(async () => {
-      await api.setFileCredit(kind, selectedIds(), name);
-      showInfo(`${selectedFiles.length}件に${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`);
+      await api.setFileCredit(kind, focusedIds(), name);
+      showInfo(`${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`);
       ok = true;
     });
     return ok;
@@ -433,9 +478,57 @@ export default function App() {
 
   const clearFileCredit = (kind: CreditKind) =>
     run(async () => {
-      await api.setFileCredit(kind, selectedIds(), null);
-      showInfo(`${selectedFiles.length}件の${CREDIT_LABEL[kind]}を外しました`);
+      await api.setFileCredit(kind, focusedIds(), null);
+      showInfo(`${CREDIT_LABEL[kind]}を外しました`);
     });
+
+  // 一括操作。対象はチェックしたファイルすべて（表示していないものも含む）なので、毎回件数を出して確認する
+  const checkedIds = () => [...checked];
+
+  /** 確認してから実行する。実行したら true */
+  const bulk = async (message: string, task: () => Promise<void>) => {
+    if (!(await confirmDialog(message))) return false;
+    let ok = false;
+    await run(async () => {
+      await task();
+      ok = true;
+    });
+    return ok;
+  };
+
+  const bulkAddTag = (name: string) =>
+    bulk(`チェックした${checked.size}件にタグ「${name.trim()}」を付けますか？`, async () => {
+      await api.addTag(checkedIds(), name);
+      showInfo(`チェックした${checked.size}件にタグ「${name.trim()}」を付けました`);
+    });
+
+  const bulkRemoveTag = (tag: Tag) =>
+    bulk(`チェックした${checked.size}件からタグ「${tag.name}」を外しますか？`, async () => {
+      await api.removeTag(checkedIds(), tag.id);
+      showInfo(`チェックした${checked.size}件からタグ「${tag.name}」を外しました`);
+    });
+
+  const bulkSetCredit = (kind: CreditKind, name: string) => {
+    const label = CREDIT_LABEL[kind];
+    return bulk(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しますか？`, async () => {
+      await api.setFileCredit(kind, checkedIds(), name);
+      showInfo(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しました`);
+    });
+  };
+
+  const bulkClearCredit = (kind: CreditKind) => {
+    const label = CREDIT_LABEL[kind];
+    return bulk(`チェックした${checked.size}件の${label}を外しますか？`, async () => {
+      await api.setFileCredit(kind, checkedIds(), null);
+      showInfo(`チェックした${checked.size}件の${label}を外しました`);
+    });
+  };
+
+  const bulkRelink = async () => {
+    const message = `チェックしたうち、見つからないファイル${summary?.missing ?? 0}件をひも付け直しますか？`;
+    if (!(await confirmDialog(message))) return;
+    relink(checkedIds());
+  };
 
   const creditKinds: CreditKind[] = ["source", "license"];
 
@@ -513,10 +606,12 @@ export default function App() {
             filter.noSource ||
             filter.licenseIds.length > 0 ||
             filter.noLicense ||
+            checkedOnly ||
             text) && (
             <button
               onClick={() => {
                 setText("");
+                setCheckedOnly(false);
                 setFilter(EMPTY_FILTER);
               }}
             >
@@ -524,8 +619,18 @@ export default function App() {
             </button>
           )}
           <span className="sub" data-testid="file-count">
-            {files.length}件{selected.size > 0 && `（${selected.size}件を選択中）`}
+            {files.length}件
           </span>
+          <span className="checked-count" data-testid="checked-count">
+            チェック {checked.size}件（表示中 {shownChecked}件）
+          </span>
+          <button onClick={clearChecks} disabled={checked.size === 0}>
+            チェックをすべて外す
+          </button>
+          <label>
+            <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
+            チェックしたファイルだけ
+          </label>
         </div>
         {searching && (
           <div className="toolbar">
@@ -546,12 +651,31 @@ export default function App() {
             </button>
           </div>
         )}
+        {checked.size > 0 && (
+          <BulkBar
+            summary={summary}
+            tags={tags}
+            sources={sources}
+            licenses={licenses}
+            licenseTypes={licenseTypes}
+            busy={busy}
+            onAddTag={bulkAddTag}
+            onRemoveTag={bulkRemoveTag}
+            onSetCredit={bulkSetCredit}
+            onClearCredit={bulkClearCredit}
+            onRelink={bulkRelink}
+            onRemoveMissing={() => removeMissing(checkedIds(), summary?.missing ?? 0)}
+            onError={showError}
+          />
+        )}
         <FileList
           files={files}
-          selected={selected}
+          focusedId={focusedId}
+          checked={checked}
           playingId={playingId}
-          onSelect={select}
-          onSelectAll={() => setSelected(new Set(files.map((f) => f.id)))}
+          onFocus={(f) => setFocusedId(f.id)}
+          onCheck={checkRow}
+          onCheckShown={checkShown}
           onPlay={play}
           showHash={filter.duplicatesOnly || filter.hash !== null}
         />
@@ -559,20 +683,20 @@ export default function App() {
 
       <aside className="detail">
         <SelectionPanel
-          files={selectedFiles}
+          file={focusedFile}
           tags={tags}
           busy={busy}
           onAddTag={addTag}
           onRemoveTag={removeTag}
-          onRemoveMissing={removeMissing}
-          onRelink={relink}
+          onRemoveMissing={() => removeMissing(focusedIds(), 1)}
+          onRelink={() => relink(focusedIds())}
           onShowSameAudio={showSameAudio}
         >
           {creditKinds.map((kind) => (
             <CreditField
               key={kind}
               kind={kind}
-              files={selectedFiles}
+              groups={focusedFile ? [{ id: kind === "source" ? focusedFile.sourceId : focusedFile.licenseId, count: 1 }] : []}
               credits={creditsOf(kind)}
               licenseTypes={licenseTypes}
               busy={busy}

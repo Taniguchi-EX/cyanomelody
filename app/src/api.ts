@@ -43,6 +43,22 @@ export type FileFilter = {
   /** どれかのライセンスが設定されたファイル（OR） */
   licenseIds: number[];
   noLicense: boolean;
+  /** 指定したidのファイルだけ（チェックしたファイルだけの表示）。null なら絞り込まない */
+  fileIds: number[] | null;
+};
+
+/** 件数の内訳の1項目。id が null は「なし」 */
+export type CountItem = { id: number | null; count: number };
+
+/** まとめて操作するファイル（チェックしたファイル）の内訳 */
+export type FileSummary = {
+  /** 指定したidのうち、ライブラリにあるもの */
+  ids: number[];
+  missing: number;
+  /** 付いているタグ（タグの一覧の順）と、そのタグが付いたファイルの数 */
+  tags: CountItem[];
+  sources: CountItem[];
+  licenses: CountItem[];
 };
 
 export type Tag = {
@@ -69,6 +85,7 @@ export const api = {
   removeFolder: (folderId: number) => invoke<void>("remove_folder", { folderId }),
   scanFolder: (folderId: number) => invoke<ScanResult>("scan_folder", { folderId }),
   listFiles: (filter: FileFilter) => invoke<AudioFile[]>("list_files", { filter }),
+  summarizeFiles: (fileIds: number[]) => invoke<FileSummary>("summarize_files", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),

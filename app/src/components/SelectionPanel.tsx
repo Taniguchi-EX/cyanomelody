@@ -1,8 +1,9 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { AudioFile, Tag } from "../api";
 
 type Props = {
-  files: AudioFile[];
+  /** 一覧でクリックしたファイル。なければ null */
+  file: AudioFile | null;
   tags: Tag[];
   busy: boolean;
   onAddTag: (name: string) => Promise<boolean>;
@@ -14,8 +15,9 @@ type Props = {
   children?: ReactNode;
 };
 
+/** 右の欄。一覧でクリックした1件のファイルの詳細と操作 */
 export function SelectionPanel({
-  files,
+  file,
   tags,
   busy,
   onAddTag,
@@ -27,48 +29,37 @@ export function SelectionPanel({
 }: Props) {
   const [name, setName] = useState("");
 
-  // 選んだファイルに付いているタグと、そのタグが付いたファイルの数
-  const counts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const f of files) for (const t of f.tags) map.set(t, (map.get(t) ?? 0) + 1);
-    // タグの一覧と同じ順に並べる
-    const order = new Map(tags.map((t, i) => [t.name, i]));
-    return [...map.entries()].sort(([a], [b]) => (order.get(a) ?? Infinity) - (order.get(b) ?? Infinity));
-  }, [files, tags]);
-
-  const tagId = (tagName: string) => tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())?.id;
-  const missingCount = files.filter((f) => f.missing).length;
-
-  if (files.length === 0) {
+  if (!file) {
     return (
       <section>
-        <h2>選んだファイル</h2>
-        <div className="sub">一覧からファイルを選んでください（Ctrl・Shiftで複数選択）</div>
+        <h2>ファイルの詳細</h2>
+        <div className="sub">一覧のファイルをクリックすると、ここに詳細が出ます</div>
       </section>
     );
   }
+
+  const tagId = (tagName: string) => tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase())?.id;
 
   const add = async () => {
     if (await onAddTag(name)) setName("");
   };
 
   return (
-    <section>
-      <h2>選んだファイル（{files.length}件）</h2>
-      {files.length === 1 && (
-        <>
-          <div className="folder-path sub">{files[0].path}</div>
-          <h2>ハッシュ値</h2>
-          <div className="folder-path hash" data-testid="selected-hash">
-            {files[0].hash ?? (files[0].hashError ? `計算できませんでした（${files[0].hashError}）` : "未計算")}
-          </div>
-          <div className="row" style={{ marginTop: 4 }}>
-            <button onClick={() => files[0].hash && onShowSameAudio(files[0].hash)} disabled={!files[0].hash}>
-              同じ音声のファイルを探す
-            </button>
-          </div>
-        </>
-      )}
+    <section data-testid="detail-panel">
+      <h2>ファイルの詳細</h2>
+      <div className="folder-path" data-testid="detail-path">
+        {file.relPath}
+      </div>
+      <div className="folder-path sub">{file.path}</div>
+      <h2>ハッシュ値</h2>
+      <div className="folder-path hash" data-testid="selected-hash">
+        {file.hash ?? (file.hashError ? `計算できませんでした（${file.hashError}）` : "未計算")}
+      </div>
+      <div className="row" style={{ marginTop: 4 }}>
+        <button onClick={() => file.hash && onShowSameAudio(file.hash)} disabled={!file.hash}>
+          同じ音声のファイルを探す
+        </button>
+      </div>
 
       <h2>タグを付ける</h2>
       <div className="row">
@@ -92,19 +83,11 @@ export function SelectionPanel({
       </div>
 
       <h2>付いているタグ</h2>
-      {counts.length === 0 && <div className="sub">タグは付いていません</div>}
+      {file.tags.length === 0 && <div className="sub">タグは付いていません</div>}
       <ul className="selected-tags">
-        {counts.map(([t, n]) => (
+        {file.tags.map((t) => (
           <li key={t} data-testid="selected-tag">
-            <span>
-              {t}
-              {files.length > 1 && (
-                <span className="sub">
-                  {" "}
-                  {n}/{files.length}
-                </span>
-              )}
-            </span>
+            <span>{t}</span>
             <button
               onClick={() => {
                 const id = tagId(t);
@@ -121,12 +104,12 @@ export function SelectionPanel({
 
       {children}
 
-      {missingCount > 0 && (
+      {file.missing && (
         <>
           <h2>見つからないファイル</h2>
           <div className="sub">
-            選んだうち {missingCount}件 のファイルが見つかりません。
-            「ひも付け直す」で、ライブラリの中から同じ音声のファイルを探してタグを移します。
+            このファイルは見つかりません。
+            「ひも付け直す」で、ライブラリの中から同じ音声のファイルを探してタグなどを移します。
           </div>
           <div className="row" style={{ marginTop: 4 }}>
             <button onClick={onRelink} disabled={busy}>
