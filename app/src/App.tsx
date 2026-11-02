@@ -1082,6 +1082,8 @@ export default function App() {
           onDelete={deleteChain}
           onSave={saveChain}
           onPreview={previewChain}
+          previewing={audio.previewId !== null && audio.previewId === focusedFile?.id}
+          onStopPreview={() => focusedFile && audio.preview(focusedFile)}
           onClose={() => setManagingEffects(false)}
         />
       )}

@@ -924,6 +924,20 @@ button.filter-chip:hover .chip-x {
   flex-wrap: wrap;
 }
 
+/* 保存していない変更があるときの「保存」 */
+button.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.preview-button {
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .item-chain {
   max-width: 150px;
 }

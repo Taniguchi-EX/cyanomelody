@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { makesLoop } from "../playlistGraph";
 import type { EffectChain } from "../effects";
+import { useStoredString } from "../storage";
 
 type Props = {
   detail: PlaylistDetail;
@@ -90,10 +91,15 @@ export function PlaylistEditor({
   const [refId, setRefId] = useState("");
   const [childName, setChildName] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [exportDest, setExportDest] = useState("");
+  // 前に書き出したフォルダを入れておく（調整して何度も書き出すとき、選び直さなくてよい）
+  const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
+  const [exportDest, setExportDest] = useState(lastDest);
 
   const startExport = async () => {
-    if (await onExport(exportDest)) setExporting(false);
+    if (await onExport(exportDest)) {
+      setLastDest(exportDest.trim());
+      setExporting(false);
+    }
   };
   // 別名を入力している項目
   const [aliasItemId, setAliasItemId] = useState<number | null>(null);

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { baseName } from "../paths";
 import { EFFECT_DEFS, describeEffect, effectDef, paramValue, type Effect, type EffectChain, type EffectKind } from "../effects";
 import { useEscape } from "../hooks/useEscape";
 import { confirmDialog } from "../confirm";
@@ -14,8 +15,14 @@ type Props = {
   onDelete: (chain: EffectChain) => void;
   onSave: (chain: EffectChain, effects: Effect[]) => Promise<boolean>;
   onPreview: (effects: Effect[]) => void;
+  /** 試聴中か */
+  previewing: boolean;
+  onStopPreview: () => void;
   onClose: () => void;
 };
+
+/** 試聴中に値を変えてから、鳴らし直すまでの待ち（ms）。入力の途中で何度も作り直さない */
+const REPREVIEW_DELAY = 500;
 
 /** エフェクトのまとまりの管理画面。左にまとまりの一覧、右に選んだまとまりの中身 */
 export function EffectManager({
@@ -27,6 +34,8 @@ export function EffectManager({
   onDelete,
   onSave,
   onPreview,
+  previewing,
+  onStopPreview,
   onClose,
 }: Props) {
   const [newName, setNewName] = useState("");
@@ -47,6 +56,22 @@ export function EffectManager({
   };
 
   useEscape(() => leave(onClose));
+
+  // 試聴中にエフェクトを変えたら、少し待って鳴らし直す（変える→試聴の2手を1手にする）
+  const lastPreviewed = useRef<string | null>(null);
+  const preview = () => {
+    lastPreviewed.current = JSON.stringify(effects);
+    onPreview(effects);
+  };
+  const effectsKey = JSON.stringify(effects);
+  useEffect(() => {
+    if (!previewing || lastPreviewed.current === null || lastPreviewed.current === effectsKey) return;
+    const timer = setTimeout(() => {
+      lastPreviewed.current = effectsKey;
+      onPreview(JSON.parse(effectsKey) as Effect[]);
+    }, REPREVIEW_DELAY);
+    return () => clearTimeout(timer);
+  }, [previewing, effectsKey, onPreview]);
 
   const select = (c: EffectChain) => {
     if (c.id === selectedId) return;
@@ -141,7 +166,7 @@ export function EffectManager({
                     削除
                   </button>
                 </div>
-                <h2>中のエフェクト（上から順にかける）</h2>
+                <h2>中のエフェクト</h2>
                 {effects.length === 0 && <div className="sub">エフェクトはまだありません</div>}
                 <ol className="effect-list">
                   {effects.map((e, i) => {
@@ -192,10 +217,12 @@ export function EffectManager({
                             ↓
                           </button>
                           <button
+                            className="icon"
                             onClick={() => edit(effects.filter((_, j) => j !== i))}
+                            title="外す"
                             aria-label={`${i + 1}番目を外す`}
                           >
-                            外す
+                            ✕
                           </button>
                         </span>
                       </li>
@@ -217,16 +244,21 @@ export function EffectManager({
                   <button onClick={() => edit([...effects, { ...effectDef(addKind).defaults }])}>加える</button>
                 </div>
                 <div className="row effect-save">
-                  <button onClick={() => onPreview(effects)} disabled={busy || !previewFileName}>
-                    ▶ 試聴
+                  {/* 右の欄のファイルにかけて鳴らす。試聴中に値を変えると、自動で鳴らし直す */}
+                  <button
+                    className="preview-button"
+                    onClick={() => (previewing ? onStopPreview() : preview())}
+                    disabled={busy || !previewFileName}
+                    title={
+                      previewFileName
+                        ? `${previewFileName}にかけて鳴らす（鳴っている間に値を変えると、鳴らし直す）`
+                        : "ファイルの一覧でファイルをクリックすると、試聴できます"
+                    }
+                    aria-label={previewing ? "試聴を止める" : "試聴"}
+                  >
+                    {previewing ? "■" : "▶"} {previewFileName ? baseName(previewFileName) : "試聴"}
                   </button>
-                  <span className="sub">
-                    {previewFileName
-                      ? `右の欄のファイル（${previewFileName}）にかけて鳴らします`
-                      : "試聴するには、ファイルの一覧でファイルをクリックしてください"}
-                  </span>
                   <span style={{ flex: 1 }} />
-                  {dirty && <span className="warn">保存していない変更があります</span>}
                   <button onClick={() => setDraft(null)} disabled={!dirty}>
                     元に戻す
                   </button>
@@ -235,6 +267,8 @@ export function EffectManager({
                       if (await onSave(selected, effects)) setDraft(null);
                     }}
                     disabled={busy || !dirty}
+                    className={dirty ? "primary" : ""}
+                    title={dirty ? "保存していない変更があります" : undefined}
                   >
                     保存
                   </button>

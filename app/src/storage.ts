@@ -44,3 +44,13 @@ export function useStoredIdSet(key: string): [Set<number>, (id: number) => void]
     });
   return [ids, toggle];
 }
+
+/** 覚えておく文字列（前に入力した書き出し先など） */
+export function useStoredString(key: string): [string, (value: string) => void] {
+  const [value, setValue] = useState(() => load(key, ""));
+  const set = (v: string) => {
+    save(key, v);
+    setValue(v);
+  };
+  return [value, set];
+}

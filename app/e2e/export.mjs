@@ -96,4 +96,14 @@ await step("X04", "書き出し先のフォルダがないときは、エラー�
   expect(!fs.existsSync(path.join(out, "ない")), "フォルダを作った");
 });
 
+await step("X05", "書き出し先の欄には、前に書き出したフォルダが入っている（書き出せなかったフォルダは覚えない）", async () => {
+  // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）
+  const field = page.getByLabel("書き出し先のフォルダ");
+  await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click();
+  await page.locator("[data-testid=playlist][data-playlist-name^=TRPG] .tag-name").first().click();
+  await page.getByRole("button", { name: "書き出す" }).click();
+  const v = await field.inputValue();
+  expect(v === out, v);
+});
+
 await ui.finish();

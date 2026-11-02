@@ -84,7 +84,7 @@ await step("E05", "右の欄のファイルにかけて試聴できる（エフ�
   await dialog().getByRole("button", { name: "閉じる" }).click();
   await row("chime.wav").click();
   await openManager();
-  await page.getByRole("button", { name: "▶ 試聴" }).click();
+  await page.getByRole("button", { name: "試聴", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
   expect(!(await page.evaluate(() => document.querySelector("audio").paused)), "鳴っていない");
   await dialog().getByRole("button", { name: "閉じる" }).click();
@@ -132,6 +132,31 @@ await step("E08", "まとまりを削除すると、結び付けていた項目�
   await dialog().getByRole("button", { name: "閉じる" }).click();
   const v = await page.getByLabel("chime.wavのエフェクト").inputValue();
   expect(v === "", `外れていない: ${v}`);
+});
+
+await step("E09", "試聴中に値を変えると、試聴を押し直さなくても鳴らし直す。保存していないときは保存が目立つ", async () => {
+  await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click();
+  await row("chime.wav").click();
+  await openManager();
+  await page.getByLabel("新しいエフェクトのまとまりの名前").fill("調整");
+  await page.getByLabel("新しいエフェクトのまとまりの名前").press("Enter");
+  await waitIdle();
+  await addEffect("gain");
+  const saveButton = dialog().getByRole("button", { name: "保存" });
+  expect((await saveButton.getAttribute("class")).includes("primary"), "保存が目立たない");
+  const button = dialog().getByRole("button", { name: "試聴", exact: true });
+  expect((await button.innerText()).includes("chime.wav"), await button.innerText());
+  await button.click();
+  await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
+  const before = await audioSrc();
+  await page.getByLabel("1番目の増減").fill("-9");
+  await page.waitForFunction((b) => decodeURIComponent(document.querySelector("audio").src) !== b, before, { timeout: 10000 });
+  expect((await audioSrc()).includes("effects-cache"), await audioSrc());
+  await dialog().getByRole("button", { name: "試聴を止める" }).click();
+  expect(await page.evaluate(() => document.querySelector("audio").paused), "止まらない");
+  await save();
+  expect(!((await saveButton.getAttribute("class")) ?? "").includes("primary"), "保存の後も目立つ");
+  await dialog().getByRole("button", { name: "閉じる" }).click();
 });
 
 await ui.finish();
