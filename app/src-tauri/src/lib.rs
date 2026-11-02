@@ -2,6 +2,7 @@ mod audio_hash;
 mod credits;
 mod db;
 mod error;
+mod facets;
 mod files;
 mod hashing;
 mod library;

@@ -113,15 +113,10 @@ pub fn summarize_files(conn: &Connection, file_ids: &[i64]) -> Result<FileSummar
     Ok(FileSummary { ids, missing, tags, sources, licenses })
 }
 
-pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
-    let mut sql = String::from(
-        "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
-                (SELECT group_concat(t.name, char(31)) FROM file_tags ft
-                   JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
-                a.hash, a.hash_error, a.source_id, a.license_id
-         FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
-         WHERE 1 = 1",
-    );
+/// 絞り込みの条件を、audio_files（別名 a）に対する WHERE 句の条件にする。
+/// 戻り値の文字列は「 AND ...」の並び（条件がなければ空）
+pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Result<(String, Vec<Value>)> {
+    let mut sql = String::new();
     let mut args: Vec<Value> = Vec::new();
     let text = filter.text.trim();
     if !text.is_empty() {
@@ -169,6 +164,19 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             args.extend(ids.iter().map(|id| Value::Integer(*id)));
         }
     }
+    Ok((sql, args))
+}
+
+pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
+    let (conditions, args) = filter_conditions(conn, filter)?;
+    let mut sql = format!(
+        "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
+                (SELECT group_concat(t.name, char(31)) FROM file_tags ft
+                   JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
+                a.hash, a.hash_error, a.source_id, a.license_id
+         FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+         WHERE 1 = 1{conditions}"
+    );
     // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
     sql.push_str(if filter.duplicates_only {
         " ORDER BY a.hash, f.path, a.rel_path"
