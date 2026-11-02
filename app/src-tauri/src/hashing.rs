@@ -1,6 +1,6 @@
 //! ハッシュ値の計算待ちの取得・保存と、ひも付け直し
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::audio_hash::{audio_hash, HashError};
 use crate::error::Result;
+use crate::library::absolute_path;
 
 /// ハッシュ値の計算を待っているファイル
 #[derive(Debug, Clone)]
@@ -31,7 +32,7 @@ pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
         let rel: String = r.get(2)?;
         Ok(PendingFile {
             id: r.get(0)?,
-            path: Path::new(&folder).join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
+            path: absolute_path(&folder, &rel),
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -150,6 +151,7 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::files::{add_tag, list_files, FileFilter};

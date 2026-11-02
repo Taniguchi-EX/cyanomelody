@@ -4,15 +4,15 @@
 //! どこの子でもないプレイリストが最上位で、最上位の中の順番は playlists.position に持つ。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use crate::db::now;
+use crate::db::{exists, ids_json, now};
+use crate::library::absolute_path;
 use crate::error::{Error, Result};
-use crate::files::{filter_conditions, FileFilter};
+use crate::files::{filter_conditions, FileFilter, FILE_ORDER};
 use crate::tags::{normalize_name, tag_rank};
 use crate::tree::{MoveTarget, NamedRef};
 
@@ -126,9 +126,7 @@ fn not_found() -> Error {
 }
 
 fn ensure_exists(conn: &Connection, id: i64) -> Result<()> {
-    let exists: bool =
-        conn.query_row("SELECT EXISTS (SELECT 1 FROM playlists WHERE id = ?1)", [id], |r| r.get(0))?;
-    if exists { Ok(()) } else { Err(not_found()) }
+    if exists(conn, "playlists", id)? { Ok(()) } else { Err(not_found()) }
 }
 
 /// プレイリストを子として持つプレイリスト（最上位なら None）と、その項目のid
@@ -357,13 +355,12 @@ pub fn delete_playlist(conn: &mut Connection, id: i64) -> Result<()> {
 pub fn add_files(conn: &mut Connection, playlist_id: i64, file_ids: &[i64]) -> Result<()> {
     let tx = conn.transaction()?;
     ensure_exists(&tx, playlist_id)?;
-    let ids = serde_json::to_string(file_ids).unwrap_or_else(|_| "[]".into());
     let sorted: Vec<i64> = tx
-        .prepare(
+        .prepare(&format!(
             "SELECT a.id FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
-             WHERE a.id IN (SELECT value FROM json_each(?1)) ORDER BY f.path, a.rel_path",
-        )?
-        .query_map([ids], |r| r.get(0))?
+             WHERE a.id IN (SELECT value FROM json_each(?1)) ORDER BY {FILE_ORDER}"
+        ))?
+        .query_map([ids_json(file_ids)], |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?;
     for f in sorted {
         append_item(&tx, playlist_id, "file", Some(f), None, false)?;
@@ -378,8 +375,7 @@ pub fn add_tags(conn: &mut Connection, playlist_id: i64, tag_ids: &[i64]) -> Res
     ensure_exists(&tx, playlist_id)?;
     let mut tags: Vec<i64> = Vec::new();
     for &t in tag_ids {
-        let exists: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM tags WHERE id = ?1)", [t], |r| r.get(0))?;
-        if exists && !tags.contains(&t) {
+        if exists(&tx, "tags", t)? && !tags.contains(&t) {
             tags.push(t);
         }
     }
@@ -566,7 +562,7 @@ fn files_for_tags(conn: &Connection, tag_ids: &[i64]) -> Result<Vec<i64>> {
     Ok(conn
         .prepare(&format!(
             "SELECT a.id FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
-             WHERE a.missing = 0{conditions} ORDER BY f.path, a.rel_path"
+             WHERE a.missing = 0{conditions} ORDER BY {FILE_ORDER}"
         ))?
         .query_map(params_from_iter(args), |r| r.get(0))?
         .collect::<rusqlite::Result<_>>()?)
@@ -653,7 +649,7 @@ fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Res
     ensure_exists(conn, id)?;
     let files = apply_mode(expand_items(conn, id, rng, &mut Vec::new())?, mode, rng);
     // パスはまとめて1回で引く（数万件でも速く）
-    let ids = serde_json::to_string(&files).unwrap_or_else(|_| "[]".into());
+    let ids = ids_json(&files);
     let paths: HashMap<i64, (String, String)> = conn
         .prepare(
             "SELECT a.id, a.rel_path, f.path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
@@ -665,10 +661,7 @@ fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Res
         .into_iter()
         .filter_map(|file_id| {
             let (rel_path, folder) = paths.get(&file_id)?;
-            let path = Path::new(folder)
-                .join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
-                .to_string_lossy()
-                .into_owned();
+            let path = absolute_path(folder, rel_path).to_string_lossy().into_owned();
             Some(PlayEntry { file_id, rel_path: rel_path.clone(), path })
         })
         .collect())

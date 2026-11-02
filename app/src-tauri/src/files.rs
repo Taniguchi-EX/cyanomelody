@@ -1,11 +1,11 @@
 //! 音声ファイルの一覧・絞り込みとタグの付け外し
 
-use std::path::Path;
-
 use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
 
+use crate::db::ids_json;
 use crate::error::Result;
+use crate::library::absolute_path;
 use crate::tags::{descendants_and_self, get_or_create_tag, list_tags, tag_rank, TAG_SEPARATOR};
 use crate::tree::NamedRef;
 
@@ -51,11 +51,6 @@ pub struct FileFilter {
     pub no_license: bool,
     /// 指定したidのファイルだけに絞り込む（チェックしたファイルだけの表示）
     pub file_ids: Option<Vec<i64>>,
-}
-
-/// ファイルのidの一覧を、SQLの1つの引数（JSONの配列）にする。数万件でも引数の数の上限にかからない
-fn ids_json(ids: &[i64]) -> String {
-    serde_json::to_string(ids).unwrap_or_else(|_| "[]".into())
 }
 
 /// まとめて操作するファイル（チェックしたファイル）の内訳
@@ -169,6 +164,9 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     Ok((sql, args))
 }
 
+/// ファイルの一覧の並び順（フォルダ、相対パス）。audio_files を a、library_folders を f として使う
+pub const FILE_ORDER: &str = "f.path, a.rel_path";
+
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
     let (conditions, args) = filter_conditions(conn, filter)?;
     let mut sql = format!(
@@ -180,10 +178,10 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
          WHERE 1 = 1{conditions}"
     );
     // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
-    sql.push_str(if filter.duplicates_only {
-        " ORDER BY a.hash, f.path, a.rel_path"
+    sql.push_str(&if filter.duplicates_only {
+        format!(" ORDER BY a.hash, {FILE_ORDER}")
     } else {
-        " ORDER BY f.path, a.rel_path"
+        format!(" ORDER BY {FILE_ORDER}")
     });
 
     // ファイルに付いたタグは、タグの一覧と同じ順に並べる
@@ -208,10 +206,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         Ok(AudioFile {
             id: r.get(0)?,
             folder_id: r.get(1)?,
-            path: Path::new(&folder_path)
-                .join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
-                .to_string_lossy()
-                .into_owned(),
+            path: absolute_path(&folder_path, &rel_path).to_string_lossy().into_owned(),
             rel_path,
             size: r.get(4)?,
             modified_at: r.get(5)?,
@@ -283,6 +278,7 @@ pub fn remove_missing_files(conn: &mut Connection, file_ids: &[i64]) -> Result<u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};

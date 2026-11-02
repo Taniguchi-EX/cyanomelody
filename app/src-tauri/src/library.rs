@@ -55,6 +55,11 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<LibraryFolder>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
+/// ライブラリフォルダのパスと、その中の相対パス（区切りは `/`）から、ファイルの絶対パスを作る
+pub fn absolute_path(folder: &str, rel_path: &str) -> PathBuf {
+    Path::new(folder).join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
+}
+
 pub fn folder_path(conn: &Connection, folder_id: i64) -> Result<PathBuf> {
     let path: Option<String> = conn
         .query_row(

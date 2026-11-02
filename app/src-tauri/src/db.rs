@@ -141,6 +141,17 @@ fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// idの一覧を、SQLの1つの引数（JSONの配列）にする。SQLでは `IN (SELECT value FROM json_each(?))` で使う。
+/// 数万件でも、SQLの引数の数の上限にかからない
+pub fn ids_json(ids: &[i64]) -> String {
+    serde_json::to_string(ids).unwrap_or_else(|_| "[]".into())
+}
+
+/// table に id の行があるか（table はコードの中で決めた名前だけを渡す）
+pub fn exists(conn: &Connection, table: &str, id: i64) -> Result<bool> {
+    Ok(conn.query_row(&format!("SELECT EXISTS (SELECT 1 FROM {table} WHERE id = ?1)"), [id], |r| r.get(0))?)
+}
+
 pub fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
