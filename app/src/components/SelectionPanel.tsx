@@ -139,16 +139,12 @@ export function SelectionPanel({
 
       {file.missing && (
         <>
-          <h2>見つからないファイル</h2>
-          <div className="sub">
-            このファイルは見つかりません。
-            「ひも付け直す」で、ライブラリの中から同じ音声のファイルを探してタグなどを移します。
-          </div>
-          <div className="row" style={{ marginTop: 4 }}>
-            <button onClick={onRelink} disabled={busy}>
+          <h2 className="warn">⚠ 見つからないファイル</h2>
+          <div className="row">
+            <button onClick={onRelink} disabled={busy} title="ライブラリの中から同じ音声のファイルを探して、タグなどを移す">
               ひも付け直す
             </button>
-            <button onClick={onRemoveMissing} disabled={busy}>
+            <button onClick={onRemoveMissing} disabled={busy} title="ファイルの情報と、付けたタグなどの設定を消す">
               ライブラリから外す
             </button>
           </div>

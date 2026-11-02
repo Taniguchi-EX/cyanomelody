@@ -5,6 +5,9 @@ import { useFileDrag } from "../hooks/useFileDrag";
 
 const ROW_HEIGHT = 30;
 
+/** ハッシュ値から決まる色（同じ音声のファイルは同じ色になる） */
+const hashColor = (hash: string) => `hsl(${parseInt(hash.slice(0, 6), 16) % 360} 65% 50%)`;
+
 type Props = {
   files: AudioFile[];
   /** クリックして右の欄に出しているファイル */
@@ -18,7 +21,7 @@ type Props = {
   /** 表示中のファイルをすべてチェックする（false なら外す） */
   onCheckShown: (check: boolean) => void;
   onPlay: (file: AudioFile) => void;
-  /** 行にハッシュ値の先頭を出す（重複を見るとき） */
+  /** 行にハッシュ値の色の印を出す（重複を見るとき） */
   showHash: boolean;
   /** 行を左の欄のプレイリストへドラッグしたとき。チェックした行をつかんだら、チェックしたファイルすべて */
   onDropToPlaylist: (fileIds: number[], playlistId: number) => void;
@@ -115,9 +118,12 @@ export function FileList({
                     </span>
                   )}
                   {showHash && (
-                    <span className="hash" title={f.hash ?? ""}>
-                      {f.hash?.slice(0, 8) ?? "--------"}
-                    </span>
+                    <span
+                      className="hash"
+                      style={f.hash ? { background: hashColor(f.hash) } : undefined}
+                      title={f.hash ?? "ハッシュ値なし"}
+                      data-hash={f.hash ?? ""}
+                    />
                   )}
                   <span className="file-name" title={f.path}>
                     {f.relPath}

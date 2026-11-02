@@ -55,14 +55,18 @@ await step("H03", "計算できなかったファイルは、理由が出て、�
 });
 
 await step("H04", "重複しているファイルだけに絞り込める（タグだけ違うファイルも重複になる）", async () => {
-  await page.getByLabel("重複しているファイルだけ").check();
+  await page.getByRole("button", { name: "重複しているファイルだけ" }).click();
   await page.waitForTimeout(400);
   expect((await fileCount()) === 3, `件数 ${await fileCount()}`);
   for (const rel of ["se1.mp3", "dup/se1_copy.mp3", "se1_retag.mp3"]) {
     expect((await row(rel).count()) === 1, `${rel}がない`);
   }
-  const hashes = await page.locator("[data-testid=file-row] .hash").allInnerTexts();
-  expect(hashes.length === 3 && new Set(hashes).size === 1, `ハッシュ値の表示 ${hashes.join(",")}`);
+  // 同じ音声のファイルは同じ色の印
+  const marks = page.locator("[data-testid=file-row] .hash");
+  const hashes = await marks.evaluateAll((els) => els.map((e) => e.dataset.hash));
+  const colors = await marks.evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+  expect(hashes.length === 3 && new Set(hashes).size === 1 && hashes[0].length === 64, `ハッシュ値 ${hashes.join(",")}`);
+  expect(new Set(colors).size === 1, `色 ${colors.join(",")}`);
   await shot("H04_重複");
   await clearFilter();
 });

@@ -129,10 +129,27 @@ h2:first-child {
   font-size: 11px;
 }
 
+/* 重複を見るときの、ハッシュ値の色の印（ハッシュ値がなければ点線の枠） */
 .hash {
-  font-family: Consolas, monospace;
-  font-size: 12px;
-  color: var(--fg-sub);
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px dashed var(--border);
+}
+
+.hash[style] {
+  border: none;
+}
+
+/* 押すと選んだ状態になる記号のボタン（ツールバーの絞り込み） */
+button.toggle.on {
+  background: var(--selected);
+  border-color: var(--accent);
+}
+
+.warn-toggle {
+  color: var(--warn);
 }
 
 .folder-path {

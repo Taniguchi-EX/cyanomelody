@@ -147,8 +147,8 @@ await step("T12", "見つからなくなったファイルに印が付き、タ�
   await shot("T12_見つからないファイル");
 });
 
-await step("T13", "見つからないファイルだけに絞り込める", async () => {
-  await page.getByLabel("見つからないファイルだけ").check();
+await step("T13", "見つからないファイルだけに絞り込める（見つからないファイルがあるときだけ、ボタンが出る）", async () => {
+  await page.getByRole("button", { name: "見つからないファイルだけ" }).click();
   await page.waitForTimeout(300);
   expect((await fileCount()) === 1, `件数 ${await fileCount()}`);
   await clearFilter();
@@ -158,6 +158,7 @@ await step("T14", "同じ場所に戻すと印が外れる", async () => {
   fs.renameSync(path.join(dataDir, "chime.flac.moved"), path.join(formats, "chime.flac"));
   await page.getByRole("button", { name: "スキャン", exact: true }).click();
   await waitIdle();
+  expect((await page.getByRole("button", { name: "見つからないファイルだけ" }).count()) === 0, "ボタンが残っている");
   const s = await status();
   expect(s.includes("戻った 1件"), `status: ${s}`);
   expect((await row("chime.flac").locator(".warn").count()) === 0, "印が残っている");

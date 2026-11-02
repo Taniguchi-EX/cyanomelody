@@ -290,6 +290,7 @@ export default function App() {
     });
 
   /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
+  const missingTotal = folders.reduce((n, f) => n + f.missingCount, 0);
   const anyActive =
     filter.folderId !== null ||
     filter.tagIds.length > 0 ||
@@ -848,22 +849,27 @@ export default function App() {
                 onChange={(e) => setText(e.target.value)}
                 aria-label="ファイル名で絞り込む"
               />
-              <label>
-                <input
-                  type="checkbox"
-                  checked={filter.missingOnly}
-                  onChange={(e) => setFilter((f) => ({ ...f, missingOnly: e.target.checked }))}
-                />
-                見つからないファイルだけ
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={filter.duplicatesOnly}
-                  onChange={(e) => setFilter((f) => ({ ...f, duplicatesOnly: e.target.checked }))}
-                />
-                重複しているファイルだけ
-              </label>
+              {/* 見つからないファイルがないときは、絞り込んでも0件なので出さない */}
+              {(missingTotal > 0 || filter.missingOnly) && (
+                <button
+                  className={"icon toggle warn-toggle" + (filter.missingOnly ? " on" : "")}
+                  aria-pressed={filter.missingOnly}
+                  onClick={() => setFilter((f) => ({ ...f, missingOnly: !f.missingOnly }))}
+                  title={`見つからないファイルだけ（${missingTotal}件）`}
+                  aria-label="見つからないファイルだけ"
+                >
+                  ⚠
+                </button>
+              )}
+              <button
+                className={"icon toggle" + (filter.duplicatesOnly ? " on" : "")}
+                aria-pressed={filter.duplicatesOnly}
+                onClick={() => setFilter((f) => ({ ...f, duplicatesOnly: !f.duplicatesOnly }))}
+                title="重複しているファイルだけ"
+                aria-label="重複しているファイルだけ"
+              >
+                ⧉
+              </button>
               <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
               {filter.hash && (
                 <span className="chip" data-testid="hash-filter" title={filter.hash}>
