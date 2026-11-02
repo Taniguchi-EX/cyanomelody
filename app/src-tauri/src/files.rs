@@ -6,7 +6,7 @@ use rusqlite::{params, params_from_iter, types::Value, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::tags::{get_or_create_tag, TAG_SEPARATOR};
+use crate::tags::{descendants_and_self, get_or_create_tag, tag_rank, TAG_SEPARATOR};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,11 +64,14 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         sql.push_str(" AND a.rel_path LIKE ? ESCAPE '\\'");
         args.push(Value::Text(format!("%{}%", escape_like(text))));
     }
+    // 選んだタグごとに、そのタグか子孫のタグが付いていること
     for tag_id in &filter.tag_ids {
-        sql.push_str(
-            " AND EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = a.id AND ft.tag_id = ?)",
-        );
-        args.push(Value::Integer(*tag_id));
+        let ids = descendants_and_self(conn, *tag_id)?;
+        let marks = vec!["?"; ids.len()].join(", ");
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = a.id AND ft.tag_id IN ({marks}))"
+        ));
+        args.extend(ids.into_iter().map(Value::Integer));
     }
     if filter.untagged_only {
         sql.push_str(" AND NOT EXISTS (SELECT 1 FROM file_tags ft WHERE ft.file_id = a.id)");
@@ -105,6 +108,8 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         " ORDER BY f.path, a.rel_path"
     });
 
+    // ファイルに付いたタグは、タグの一覧と同じ順に並べる
+    let rank = tag_rank(conn)?;
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args), |r| {
         let folder_path: String = r.get(3)?;
@@ -113,7 +118,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         let mut tags: Vec<String> = tags
             .map(|s| s.split(TAG_SEPARATOR).map(str::to_owned).collect())
             .unwrap_or_default();
-        tags.sort_by_key(|t| t.to_lowercase());
+        tags.sort_by_key(|t| rank.get(t).copied().unwrap_or(usize::MAX));
         Ok(AudioFile {
             id: r.get(0)?,
             folder_id: r.get(1)?,
@@ -195,7 +200,7 @@ mod tests {
     use crate::credits::{set_file_credit, CreditKind};
     use crate::db::open_in_memory;
     use crate::library::{add_folder, scan_folder};
-    use crate::tags::{list_tags, Tag};
+    use crate::tags::{list_tags, move_tag, MoveTarget};
     use std::fs;
 
     /// a.wav, b.mp3, sub/c_100%.flac を置いたフォルダを登録・スキャンしたDB
@@ -251,14 +256,9 @@ mod tests {
         // 大文字・小文字の違いは同じタグ
         assert_eq!(add_tag(&mut conn, &[a], "short").unwrap(), short);
 
-        let tags = list_tags(&conn).unwrap();
-        assert_eq!(
-            tags,
-            vec![
-                Tag { id: short, name: "Short".into(), file_count: 1 },
-                Tag { id: explosion, name: "爆発".into(), file_count: 2 },
-            ]
-        );
+        let tags: Vec<(i64, String, i64)> =
+            list_tags(&conn).unwrap().into_iter().map(|t| (t.id, t.name, t.file_count)).collect();
+        assert_eq!(tags, vec![(explosion, "爆発".into(), 2), (short, "Short".into(), 1)]);
 
         let and = FileFilter { tag_ids: vec![explosion, short], ..Default::default() };
         assert_eq!(rels(&list_files(&conn, &and).unwrap()), vec!["a.wav"]);
@@ -267,13 +267,26 @@ mod tests {
         let untagged = FileFilter { untagged_only: true, ..Default::default() };
         assert_eq!(rels(&list_files(&conn, &untagged).unwrap()), vec!["sub/c_100%.flac"]);
 
+        // ファイルに付いたタグは、タグの一覧の順に並ぶ
+        let all = list_files(&conn, &FileFilter::default()).unwrap();
+        assert_eq!(all[0].tags, vec!["爆発", "Short"]);
+        move_tag(&mut conn, short, MoveTarget::Before(explosion)).unwrap();
         let all = list_files(&conn, &FileFilter::default()).unwrap();
         assert_eq!(all[0].tags, vec!["Short", "爆発"]);
+
+        // 親のタグで絞り込むと、子孫のタグが付いたファイルも含める
+        let parent = crate::tags::create_tag(&conn, "親").unwrap();
+        move_tag(&mut conn, explosion, MoveTarget::Child(parent)).unwrap();
+        let by_parent = FileFilter { tag_ids: vec![parent], ..Default::default() };
+        assert_eq!(rels(&list_files(&conn, &by_parent).unwrap()), vec!["a.wav", "b.mp3"]);
+        let both = FileFilter { tag_ids: vec![parent, short], ..Default::default() };
+        assert_eq!(rels(&list_files(&conn, &both).unwrap()), vec!["a.wav"]);
+        move_tag(&mut conn, explosion, MoveTarget::Root).unwrap();
 
         remove_tag(&mut conn, &[a, b], explosion).unwrap();
         assert_eq!(list_files(&conn, &one).unwrap().len(), 0);
         // 使われなくなってもタグ自体は残る
-        assert_eq!(list_tags(&conn).unwrap().len(), 2);
+        assert_eq!(list_tags(&conn).unwrap().len(), 3);
     }
 
     #[test]

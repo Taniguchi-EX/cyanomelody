@@ -21,7 +21,7 @@ use error::Error;
 use files::{AudioFile, FileFilter};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
-use tags::{RenameResult, Tag};
+use tags::{MoveTarget, RenameResult, Tag};
 
 struct AppState {
     conn: Mutex<Connection>,
@@ -190,7 +190,12 @@ async fn rename_tag(
 
 #[tauri::command]
 async fn delete_tag(state: State<'_, AppState>, tag_id: i64) -> Result<()> {
-    tags::delete_tag(&state.conn(), tag_id)
+    tags::delete_tag(&mut state.conn(), tag_id)
+}
+
+#[tauri::command]
+async fn move_tag(state: State<'_, AppState>, tag_id: i64, target: MoveTarget) -> Result<()> {
+    tags::move_tag(&mut state.conn(), tag_id, target)
 }
 
 #[tauri::command]
@@ -293,6 +298,7 @@ pub fn run() {
             rename_tag,
             delete_tag,
             delete_unused_tags,
+            move_tag,
             add_tag,
             remove_tag,
             remove_missing_files,

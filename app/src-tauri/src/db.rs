@@ -69,6 +69,13 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX audio_files_source ON audio_files(source_id);
     CREATE INDEX audio_files_license ON audio_files(license_id);
     "#,
+    // 4: タグの階層構造。今あるタグは最上位に名前の順で並べる
+    r#"
+    ALTER TABLE tags ADD COLUMN parent_id INTEGER REFERENCES tags(id) ON DELETE SET NULL;
+    ALTER TABLE tags ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    UPDATE tags SET position = (SELECT count(*) FROM tags t2 WHERE t2.name < tags.name);
+    CREATE INDEX tags_parent ON tags(parent_id, position);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
@@ -121,5 +128,27 @@ mod tests {
         migrate(&conn).unwrap();
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
         assert_eq!(version as usize, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn existing_tags_are_ordered_by_name_on_migration_4() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..3] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tags (name, created_at) VALUES ('b', 0), ('C', 0), ('a', 0);",
+        )
+        .unwrap();
+        migrate(&conn).unwrap();
+        let names: Vec<String> = conn
+            .prepare("SELECT name FROM tags WHERE parent_id IS NULL ORDER BY position")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(names, vec!["a", "b", "C"]);
     }
 }
