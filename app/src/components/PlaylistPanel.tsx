@@ -16,10 +16,12 @@ type Props = {
   onPlay: (id: number) => void;
   onCreate: (name: string) => Promise<boolean>;
   onMove: (id: number, target: MoveTarget) => void;
+  /** エフェクトのまとまりの管理画面を開く */
+  onManageEffects: () => void;
 };
 
 /** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成、再生 */
-export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreate, onMove }: Props) {
+export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreate, onMove, onManageEffects }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -63,9 +65,14 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreat
       title="プレイリスト"
       selectedCount={0}
       actions={
-        <button onClick={() => setCreating((c) => !c)} aria-label="プレイリストを作る">
-          作成
-        </button>
+        <span className="row">
+          <button onClick={onManageEffects} aria-label="エフェクトのまとまりを管理">
+            エフェクト
+          </button>
+          <button onClick={() => setCreating((c) => !c)} aria-label="プレイリストを作る">
+            作成
+          </button>
+        </span>
       }
     >
       {creating && (

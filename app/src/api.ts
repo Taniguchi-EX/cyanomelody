@@ -232,6 +232,8 @@ export type PlaylistItem = {
   fileCount: number;
   /** 別名（このプレイリストの中でだけ使う名前） */
   alias: string | null;
+  /** 結び付けたエフェクトのまとまり */
+  effectChain: { id: number; name: string } | null;
 };
 
 export type PlaylistDetail = {
@@ -247,6 +249,8 @@ export type PlayEntry = {
   path: string;
   /** ファイルの項目の別名 */
   alias: string | null;
+  /** かけるエフェクトのまとまり（内側から外側の順）。空ならエフェクトなし */
+  effects: number[];
 };
 
 export const playlistApi = {

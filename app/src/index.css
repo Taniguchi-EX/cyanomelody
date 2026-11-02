@@ -761,3 +761,59 @@ h2:first-child {
   margin-bottom: 6px;
   flex-wrap: wrap;
 }
+
+/* ===== エフェクトのまとまりの管理画面 ===== */
+
+.effect-dialog {
+  width: min(900px, calc(100% - 32px));
+}
+
+.effect-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+}
+
+.effect-list {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+
+.effect-list li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.effect-list li > * {
+  margin-right: 8px;
+}
+
+.effect-label {
+  display: inline-block;
+  min-width: 120px;
+  font-weight: 600;
+}
+
+.effect-param {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.effect-param input {
+  width: 64px;
+  margin: 0 2px 0 4px;
+}
+
+.effect-actions button {
+  padding: 0 6px;
+  margin-left: 2px;
+}
+
+.effect-save {
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.item-chain {
+  max-width: 150px;
+}

@@ -8,6 +8,7 @@ import {
   type Tag,
 } from "../api";
 import { makesLoop } from "../playlistGraph";
+import type { EffectChain } from "../effects";
 
 type Props = {
   detail: PlaylistDetail;
@@ -25,6 +26,8 @@ type Props = {
   onSetMode: (item: PlaylistItem, mode: PlayMode) => void;
   /** 別名を変える（空なら外す）。終わったら true */
   onSetAlias: (item: PlaylistItem, alias: string) => Promise<boolean>;
+  chains: EffectChain[];
+  onSetChain: (item: PlaylistItem, chainId: number | null) => void;
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
   onCreateChild: (name: string) => Promise<boolean>;
@@ -59,6 +62,8 @@ export function PlaylistEditor({
   onMoveItem,
   onSetMode,
   onSetAlias,
+  chains,
+  onSetChain,
   onAddTags,
   onAddRef,
   onCreateChild,
@@ -215,6 +220,21 @@ export function PlaylistEditor({
                 </span>
               </>
             )}
+            <select
+              className="item-chain"
+              value={item.effectChain?.id ?? ""}
+              onChange={(e) => onSetChain(item, e.target.value === "" ? null : Number(e.target.value))}
+              disabled={busy}
+              aria-label={`${itemContent(item)}のエフェクト`}
+              title="この項目にかけるエフェクトのまとまり"
+            >
+              <option value="">エフェクトなし</option>
+              {chains.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
             <button
               onClick={() => startAlias(item)}
               disabled={busy || aliasItemId === item.id}

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AudioFile, PlayEntry } from "../api";
+import { chainApi } from "../effects";
 
 /** プレイリストの再生の状態 */
 export type Player = {
@@ -8,6 +9,8 @@ export type Player = {
   queue: PlayEntry[];
   index: number;
   paused: boolean;
+  /** エフェクトをかけた音を用意している */
+  preparing: boolean;
 };
 
 type Options = {
@@ -34,15 +37,20 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
 
   /** 試聴。同じファイルをもう一度押すと止める */
   const preview = (file: AudioFile) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setPlayer(null);
     if (previewId === file.id) {
-      audio.pause();
+      audioRef.current?.pause();
       setPreviewId(null);
       return;
     }
-    audio.src = convertFileSrc(file.path);
+    previewPath(file, file.path);
+  };
+
+  /** ファイルの試聴として、path の音（エフェクトをかけた音など）を鳴らす */
+  const previewPath = (file: AudioFile, path: string) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    setPlayer(null);
+    audio.src = convertFileSrc(path);
     setPreviewId(file.id);
     audio.play().catch((e) => {
       setPreviewId(null);
@@ -60,11 +68,27 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
       onInfo(`「${p.name}」の再生が終わりました`);
       return;
     }
-    const next = { ...p, index, paused: false };
+    const entry = p.queue[index];
+    const next = { ...p, index, paused: false, preparing: entry.effects.length > 0 };
     setPlayer(next);
     setPreviewId(null);
-    audio.src = convertFileSrc(p.queue[index].path);
-    audio.play().catch((e) => skip(next, String(e)));
+    if (!next.preparing) {
+      audio.src = convertFileSrc(entry.path);
+      audio.play().catch((e) => skip(next, String(e)));
+      return;
+    }
+    // エフェクトをかけた音を用意してから鳴らす。用意している間に別の曲へ移ったら鳴らさない
+    audio.pause();
+    chainApi
+      .render(entry.fileId, entry.effects)
+      .then((path) => {
+        if (playerRef.current !== next) return;
+        const ready = { ...next, preparing: false };
+        setPlayer(ready);
+        audio.src = convertFileSrc(path);
+        audio.play().catch((e) => skip(ready, String(e)));
+      })
+      .catch((e) => skip(next, String(e)));
   };
 
   /** 再生できなかった曲を飛ばす。失敗は play() の失敗と audio の error の両方で届くので、
@@ -76,7 +100,8 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
   };
 
   /** プレイリストの再生を始める */
-  const playQueue = (name: string, queue: PlayEntry[]) => playAt({ name, queue, index: 0, paused: false }, 0);
+  const playQueue = (name: string, queue: PlayEntry[]) =>
+    playAt({ name, queue, index: 0, paused: false, preparing: false }, 0);
 
   const move = (delta: number) => {
     const p = playerRef.current;
@@ -91,7 +116,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
   const togglePause = () => {
     const audio = audioRef.current;
     const p = playerRef.current;
-    if (!audio || !p) return;
+    if (!audio || !p || p.preparing) return;
     if (p.paused) audio.play().catch((e) => onError(String(e)));
     else audio.pause();
     setPlayer({ ...p, paused: !p.paused });
@@ -116,6 +141,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     previewId,
     player,
     preview,
+    previewPath,
     playQueue,
     next: () => move(1),
     prev: () => move(-1),

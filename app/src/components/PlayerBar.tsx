@@ -17,6 +17,11 @@ export function PlayerBar({ player, onPrev, onNext, onTogglePause, onStop }: Pro
       <span className="sub" data-testid="player-position">
         {player.index + 1}/{player.queue.length}
       </span>
+      {player.preparing && (
+        <span className="warn" data-testid="player-preparing">
+          準備中…
+        </span>
+      )}
       <span className="player-file" title={entry?.path} data-testid="player-file">
         {entry?.alias ? (
           <>
@@ -30,7 +35,7 @@ export function PlayerBar({ player, onPrev, onNext, onTogglePause, onStop }: Pro
       <button onClick={onPrev} disabled={player.index === 0} aria-label="前へ">
         ⏮
       </button>
-      <button onClick={onTogglePause} aria-label={player.paused ? "再開" : "一時停止"}>
+      <button onClick={onTogglePause} disabled={player.preparing} aria-label={player.paused ? "再開" : "一時停止"}>
         {player.paused ? "▶" : "⏸"}
       </button>
       <button onClick={onNext} aria-label="次へ">

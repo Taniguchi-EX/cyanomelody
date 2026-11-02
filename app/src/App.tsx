@@ -34,6 +34,8 @@ import { PlaylistEditor } from "./components/PlaylistEditor";
 import { PlayerBar } from "./components/PlayerBar";
 import { useAudioPlayer } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
+import { EffectManager } from "./components/EffectManager";
+import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
@@ -80,6 +82,8 @@ export default function App() {
   const [licenses, setLicenses] = useState<Credit[]>([]);
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
   const [managingCredit, setManagingCredit] = useState<CreditKind | null>(null);
+  const [chains, setChains] = useState<EffectChain[]>([]);
+  const [managingEffects, setManagingEffects] = useState(false);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchPath, setSearchPath] = useState("");
@@ -126,18 +130,20 @@ export default function App() {
   };
 
   const reloadAll = useCallback(async () => {
-    const [fs, ts, ss, ls, ps] = await Promise.all([
+    const [fs, ts, ss, ls, ps, cs] = await Promise.all([
       api.listFolders(),
       api.listTags(),
       api.listCredits("source"),
       api.listCredits("license"),
       playlistApi.list(),
+      chainApi.list(),
     ]);
     setFolders(fs);
     setTags(ts);
     setSources(ss);
     setLicenses(ls);
     setPlaylists(ps);
+    setChains(cs);
     await Promise.all([reloadFiles(), reloadPlaylistDetail()]);
   }, [reloadFiles]);
 
@@ -602,6 +608,65 @@ export default function App() {
       await playlistApi.moveItem(item.id, index);
     });
 
+  // エフェクトのまとまり
+  const createChain = async (name: string) => {
+    let id: number | null = null;
+    await run(async () => {
+      id = await chainApi.create(name);
+      showInfo(`エフェクトのまとまり「${name.trim()}」を作りました`);
+    });
+    return id;
+  };
+
+  const renameChain = async (chain: EffectChain, name: string) => {
+    let ok = false;
+    await run(async () => {
+      await chainApi.rename(chain.id, name);
+      showInfo(`エフェクトのまとまりの名前を「${name.trim()}」に変えました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  const deleteChain = async (chain: EffectChain) => {
+    let message = `エフェクトのまとまり「${chain.name}」を削除しますか？`;
+    if (chain.itemCount > 0) message += `\n結び付けているプレイリストの項目${chain.itemCount}件から外れます。`;
+    if (!(await confirmDialog(message))) return;
+    await run(async () => {
+      await chainApi.remove(chain.id);
+      showInfo(`エフェクトのまとまり「${chain.name}」を削除しました`);
+    });
+  };
+
+  const saveChain = async (chain: EffectChain, effects: Effect[]) => {
+    let ok = false;
+    await run(async () => {
+      await chainApi.setEffects(chain.id, effects);
+      showInfo(`エフェクトのまとまり「${chain.name}」を保存しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
+  /** 右の欄に出しているファイルに、エフェクトをかけて試聴する */
+  const previewChain = async (effects: Effect[]) => {
+    const file = focusedFile;
+    if (!file) return;
+    showInfo(`試聴の準備中: ${file.relPath}`);
+    try {
+      const path = await chainApi.preview(file.id, effects);
+      audio.previewPath(file, path);
+      showInfo(`試聴中: ${file.relPath}`);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const setPlaylistItemChain = (item: PlaylistItem, chainId: number | null) =>
+    run(async () => {
+      await chainApi.setItemChain(item.id, chainId);
+    });
+
   const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => {
     let ok = false;
     await run(async () => {
@@ -672,6 +737,7 @@ export default function App() {
           onPlay={(id) => playPlaylist(id)}
           onCreate={(name) => createPlaylist(name)}
           onMove={movePlaylist}
+          onManageEffects={() => setManagingEffects(true)}
         />
       </aside>
 
@@ -692,6 +758,8 @@ export default function App() {
             onMoveItem={movePlaylistItem}
             onSetMode={setPlaylistItemMode}
             onSetAlias={setPlaylistItemAlias}
+            chains={chains}
+            onSetChain={setPlaylistItemChain}
             onAddTags={addTagsToPlaylist}
             onAddRef={addRefToPlaylist}
             onCreateChild={(name) => createPlaylist(name, playlistDetail.id)}
@@ -876,6 +944,19 @@ export default function App() {
           onDelete={deleteTag}
           onDeleteUnused={deleteUnusedTags}
           onClose={() => setManaging(false)}
+        />
+      )}
+      {managingEffects && (
+        <EffectManager
+          chains={chains}
+          busy={busy}
+          previewFileName={focusedFile?.relPath ?? null}
+          onCreate={createChain}
+          onRename={renameChain}
+          onDelete={deleteChain}
+          onSave={saveChain}
+          onPreview={previewChain}
+          onClose={() => setManagingEffects(false)}
         />
       )}
       {managingCredit && (
