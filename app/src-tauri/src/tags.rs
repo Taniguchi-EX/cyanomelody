@@ -280,6 +280,12 @@ pub fn rename_tag(conn: &mut Connection, tag_id: i64, new_name: &str, merge: boo
                  SELECT file_id, ?2 FROM file_tags WHERE tag_id = ?1",
                 params![tag_id, other],
             )?;
+            // プレイリストのタグの組み合わせも、統合先に置き換える
+            tx.execute(
+                "INSERT OR IGNORE INTO playlist_item_tags (item_id, tag_id)
+                 SELECT item_id, ?2 FROM playlist_item_tags WHERE tag_id = ?1",
+                params![tag_id, other],
+            )?;
             let mut ids = siblings(&tx, Some(other))?;
             ids.extend(siblings(&tx, Some(tag_id))?);
             write_children(&tx, Some(other), &ids)?;
@@ -307,13 +313,21 @@ pub fn delete_tag(conn: &mut Connection, tag_id: i64) -> Result<()> {
         .collect();
     write_children(&tx, parent, &ids)?;
     tx.execute("DELETE FROM tags WHERE id = ?1", [tag_id])?;
+    crate::playlists::remove_empty_tag_items(&tx)?;
     tx.commit()?;
     Ok(())
 }
 
-/// そのタグにも子孫にもファイルが付いていないタグを削除し、削除した数を返す。
+/// そのタグにも子孫にもファイルが付いておらず、プレイリストのタグの組み合わせでも（子孫を含めて）使われていない
+/// タグを削除し、削除した数を返す。
 pub fn delete_unused_tags(conn: &Connection) -> Result<usize> {
-    let unused: Vec<i64> = list_tags(conn)?.into_iter().filter(|t| t.file_count == 0).map(|t| t.id).collect();
+    let in_playlists = crate::playlists::tags_in_use(conn)?;
+    let mut unused = Vec::new();
+    for t in list_tags(conn)?.into_iter().filter(|t| t.file_count == 0) {
+        if !descendants_and_self(conn, t.id)?.iter().any(|d| in_playlists.contains(d)) {
+            unused.push(t.id);
+        }
+    }
     if unused.is_empty() {
         return Ok(0);
     }

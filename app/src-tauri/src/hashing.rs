@@ -135,6 +135,8 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
                      WHERE id = ?2",
                     params![id, target],
                 )?;
+                // プレイリストのファイルの項目も付け替える
+                tx.execute("UPDATE playlist_items SET file_id = ?2 WHERE file_id = ?1", params![id, target])?;
                 tx.execute("DELETE FROM audio_files WHERE id = ?1", [id])?;
                 result.relinked += 1;
             }
@@ -264,6 +266,22 @@ mod tests {
         // 移動先に設定があれば残し、なければ移す
         assert_eq!(target.source_id, source);
         assert_eq!(target.license_id, license);
+    }
+
+    #[test]
+    fn relink_moves_playlist_items() {
+        let (dir, mut conn, folder) = setup();
+        hash_all(&mut conn);
+        let b = id_of(&conn, "b.mp3");
+        let list = crate::playlists::create_playlist(&mut conn, "P", None).unwrap();
+        crate::playlists::add_files(&mut conn, list, &[b]).unwrap();
+        fs::rename(dir.path().join("b.mp3"), dir.path().join("sub/b_moved.mp3")).unwrap();
+        scan_folder(&mut conn, folder).unwrap();
+        hash_all(&mut conn);
+        let moved = id_of(&conn, "sub/b_moved.mp3");
+        relink(&mut conn, &[b]).unwrap();
+        let items = crate::playlists::get_playlist(&conn, list).unwrap().items;
+        assert_eq!(items[0].file.as_ref().unwrap().id, moved);
     }
 
     #[test]

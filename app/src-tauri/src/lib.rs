@@ -6,6 +6,7 @@ mod facets;
 mod files;
 mod hashing;
 mod library;
+mod playlists;
 mod tags;
 
 use std::path::{Path, PathBuf};
@@ -23,6 +24,7 @@ use facets::Facets;
 use files::{AudioFile, FileFilter, FileSummary};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
+use playlists::{PlayEntry, PlayMode, PlaylistDetail, PlaylistNode};
 use tags::{MoveTarget, RenameResult, Tag};
 
 struct AppState {
@@ -267,6 +269,73 @@ async fn set_file_credit(
     credits::set_file_credit(&mut state.conn(), kind, &file_ids, name.as_deref())
 }
 
+#[tauri::command]
+async fn list_playlists(state: State<'_, AppState>) -> Result<Vec<PlaylistNode>> {
+    playlists::list_playlists(&state.conn())
+}
+
+#[tauri::command]
+async fn get_playlist(state: State<'_, AppState>, id: i64) -> Result<PlaylistDetail> {
+    playlists::get_playlist(&state.conn(), id)
+}
+
+/// parent を指定すると、その子として作る
+#[tauri::command]
+async fn create_playlist(state: State<'_, AppState>, name: String, parent: Option<i64>) -> Result<i64> {
+    playlists::create_playlist(&mut state.conn(), &name, parent)
+}
+
+#[tauri::command]
+async fn rename_playlist(state: State<'_, AppState>, id: i64, name: String) -> Result<()> {
+    playlists::rename_playlist(&state.conn(), id, &name)
+}
+
+#[tauri::command]
+async fn delete_playlist(state: State<'_, AppState>, id: i64) -> Result<()> {
+    playlists::delete_playlist(&mut state.conn(), id)
+}
+
+#[tauri::command]
+async fn move_playlist(state: State<'_, AppState>, id: i64, target: MoveTarget) -> Result<()> {
+    playlists::move_playlist(&mut state.conn(), id, target)
+}
+
+#[tauri::command]
+async fn add_playlist_files(state: State<'_, AppState>, id: i64, file_ids: Vec<i64>) -> Result<()> {
+    playlists::add_files(&mut state.conn(), id, &file_ids)
+}
+
+#[tauri::command]
+async fn add_playlist_tags(state: State<'_, AppState>, id: i64, tag_ids: Vec<i64>) -> Result<i64> {
+    playlists::add_tags(&mut state.conn(), id, &tag_ids)
+}
+
+#[tauri::command]
+async fn add_playlist_ref(state: State<'_, AppState>, id: i64, ref_id: i64) -> Result<i64> {
+    playlists::add_playlist_ref(&mut state.conn(), id, ref_id)
+}
+
+#[tauri::command]
+async fn remove_playlist_item(state: State<'_, AppState>, item_id: i64) -> Result<()> {
+    playlists::remove_item(&mut state.conn(), item_id)
+}
+
+#[tauri::command]
+async fn move_playlist_item(state: State<'_, AppState>, item_id: i64, index: usize) -> Result<()> {
+    playlists::move_item(&mut state.conn(), item_id, index)
+}
+
+#[tauri::command]
+async fn set_playlist_item_mode(state: State<'_, AppState>, item_id: i64, mode: PlayMode) -> Result<()> {
+    playlists::set_item_mode(&state.conn(), item_id, mode)
+}
+
+/// 再生順を決める
+#[tauri::command]
+async fn expand_playlist(state: State<'_, AppState>, id: i64, mode: PlayMode) -> Result<Vec<PlayEntry>> {
+    playlists::expand_playlist(&state.conn(), id, mode)
+}
+
 /// データの置き場所。テストなどで分けたいときは環境変数 CYANOMELODY_DATA_DIR で変えられる。
 fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error::Error>> {
     if let Some(dir) = std::env::var_os("CYANOMELODY_DATA_DIR") {
@@ -328,6 +397,19 @@ pub fn run() {
             update_credit,
             delete_credit,
             set_file_credit,
+            list_playlists,
+            get_playlist,
+            create_playlist,
+            rename_playlist,
+            delete_playlist,
+            move_playlist,
+            add_playlist_files,
+            add_playlist_tags,
+            add_playlist_ref,
+            remove_playlist_item,
+            move_playlist_item,
+            set_playlist_item_mode,
+            expand_playlist,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

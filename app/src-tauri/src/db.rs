@@ -76,6 +76,36 @@ const MIGRATIONS: &[&str] = &[
     UPDATE tags SET position = (SELECT count(*) FROM tags t2 WHERE t2.name < tags.name);
     CREATE INDEX tags_parent ON tags(parent_id, position);
     "#,
+    // 5: プレイリスト。子のプレイリストは、親の項目（kind = 'playlist'、owned = 1）として持つ
+    r#"
+    CREATE TABLE playlists (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE playlist_items (
+        id INTEGER PRIMARY KEY,
+        playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('file', 'tags', 'playlist')),
+        file_id INTEGER REFERENCES audio_files(id) ON DELETE CASCADE,
+        ref_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE,
+        owned INTEGER NOT NULL DEFAULT 0,
+        mode TEXT NOT NULL DEFAULT 'order' CHECK (mode IN ('order', 'shuffle', 'random'))
+    );
+    CREATE INDEX playlist_items_list ON playlist_items(playlist_id, position);
+    CREATE INDEX playlist_items_file ON playlist_items(file_id);
+    CREATE INDEX playlist_items_ref ON playlist_items(ref_id);
+    -- 1つのプレイリストを子にできるのは1か所だけ
+    CREATE UNIQUE INDEX playlist_items_owner ON playlist_items(ref_id) WHERE owned = 1;
+    CREATE TABLE playlist_item_tags (
+        item_id INTEGER NOT NULL REFERENCES playlist_items(id) ON DELETE CASCADE,
+        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+        PRIMARY KEY (item_id, tag_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX playlist_item_tags_tag ON playlist_item_tags(tag_id);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
