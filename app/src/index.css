@@ -1067,7 +1067,7 @@ button.filter-chip:hover .chip-x {
   flex-wrap: wrap;
 }
 
-/* ===== エフェクトのまとまりの管理画面 ===== */
+/* ===== エフェクトセットの管理画面 ===== */
 
 .effect-dialog {
   width: min(900px, calc(100% - 32px));

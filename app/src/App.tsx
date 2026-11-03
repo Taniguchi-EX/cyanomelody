@@ -661,7 +661,7 @@ export default function App() {
       showInfo(`エフェクトセット「${chain.name}」を保存しました`);
     });
 
-  /** 右の欄に出しているファイルに、エフェクトをかけて試聴する */
+  /** 管理画面を開いた元の項目の曲に、エフェクトをかけて試聴する */
   const previewChain = async (effects: Effect[]) => {
     const file = effectDialog?.target;
     if (!file) return;

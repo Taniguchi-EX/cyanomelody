@@ -112,7 +112,7 @@ export const chainApi = {
   /** プレイリストの項目に結び付ける。null なら外す */
   setItemChain: (itemId: number, chainId: number | null) =>
     invoke<void>("set_playlist_item_chain", { itemId, chainId }),
-  /** ファイルにまとまりをかけた音を用意して、そのパスを返す */
+  /** ファイルにエフェクトセットをかけた音を用意して、そのパスを返す */
   render: (fileId: number, chainIds: number[]) => invoke<string>("render_effects", { fileId, chainIds }),
   /** 保存する前のエフェクトの並びで、試聴用の音を用意する */
   preview: (fileId: number, effects: Effect[]) => invoke<string>("preview_effects", { fileId, effects }),

@@ -7,7 +7,7 @@ import { confirmDialog } from "../confirm";
 type Props = {
   chains: EffectChain[];
   busy: boolean;
-  /** 試聴に使うファイル（右の欄に出しているファイル）の名前。なければ null */
+  /** 試聴に使う曲（管理画面を開いた元の項目の曲）の名前。なければ null */
   previewFileName: string | null;
   /** 作ったエフェクトセットのidを返す。作れなかったら null */
   onCreate: (name: string) => Promise<number | null>;
@@ -297,7 +297,7 @@ export function EffectManager({
                   <button onClick={() => edit([...effects, { ...effectDef(addKind).defaults }])}>追加</button>
                 </div>
                 <div className="row effect-save">
-                  {/* 右の欄のファイルにかけて鳴らす。試聴中に値を変えると、自動で鳴らし直す */}
+                  {/* 試聴に使う曲にかけて鳴らす。試聴中に値を変えると、自動で鳴らし直す */}
                   <button
                     className="preview-button"
                     onClick={() => (previewing ? onStopPreview() : preview())}
@@ -305,7 +305,7 @@ export function EffectManager({
                     title={
                       previewFileName
                         ? `${previewFileName}にかけて鳴らす（鳴っている間に値を変えると、鳴らし直す）`
-                        : "ファイルの一覧でファイルをクリックすると、試聴できます"
+                        : "この項目には鳴らせる曲がありません"
                     }
                     aria-label={previewing ? "試聴を止める" : "試聴"}
                   >

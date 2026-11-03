@@ -1,4 +1,4 @@
-//! エフェクトのまとまり（名前を付けた、エフェクトの並び）の管理と、プレイリストの項目への結び付け
+//! エフェクトセット（名前を付けた、エフェクトの並び）の管理と、プレイリストの項目への結び付け
 
 use rusqlite::{params, Connection};
 use serde::Serialize;
@@ -22,7 +22,7 @@ pub struct EffectChain {
 /// エラーの文言に入れる名前
 const WHAT: &str = "エフェクトセット";
 
-/// まとまりの中のエフェクト（かける順）。保存した設定を読めないものは飛ばす
+/// エフェクトセットの中のエフェクト（かける順）。保存した設定を読めないものは飛ばす
 pub fn chain_effects(conn: &Connection, chain_id: i64) -> Result<Vec<Effect>> {
     let rows: Vec<String> = conn
         .prepare("SELECT effect FROM effect_steps WHERE chain_id = ?1 ORDER BY position")?
@@ -60,7 +60,7 @@ pub fn rename_chain(conn: &Connection, id: i64, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// まとまりを削除する。結び付けていた項目からは外れる（外部キーで空になる）
+/// エフェクトセットを削除する。結び付けていた項目からは外れる（外部キーで空になる）
 pub fn delete_chain(conn: &Connection, id: i64) -> Result<()> {
     if conn.execute("DELETE FROM effect_chains WHERE id = ?1", [id])? == 0 {
         return Err(not_found(WHAT));
@@ -68,7 +68,7 @@ pub fn delete_chain(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// まとまりの中のエフェクトを、まとめて置き換える（追加・並べ替え・設定・削除は、画面で並びを作ってから保存する）
+/// エフェクトセットの中のエフェクトを、まとめて置き換える（追加・並べ替え・設定・削除は、画面で並びを作ってから保存する）
 pub fn set_chain_effects(conn: &mut Connection, id: i64, effects: &[Effect]) -> Result<()> {
     let tx = conn.transaction()?;
     if !exists(&tx, "effect_chains", id)? {
@@ -86,7 +86,7 @@ pub fn set_chain_effects(conn: &mut Connection, id: i64, effects: &[Effect]) -> 
     Ok(())
 }
 
-/// プレイリストの項目に、まとまりを結び付ける。None なら外す
+/// プレイリストの項目に、エフェクトセットを結び付ける。None なら外す
 pub fn set_item_chain(conn: &Connection, item_id: i64, chain_id: Option<i64>) -> Result<()> {
     if let Some(c) = chain_id {
         if !exists(conn, "effect_chains", c)? {
@@ -130,7 +130,7 @@ mod tests {
         assert_eq!(chain_effects(&conn, id).unwrap(), vec![effects[1].clone(), Effect::Gain { db: -3.0 }]);
         assert!(set_chain_effects(&mut conn, 99, &[]).is_err());
 
-        // 項目に結び付けて、まとまりを消すと外れる
+        // 項目に結び付けて、エフェクトセットを消すと外れる
         let p = create_playlist(&mut conn, "P", None).unwrap();
         add_files(&mut conn, p, &[1]).unwrap();
         let item = get_playlist(&conn, p).unwrap().items[0].id;

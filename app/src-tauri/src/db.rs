@@ -110,7 +110,7 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE playlist_items ADD COLUMN alias TEXT;
     "#,
-    // 7: エフェクト。まとまりの中のエフェクトは、種類と設定をJSONで持つ
+    // 7: エフェクト。エフェクトセットの中のエフェクトは、種類と設定をJSONで持つ
     r#"
     CREATE TABLE effect_chains (
         id INTEGER PRIMARY KEY,

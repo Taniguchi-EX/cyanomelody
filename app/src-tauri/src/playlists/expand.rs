@@ -30,7 +30,7 @@ pub(super) struct ItemRow {
 struct Track {
     file_id: i64,
     alias: Option<String>,
-    /// かけるエフェクトのまとまり（内側から外側の順）
+    /// かけるエフェクトセット（内側から外側の順）
     chains: Vec<i64>,
     /// この曲を出した項目。外側の項目を展開するたびに書き換わり、最後はいちばん外側の項目になる
     item: Option<i64>,
@@ -47,7 +47,7 @@ impl Track {
         self
     }
 
-    /// 外側の項目のまとまりを、最後に足す
+    /// 外側の項目のエフェクトセットを、最後に足す
     fn with_chain(mut self, chain: Option<i64>) -> Track {
         self.chains.extend(chain);
         self
@@ -287,7 +287,7 @@ impl ExportNode {
         ExportNode::File { file_id: t.file_id, alias: t.alias, chains: t.chains }
     }
 
-    /// 中のファイルすべてに、外側の項目のまとまりを足す
+    /// 中のファイルすべてに、外側の項目のエフェクトセットを足す
     fn with_chain(self, chain: Option<i64>) -> ExportNode {
         match self {
             ExportNode::File { file_id, alias, mut chains } => {

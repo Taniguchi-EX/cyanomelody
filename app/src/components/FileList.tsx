@@ -16,7 +16,7 @@ type Props = {
   /** チェックしたファイル（表示していないものも含む） */
   checked: Set<number>;
   playingId: number | null;
-  /** 試聴中のファイルの進み具合（0〜1） */
+  /** 鳴らしているファイル（playingId）の進み具合（0〜1） */
   progress: number;
   onFocus: (file: AudioFile) => void;
   /** 行のチェックボックス。range が true なら前に押した行との間をまとめて同じ状態にする */

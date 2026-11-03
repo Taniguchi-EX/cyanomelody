@@ -480,7 +480,7 @@ async fn set_effect_chain_effects(state: State<'_, AppState>, id: i64, effects: 
     chains::set_chain_effects(&mut state.conn(), id, &effects)
 }
 
-/// プレイリストの項目にエフェクトのまとまりを結び付ける。null なら外す
+/// プレイリストの項目にエフェクトセットを結び付ける。null なら外す
 #[tauri::command]
 async fn set_playlist_item_chain(state: State<'_, AppState>, item_id: i64, chain_id: Option<i64>) -> Result<()> {
     chains::set_item_chain(&state.conn(), item_id, chain_id)
@@ -498,7 +498,7 @@ fn file_path(conn: &Connection, file_id: i64) -> Result<PathBuf> {
     Ok(library::absolute_path(&folder, &rel))
 }
 
-/// ファイルに、まとまり（chain_ids の順）をかけた音を用意して、そのパスを返す。
+/// ファイルに、エフェクトセット（chain_ids の順）をかけた音を用意して、そのパスを返す。
 /// 処理に時間がかかることがあるので、データベースを使うのは最初だけにする
 #[tauri::command]
 async fn render_effects(state: State<'_, AppState>, file_id: i64, chain_ids: Vec<i64>) -> Result<String> {

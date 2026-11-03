@@ -242,7 +242,7 @@ export type PlaylistItem = {
   fileCount: number;
   /** 別名（このプレイリストの中でだけ使う名前） */
   alias: string | null;
-  /** 結び付けたエフェクトのまとまり */
+  /** 結び付けたエフェクトセット */
   effectChain: { id: number; name: string } | null;
 };
 
