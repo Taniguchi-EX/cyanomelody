@@ -12,6 +12,7 @@ mod hashing;
 mod library;
 mod linking;
 mod metadata;
+mod names;
 mod playlists;
 mod recent;
 mod tags;

@@ -1,11 +1,11 @@
 //! 出典とライセンス（まとめて「クレジット」と呼ぶ）の管理と、ファイルへの設定
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::db::now;
 use crate::error::{Error, Result};
-use crate::tags::normalize_name;
+use crate::names::{ensure_unique_name, find_by_name, normalize_name, not_found};
 
 /// 出典かライセンスか
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,12 +159,6 @@ fn license_type_terms(key: &str) -> Option<Terms> {
     license_type(key).map(|t| t.terms)
 }
 
-fn find(conn: &Connection, kind: CreditKind, name: &str) -> Result<Option<i64>> {
-    Ok(conn
-        .query_row(&format!("SELECT id FROM {} WHERE name = ?1", kind.table()), [name], |r| r.get(0))
-        .optional()?)
-}
-
 /// 入力を確かめて、保存する形にそろえる
 fn normalize(kind: CreditKind, input: &CreditInput) -> Result<CreditInput> {
     let name = normalize_name(&input.name, kind.label())?;
@@ -185,10 +179,6 @@ fn normalize(kind: CreditKind, input: &CreditInput) -> Result<CreditInput> {
         license_type,
         terms,
     })
-}
-
-fn duplicate(kind: CreditKind, name: &str) -> Error {
-    Error::invalid(format!("同じ名前の{}があります: {name}", kind.label()))
 }
 
 fn insert(conn: &Connection, kind: CreditKind, c: &CreditInput) -> Result<i64> {
@@ -221,18 +211,14 @@ fn insert(conn: &Connection, kind: CreditKind, c: &CreditInput) -> Result<i64> {
 /// 出典・ライセンスを作る。同じ名前があればエラー。
 pub fn create_credit(conn: &Connection, kind: CreditKind, input: &CreditInput) -> Result<i64> {
     let c = normalize(kind, input)?;
-    if find(conn, kind, &c.name)?.is_some() {
-        return Err(duplicate(kind, &c.name));
-    }
+    ensure_unique_name(conn, kind.table(), kind.label(), &c.name, None)?;
     insert(conn, kind, &c)
 }
 
 /// 出典・ライセンスの項目を変える。別の既存のものと同じ名前にするときはエラー（統合はしない）。
 pub fn update_credit(conn: &Connection, kind: CreditKind, id: i64, input: &CreditInput) -> Result<()> {
     let c = normalize(kind, input)?;
-    if find(conn, kind, &c.name)?.is_some_and(|other| other != id) {
-        return Err(duplicate(kind, &c.name));
-    }
+    ensure_unique_name(conn, kind.table(), kind.label(), &c.name, Some(id))?;
     let n = match kind {
         CreditKind::Source => conn.execute(
             "UPDATE sources SET name = ?2, url = ?3, note = ?4 WHERE id = ?1",
@@ -257,20 +243,16 @@ pub fn update_credit(conn: &Connection, kind: CreditKind, id: i64, input: &Credi
         )?,
     };
     if n == 0 {
-        return Err(not_found(kind));
+        return Err(not_found(kind.label()));
     }
     Ok(())
-}
-
-fn not_found(kind: CreditKind) -> Error {
-    Error::invalid(format!("{}が見つかりません", kind.label()))
 }
 
 /// 出典・ライセンスを削除する。設定されていたファイルは「なし」になる。
 pub fn delete_credit(conn: &Connection, kind: CreditKind, id: i64) -> Result<()> {
     let n = conn.execute(&format!("DELETE FROM {} WHERE id = ?1", kind.table()), [id])?;
     if n == 0 {
-        return Err(not_found(kind));
+        return Err(not_found(kind.label()));
     }
     Ok(())
 }
@@ -288,7 +270,7 @@ pub fn set_file_credit(
         None => None,
         Some(name) => {
             let name = normalize_name(name, kind.label())?;
-            Some(match find(&tx, kind, &name)? {
+            Some(match find_by_name(&tx, kind.table(), &name)? {
                 Some(id) => id,
                 None => insert(&tx, kind, &CreditInput { name, ..Default::default() })?,
             })

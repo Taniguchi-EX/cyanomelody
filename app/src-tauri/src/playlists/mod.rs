@@ -14,7 +14,8 @@ use serde::{Deserialize, Serialize};
 use crate::db::{exists, ids_json, now};
 use crate::error::{Error, Result};
 use crate::files::FILE_ORDER;
-use crate::tags::{normalize_name, tag_rank};
+use crate::names::{ensure_unique_name, normalize_name};
+use crate::tags::tag_rank;
 use crate::tree::{MoveTarget, NamedRef};
 
 /// 抽象的な項目（タグの組み合わせ、プレイリスト）の再生方法
@@ -137,8 +138,11 @@ pub struct PlayEntry {
     pub item_id: Option<i64>,
 }
 
+/// エラーの文言に入れる名前
+const WHAT: &str = "プレイリスト";
+
 fn not_found() -> Error {
-    Error::invalid("プレイリストが見つかりません")
+    crate::names::not_found(WHAT)
 }
 
 fn ensure_exists(conn: &Connection, id: i64) -> Result<()> {
@@ -267,14 +271,6 @@ pub fn list_playlists(conn: &Connection) -> Result<Vec<PlaylistNode>> {
     Ok(out)
 }
 
-fn find_by_name(conn: &Connection, name: &str) -> Result<Option<i64>> {
-    Ok(conn.query_row("SELECT id FROM playlists WHERE name = ?1", [name], |r| r.get(0)).optional()?)
-}
-
-fn duplicate(name: &str) -> Error {
-    Error::invalid(format!("同じ名前のプレイリストがあります: {name}"))
-}
-
 /// 項目をプレイリストの最後に加え、項目のidを返す
 fn append_item(
     conn: &Connection,
@@ -295,11 +291,9 @@ fn append_item(
 
 /// プレイリストを作る。parent を指定すると、その子（親の項目の最後）にする。指定しなければ最上位の最後
 pub fn create_playlist(conn: &mut Connection, name: &str, parent: Option<i64>) -> Result<i64> {
-    let name = normalize_name(name, "プレイリスト")?;
+    let name = normalize_name(name, WHAT)?;
     let tx = conn.transaction()?;
-    if find_by_name(&tx, &name)?.is_some() {
-        return Err(duplicate(&name));
-    }
+    ensure_unique_name(&tx, "playlists", WHAT, &name, None)?;
     if let Some(p) = parent {
         ensure_exists(&tx, p)?;
     }
@@ -317,10 +311,8 @@ pub fn create_playlist(conn: &mut Connection, name: &str, parent: Option<i64>) -
 }
 
 pub fn rename_playlist(conn: &Connection, id: i64, name: &str) -> Result<()> {
-    let name = normalize_name(name, "プレイリスト")?;
-    if find_by_name(conn, &name)?.is_some_and(|other| other != id) {
-        return Err(duplicate(&name));
-    }
+    let name = normalize_name(name, WHAT)?;
+    ensure_unique_name(conn, "playlists", WHAT, &name, Some(id))?;
     if conn.execute("UPDATE playlists SET name = ?2 WHERE id = ?1", params![id, name])? == 0 {
         return Err(not_found());
     }

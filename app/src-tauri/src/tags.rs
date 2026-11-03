@@ -6,6 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::db::now;
+use crate::names::{ensure_unique_name, find_by_name, normalize_name};
 use crate::error::{Error, Result};
 use crate::tree::MoveTarget;
 
@@ -137,24 +138,10 @@ pub fn normalize_tag_name(name: &str) -> Result<String> {
     normalize_name(name, "タグ")
 }
 
-/// タグ・出典・ライセンス・プレイリストの名前の決まり。前後の空白を除き、空や制御文字を含む名前はエラー。
-/// what はエラーの文言に入れる、名前の持ち主（「タグ」など）
-pub fn normalize_name(name: &str, what: &str) -> Result<String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err(Error::invalid(format!("{what}の名前が空です")));
-    }
-    if name.contains(TAG_SEPARATOR) || name.chars().any(char::is_control) {
-        return Err(Error::invalid(format!("{what}の名前に使えない文字が含まれています")));
-    }
-    Ok(name.to_owned())
-}
 
 /// 名前でタグを探す。大文字・小文字は区別しない。
 fn find_tag(conn: &Connection, name: &str) -> Result<Option<i64>> {
-    Ok(conn
-        .query_row("SELECT id FROM tags WHERE name = ?1", [name], |r| r.get(0))
-        .optional()?)
+    find_by_name(conn, "tags", name)
 }
 
 /// 親の子の最後に入れるときの順番
@@ -187,9 +174,7 @@ pub fn get_or_create_tag(conn: &Connection, name: &str) -> Result<i64> {
 /// タグを作る。同じ名前のタグがあればエラー。
 pub fn create_tag(conn: &Connection, name: &str) -> Result<i64> {
     let name = normalize_tag_name(name)?;
-    if find_tag(conn, &name)?.is_some() {
-        return Err(Error::invalid(format!("同じ名前のタグがあります: {name}")));
-    }
+    ensure_unique_name(conn, "tags", "タグ", &name, None)?;
     insert_tag(conn, &name)
 }
 

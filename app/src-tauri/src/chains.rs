@@ -1,12 +1,12 @@
 //! エフェクトのまとまり（名前を付けた、エフェクトの並び）の管理と、プレイリストの項目への結び付け
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::Serialize;
 
 use crate::db::{exists, now};
 use crate::effects::Effect;
 use crate::error::{Error, Result};
-use crate::tags::normalize_name;
+use crate::names::{ensure_unique_name, normalize_name, not_found};
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -19,17 +19,8 @@ pub struct EffectChain {
     pub item_count: i64,
 }
 
-fn not_found() -> Error {
-    Error::invalid("エフェクトのまとまりが見つかりません")
-}
-
-fn duplicate(name: &str) -> Error {
-    Error::invalid(format!("同じ名前のエフェクトのまとまりがあります: {name}"))
-}
-
-fn find_by_name(conn: &Connection, name: &str) -> Result<Option<i64>> {
-    Ok(conn.query_row("SELECT id FROM effect_chains WHERE name = ?1", [name], |r| r.get(0)).optional()?)
-}
+/// エラーの文言に入れる名前
+const WHAT: &str = "エフェクトセット";
 
 /// まとまりの中のエフェクト（かける順）。保存した設定を読めないものは飛ばす
 pub fn chain_effects(conn: &Connection, chain_id: i64) -> Result<Vec<Effect>> {
@@ -54,21 +45,17 @@ pub fn list_chains(conn: &Connection) -> Result<Vec<EffectChain>> {
 }
 
 pub fn create_chain(conn: &Connection, name: &str) -> Result<i64> {
-    let name = normalize_name(name, "エフェクトのまとまり")?;
-    if find_by_name(conn, &name)?.is_some() {
-        return Err(duplicate(&name));
-    }
+    let name = normalize_name(name, WHAT)?;
+    ensure_unique_name(conn, "effect_chains", WHAT, &name, None)?;
     conn.execute("INSERT INTO effect_chains (name, created_at) VALUES (?1, ?2)", params![name, now()])?;
     Ok(conn.last_insert_rowid())
 }
 
 pub fn rename_chain(conn: &Connection, id: i64, name: &str) -> Result<()> {
-    let name = normalize_name(name, "エフェクトのまとまり")?;
-    if find_by_name(conn, &name)?.is_some_and(|other| other != id) {
-        return Err(duplicate(&name));
-    }
+    let name = normalize_name(name, WHAT)?;
+    ensure_unique_name(conn, "effect_chains", WHAT, &name, Some(id))?;
     if conn.execute("UPDATE effect_chains SET name = ?2 WHERE id = ?1", params![id, name])? == 0 {
-        return Err(not_found());
+        return Err(not_found(WHAT));
     }
     Ok(())
 }
@@ -76,7 +63,7 @@ pub fn rename_chain(conn: &Connection, id: i64, name: &str) -> Result<()> {
 /// まとまりを削除する。結び付けていた項目からは外れる（外部キーで空になる）
 pub fn delete_chain(conn: &Connection, id: i64) -> Result<()> {
     if conn.execute("DELETE FROM effect_chains WHERE id = ?1", [id])? == 0 {
-        return Err(not_found());
+        return Err(not_found(WHAT));
     }
     Ok(())
 }
@@ -85,7 +72,7 @@ pub fn delete_chain(conn: &Connection, id: i64) -> Result<()> {
 pub fn set_chain_effects(conn: &mut Connection, id: i64, effects: &[Effect]) -> Result<()> {
     let tx = conn.transaction()?;
     if !exists(&tx, "effect_chains", id)? {
-        return Err(not_found());
+        return Err(not_found(WHAT));
     }
     tx.execute("DELETE FROM effect_steps WHERE chain_id = ?1", [id])?;
     for (pos, e) in effects.iter().enumerate() {
@@ -103,7 +90,7 @@ pub fn set_chain_effects(conn: &mut Connection, id: i64, effects: &[Effect]) -> 
 pub fn set_item_chain(conn: &Connection, item_id: i64, chain_id: Option<i64>) -> Result<()> {
     if let Some(c) = chain_id {
         if !exists(conn, "effect_chains", c)? {
-            return Err(not_found());
+            return Err(not_found(WHAT));
         }
     }
     if conn.execute("UPDATE playlist_items SET effect_chain_id = ?2 WHERE id = ?1", params![item_id, chain_id])? == 0 {
