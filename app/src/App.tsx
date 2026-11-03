@@ -690,10 +690,10 @@ export default function App() {
   const browseFolder = () => pickPath({ directory: true });
 
   /** 項目（チェックした項目なら、チェックした項目すべて）にエフェクトセットを付ける。null なら外す */
-  const setPlaylistItemChain = (items: PlaylistItem[], chainId: number | null) =>
+  const setItemsChain = (itemIds: number[], chainId: number | null) =>
     run(async () => {
-      for (const item of items) await chainApi.setItemChain(item.id, chainId);
-      if (items.length > 1) showInfo(`${items.length}件の項目の fx を変えました`);
+      for (const id of itemIds) await chainApi.setItemChain(id, chainId);
+      if (itemIds.length > 1) showInfo(`${itemIds.length}件の項目の fx を変えました`);
     });
 
   /**
@@ -709,10 +709,7 @@ export default function App() {
   /** 管理画面で作ったエフェクトセットを、開いた元の項目に付ける */
   const attachCreatedChain = (chainId: number) => {
     const ids = effectDialog?.itemIds ?? [];
-    if (ids.length === 0) return;
-    run(async () => {
-      for (const id of ids) await chainApi.setItemChain(id, chainId);
-    });
+    if (ids.length > 0) setItemsChain(ids, chainId);
   };
 
   const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => 
@@ -726,18 +723,22 @@ export default function App() {
       await playlistApi.setItemMode(item.id, mode);
     });
 
-  const playPlaylist = async (id: number, mode: PlayMode = "order") => {
+  /**
+   * 再生の順番を作って鳴らす。鳴らすファイルがなければ、そのことを出す。
+   * name は再生の欄に出す名前、sourceId は再生しているプレイリスト（詳細画面で再生中の項目を示すのに使う）
+   */
+  const startQueue = async (name: string, load: () => Promise<PlayEntry[]>, sourceId: number | null, empty: string) => {
     try {
-      const queue = await playlistApi.expand(id, mode);
-      if (queue.length === 0) {
-        showInfo(`「${playlistName(id)}」には再生するファイルがありません`);
-        return;
-      }
-      audio.playQueue(playlistName(id), queue, 0, id);
+      const queue = await load();
+      if (queue.length === 0) showInfo(empty);
+      else audio.playQueue(name, queue, 0, sourceId);
     } catch (e) {
       showError(e);
     }
   };
+
+  const playPlaylist = (id: number, mode: PlayMode = "order") =>
+    startQueue(playlistName(id), () => playlistApi.expand(id, mode), id, `「${playlistName(id)}」には再生するファイルがありません`);
 
   /**
    * 表示中のファイルの一覧を、プレイリストのように再生する（試聴）。見つからないファイルは除く。
@@ -766,18 +767,13 @@ export default function App() {
     else playList("order", file);
   };
 
-  const playPlaylistItem = async (item: PlaylistItem) => {
-    try {
-      const queue = await playlistApi.expandItem(item.id);
-      if (queue.length === 0) {
-        showInfo("再生するファイルがありません");
-        return;
-      }
-      audio.playQueue(playlistDetail?.name ?? "", queue, 0, playlistDetail?.id ?? null);
-    } catch (e) {
-      showError(e);
-    }
-  };
+  const playPlaylistItem = (item: PlaylistItem) =>
+    startQueue(
+      playlistDetail?.name ?? "",
+      () => playlistApi.expandItem(item.id),
+      playlistDetail?.id ?? null,
+      "再生するファイルがありません",
+    );
 
   // 選んでいる絞り込みの条件（検索の欄の下にチップで出す。押すとその条件だけ外す）
   const filterChips = fileFilter.chips({ folders, tags, credits: creditsOf });
@@ -878,7 +874,7 @@ export default function App() {
             }
             onFocusItem={(item) => setFocusedItemId(item.id)}
             chains={chains}
-            onSetChain={setPlaylistItemChain}
+            onSetChain={(items, chainId) => setItemsChain(items.map((i) => i.id), chainId)}
             onOpenEffects={openEffects}
             onRemoveItems={removePlaylistItems}
             onDropItems={dropItems}
