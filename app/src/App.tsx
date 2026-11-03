@@ -1056,6 +1056,12 @@ export default function App() {
           />
         ) : (
           <>
+            {/* プレイリストの詳細画面の名前と同じ位置に、ファイルの一覧であることを出す */}
+            <div className="toolbar editor-head library-head">
+              <h2 className="editor-title" data-testid="list-title">
+                ライブラリ
+              </h2>
+            </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (
               <div className="toolbar">

@@ -22,6 +22,8 @@ await step("T01", "フォルダを登録すると、スキャンして5つの形
   expect(s.includes("5件"), `status: ${s}`);
   expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
   expect((await row("サブフォルダ/チャイム.m4a").count()) === 1, "サブフォルダのm4aがない");
+  // ファイルの一覧の上には、プレイリストの詳細画面の名前と同じ位置に「ライブラリ」と出す
+  expect((await page.getByTestId("list-title").innerText()) === "ライブラリ", await page.getByTestId("list-title").innerText());
   // 一覧の行にはファイル名だけを出し、マウスを乗せると相対パスを出す
   const name = row("サブフォルダ/チャイム.m4a").locator(".file-name");
   expect((await name.innerText()) === "チャイム.m4a", await name.innerText());
@@ -320,7 +322,7 @@ await step("T25", "左の欄の並び（ライブラリ・タグ・プレイリ�
   expect((await page.locator(".status-bar").getByTestId("file-count").count()) === 1, "件数が下の行にない");
   expect((await page.locator(".status-bar").getByTestId("checked-count").innerText()).startsWith("チェック 0件"), "チェックの件数が下の行にない");
   // チェックしていないときは、中央のツールバー（チェックの操作）を出さない。一覧の見出しに「ファイル」の文字は出さない
-  expect((await page.locator("main .toolbar").count()) === 0, "中央のツールバーが出ている");
+  expect((await page.locator("main .toolbar:not(.library-head)").count()) === 0, "中央のツールバーが出ている");
   expect((await page.locator(".list-head").count()) === 0, "一覧の見出しの行が残っている");
   // フォルダを選ぶと、条件のチップが出る
   await ui.filtered(() => page.getByTestId("folder").first().click());

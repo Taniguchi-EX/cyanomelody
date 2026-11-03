@@ -943,6 +943,11 @@ button.filter-chip:hover .chip-x {
   text-overflow: ellipsis;
 }
 
+/* ファイルの一覧の見出し（「ライブラリ」）。詳細画面の上の行と同じ高さにする（戻るボタンの高さに合わせる） */
+.library-head .editor-title {
+  line-height: 26px;
+}
+
 .editor-head .name-input {
   margin-bottom: 0;
 }

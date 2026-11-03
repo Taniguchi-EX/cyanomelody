@@ -17,7 +17,7 @@ const filterText = async (text) => {
   await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill(text));
 };
 const checkedOnly = () => page.getByLabel("チェックしたファイルだけ表示");
-const checkToolbar = () => page.locator("main .toolbar");
+const checkToolbar = () => page.locator("main .toolbar:not(.library-head)");
 async function scan() {
   await page.getByRole("button", { name: "スキャン", exact: true }).click();
   await waitIdle();
