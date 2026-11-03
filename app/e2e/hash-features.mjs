@@ -203,7 +203,9 @@ await step("H13", "「指定フォルダから自動で探す」：見つから�
 await step("H15", "再生の欄の曲の名前は、曲名がなければ拡張子を除いたファイル名（パスは出さない）", async () => {
   await search("no_title");
   await row("no_title.wav").getByRole("button", { name: "再生", exact: true }).click();
-  await page.waitForTimeout(500);
+  await page
+    .waitForFunction(() => document.querySelector("[data-testid=player-file]")?.textContent === "no_title", null, { timeout: 3000 })
+    .catch(() => {});
   expect((await page.getByTestId("player-file").innerText()) === "no_title", await page.getByTestId("player-file").innerText());
   expect((await page.getByTestId("player-file-name").innerText()) === "no_title.wav", "2行目にファイル名が出ない");
   await row("no_title.wav").locator(".file-name").click();

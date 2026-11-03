@@ -225,12 +225,11 @@ await step("C18", "フォームを「やめる」・Escで閉じると何も変�
   await openEdit("license", "サイトB規約");
   await page.getByLabel("名前", { exact: true }).fill("変えない");
   await page.getByLabel("名前", { exact: true }).press("Escape");
-  await page.waitForTimeout(200);
+  await form().waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
   expect((await form().count()) === 0, "Escで閉じない");
   expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
   await ui.setConfirmReply(false);
-  await ui.rowAction(leftItem("license", "サイトB規約"), "サイトB規約を削除");
-  await page.waitForTimeout(300);
+  await ui.confirmed(() => ui.rowAction(leftItem("license", "サイトB規約"), "サイトB規約を削除"));
   await ui.setConfirmReply(true);
   expect((await ui.lastConfirm()).includes("ライセンス「サイトB規約」を削除しますか"), await ui.lastConfirm());
   expect((await leftItem("license", "サイトB規約").count()) === 1, "キャンセルしたのに削除した");

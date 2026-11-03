@@ -33,7 +33,7 @@ async function save() {
 }
 async function close() {
   await dialog().getByRole("button", { name: "閉じる" }).click();
-  await page.waitForTimeout(300);
+  await dialog().waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
 }
 
 await step("E01", "準備：フォルダを登録し、プレイリストにファイルを2つ入れて開く。fx のプルダウンは「fx なし」で、最後に「新しいfxを作る」がある", async () => {
@@ -47,7 +47,7 @@ await step("E01", "準備：フォルダを登録し、プレイリストにフ�
   await ui.dragChecked(page.locator('[data-testid=playlist][data-playlist-name="シナリオ"]'));
   await ui.clearChecks();
   await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
-  await page.waitForTimeout(300);
+  await fx("chime.wav").waitFor({ timeout: 3000 });
   const options = await fx("chime.wav").locator("option").allInnerTexts();
   expect(options.join(",") === "fx なし,新しいfxを作る", options.join(","));
   // 左の欄に「エフェクト」ボタンはない
@@ -98,8 +98,7 @@ await step("E04", "「このfxを編集」でそのエフェクトセットを�
   expect((await chainItem("強めの残響").getAttribute("class")).includes("active"), "そのエフェクトセットが選ばれていない");
   await addEffect("fadeIn");
   await ui.setConfirmReply(false);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(300);
+  await ui.confirmed(() => page.keyboard.press("Escape"));
   expect((await dialog().count()) === 1, "閉じた");
   expect((await ui.lastConfirm()).includes("保存していない変更"), await ui.lastConfirm());
   await ui.setConfirmReply(true);

@@ -32,14 +32,14 @@ async function createPlaylist(name) {
 }
 async function open(name) {
   await playlistItem(name).locator(".tag-name").click();
-  await page.waitForTimeout(400);
+  await page.getByTestId("playlist-title").filter({ hasText: name }).waitFor({ timeout: 3000 });
 }
 /** 編集画面を開いていれば、ファイルの一覧に戻る */
 async function back() {
   const b = page.getByRole("button", { name: "ファイルの一覧に戻る" });
   if ((await b.count()) === 0) return;
   await b.click();
-  await page.waitForTimeout(300);
+  await page.getByTestId("list-title").waitFor({ timeout: 3000 });
 }
 const position = () => page.getByTestId("player-position").innerText();
 
@@ -392,19 +392,18 @@ await step("P22", "編集画面で項目の種類の記号を押すと、その�
 await step("P23", "右の欄に、そのファイルを入れているプレイリストが条件のチップと同じ形で出る。名前を押すと開き、「✕」でそのプレイリストから外れる", async () => {
   await back();
   await row("chime.flac").click();
-  await page.waitForTimeout(300);
+  await page.getByTestId("used-in").waitFor({ timeout: 3000 });
   const usedIn = page.getByTestId("used-in");
   const names = await usedIn.locator("[data-playlist-name]").evaluateAll((els) => els.map((e) => e.dataset.playlistName));
   expect(names.includes("ドラッグ"), names.join(","));
   await shot("P23_入っているプレイリスト");
   await usedIn.getByRole("button", { name: "ドラッグを開く" }).click();
-  await page.waitForTimeout(300);
+  await page.getByTestId("playlist-title").filter({ hasText: "ドラッグ" }).waitFor({ timeout: 3000 });
   const name = await page.getByTestId("playlist-title").innerText();
   expect(name === "ドラッグ", name);
   const before = (await items()).length;
   await back();
   await row("chime.flac").click();
-  await page.waitForTimeout(300);
   await page.getByTestId("used-in").getByRole("button", { name: "ドラッグから外す" }).click();
   await waitIdle();
   expect((await status()).includes("プレイリスト「ドラッグ」から外しました"), await status());
@@ -484,7 +483,7 @@ await step("P28", "再生の欄の音量のバーで音量を変えられる（�
   await ui.reload();
   expect((await page.getByLabel("音量").inputValue()) === "60", "再読み込みで戻った");
   await row("chime.wav").getByRole("button", { name: "再生", exact: true }).click();
-  await page.waitForTimeout(300);
+  await page.waitForFunction(() => !document.querySelector("audio").paused, null, { timeout: 3000 });
   const pv = await page.evaluate(() => document.querySelector("audio").volume);
   expect(Math.abs(pv - 0.6) < 0.001, `試聴の音量: ${pv}`);
   await row("chime.wav").getByRole("button", { name: "停止", exact: true }).click();
@@ -494,7 +493,6 @@ await step("P29", "「その他」の「直近で再生したもの」：試聴�
   await back();
   for (const rel of ["chime.ogg", "chime.flac"]) {
     await row(rel).getByRole("button", { name: "再生", exact: true }).click();
-    await page.waitForTimeout(300);
     await row(rel).getByRole("button", { name: "停止", exact: true }).click();
   }
   await waitIdle();
@@ -519,7 +517,11 @@ await step("P30", "一覧の再生：行の「▶」でその行から表示中�
   const position = () => page.getByTestId("player-position").innerText();
   expect((await position()) === `2/${rels.length}`, await position());
   await page.getByRole("button", { name: "次へ" }).click();
-  await page.waitForTimeout(300);
+  await page
+    .waitForFunction((t) => document.querySelector("[data-testid=player-position]")?.textContent === t, `3/${rels.length}`, {
+      timeout: 3000,
+    })
+    .catch(() => {});
   expect((await position()) === `3/${rels.length}`, await position());
   // 鳴らしている行が移る
   expect((await row(rels[2]).getByRole("button", { name: "停止", exact: true }).count()) === 1, "鳴らしている行が移らない");
@@ -542,7 +544,11 @@ await step("P31", "プレイリストの再生中は、再生中の曲を出し�
     page.getByTestId("playlist-item").evaluateAll((rows) => rows.findIndex((r) => r.classList.contains("playing")));
   expect((await playing()) === 0, `1曲目: ${await playing()}`);
   await page.getByRole("button", { name: "次へ" }).click();
-  await page.waitForTimeout(300);
+  await page
+    .waitForFunction(() => document.querySelectorAll("[data-testid=playlist-item]")[1]?.classList.contains("playing"), null, {
+      timeout: 3000,
+    })
+    .catch(() => {});
   expect((await playing()) === 1, `2曲目: ${await playing()}`);
   await shot("P31_再生中の項目");
   await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();

@@ -45,7 +45,10 @@ export async function connect(shotDir) {
     seenRuns = 0;
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
-    await page.waitForTimeout(500);
+    // 一覧を読み終わる（一覧の版が1以上になる）のを待つ
+    await page.waitForFunction(() => Number(document.querySelector("[data-testid=counts]")?.dataset.listVersion) > 0, null, {
+      timeout: 10000,
+    });
     await stubConfirm();
   };
   await reload();
@@ -71,6 +74,15 @@ export async function connect(shotDir) {
     setConfirmReply: (reply) => page.evaluate((r) => (window.__confirmReply = r), reply),
     /** フォルダ・ファイルを選ぶダイアログで選ぶパス（null ならキャンセル） */
     setDialogReply: (p) => page.evaluate((r) => (window.__dialogReply = r), p),
+    /** action を行い、確認ダイアログが出る（答えは setConfirmReply のとおり）のを待つ */
+    async confirmed(action) {
+      const n = await page.evaluate(() => window.__confirms.length);
+      await action();
+      await page.waitForFunction((n) => window.__confirms.length > n, n, { timeout: 5000 });
+    },
+    /** 下の行（処理の結果）に text が出るのを待つ */
+    waitStatus: (text, timeout = 5000) =>
+      page.waitForFunction((t) => document.querySelector("[data-testid=status]")?.textContent?.includes(t), text, { timeout }),
     /** 最後に出た確認ダイアログのメッセージ */
     lastConfirm: () => page.evaluate(() => window.__confirms.at(-1) ?? ""),
     shot: (name) => page.screenshot({ path: path.join(shotDir, `${name}.png`) }),
@@ -121,8 +133,7 @@ export async function connect(shotDir) {
       // 登録したフォルダだけの表示になるので、ほかのテストのために外す
       const active = page.locator("[data-testid=folder].active .folder-name");
       if (await active.count()) {
-        await active.click();
-        await page.waitForTimeout(400);
+        await ui.filtered(() => active.click());
       }
     },
     /** 登録だけして、絞り込みは外さない */
@@ -153,8 +164,14 @@ export async function connect(shotDir) {
     },
     async clearChecks() {
       const b = page.getByRole("button", { name: "チェックをすべて外す" });
-      if ((await b.count()) && (await b.isEnabled())) await b.click();
-      await page.waitForTimeout(200);
+      if (!((await b.count()) && (await b.isEnabled()))) return;
+      await b.click();
+      // チェックの件数が0件になる（表示が消える）のを待つ
+      await page.waitForFunction(
+        () => !document.querySelector("[data-testid=checked-count]")?.textContent?.match(/チェック [1-9]/),
+        null,
+        { timeout: 3000 },
+      );
     },
     /** チェックしている行（表示中の最初の1行）をつかんで target に落とす。チェックしたファイルすべてが対象になる */
     async dragChecked(target) {

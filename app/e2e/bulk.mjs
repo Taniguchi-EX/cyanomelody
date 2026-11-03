@@ -155,8 +155,7 @@ await step("B12", "チェックしたファイルのタグを、チェックの�
   await shot("B12_チェックしたファイルのタグ");
   // キャンセルすると外れない
   await ui.setConfirmReply(false);
-  await chip("雨").click();
-  await page.waitForTimeout(300);
+  await ui.confirmed(() => chip("雨").click());
   expect((await ui.lastConfirm()).includes("チェックした2件から、タグ「雨」を外しますか"), await ui.lastConfirm());
   expect((await chip("雨").count()) === 1, "キャンセルしたのに外れた");
   await ui.setConfirmReply(true);
@@ -184,7 +183,9 @@ await step("B11", "チェックしたファイルをライブラリから外す�
     await page.getByTestId("detail-panel").getByRole("button", { name: "ライブラリから外す" }).click();
     await waitIdle();
     expect((await row("chime.ogg").count()) === 0, "外れていない");
-    await page.waitForTimeout(500);
+    await page.waitForFunction(() => document.querySelector("[data-testid=checked-count]")?.textContent?.startsWith("チェック 2件"), null, {
+      timeout: 3000,
+    });
     const c = await ui.checkedCount();
     expect(c === "チェック 2件（表示中 2件）", c);
   } finally {

@@ -89,7 +89,7 @@ await step("X02", "書き出すと、階層がフォルダになり、別名と�
 
 await step("X05", "書き出し先のフォルダがないときはエラーを出して始めない。書き出し先の欄には、前に書き出せたフォルダが入っている（書き出せなかったフォルダは覚えない）", async () => {
   await exportTo(path.join(out, "ない"));
-  await page.waitForTimeout(500);
+  await ui.waitStatus("書き出し先のフォルダがありません").catch(() => {});
   expect((await status()).includes("書き出し先のフォルダがありません"), await status());
   expect(!fs.existsSync(path.join(out, "ない")), "フォルダを作った");
   // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）

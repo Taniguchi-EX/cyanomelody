@@ -110,9 +110,8 @@ await step("A08", "「🗑」でタグを削除すると、ファイルから外
   expect((await page.locator(".chip").count()) === 0, "タグが残っている");
   // 選んでいないタグの「🗑」を押してキャンセルしても、そのタグで絞り込まない
   await ui.setConfirmReply(false);
-  await rowAction(tagItem("未使用タグ"), "未使用タグを削除");
+  await ui.confirmed(() => rowAction(tagItem("未使用タグ"), "未使用タグを削除"));
   await ui.setConfirmReply(true);
-  await page.waitForTimeout(300);
   expect((await page.getByTestId("selected-count").count()) === 0, "🗑を押して絞り込んだ");
   expect((await tagNames()).join(",") === "未使用タグ", "キャンセルしたのに削除した");
 });
@@ -160,7 +159,7 @@ await step("G03", "ドラッグ中は落とす位置が表示される（前は�
   expect((await tagItem("雨").getAttribute("class")).includes("drop-child"), "子の表示がない");
   await page.mouse.move(640, 400, { steps: 4 });
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await ui.waitIdle();
   expect((await tree()) === AFTER_G02, await tree());
 });
 
@@ -200,8 +199,7 @@ await step("G09", "たたむと子が隠れ、再読み込み後もたたんだ�
 
 await step("G13", "子のあるタグを削除すると、子はその位置に繰り上がる（確認に書いてある）。確認でキャンセルすると削除しない", async () => {
   await ui.setConfirmReply(false);
-  await ui.rowAction(tagItem("雨"), "雨を削除");
-  await page.waitForTimeout(500);
+  await ui.confirmed(() => ui.rowAction(tagItem("雨"), "雨を削除"));
   expect((await ui.lastConfirm()).includes("タグ「雨」を削除しますか"), await ui.lastConfirm());
   expect((await tree()) === "環境音:0 雨:1 爆発:1 風:0 強風:1", `キャンセルで変わった: ${await tree()}`);
   await ui.setConfirmReply(true);
