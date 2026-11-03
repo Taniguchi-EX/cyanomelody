@@ -298,6 +298,12 @@ async fn move_tag(state: State<'_, AppState>, tag_id: i64, target: MoveTarget) -
     tags::move_tag(&mut state.conn(), tag_id, target)
 }
 
+/// チェックしたファイルのタグの内訳（タグと、付いているファイルの数）
+#[tauri::command]
+async fn checked_tag_counts(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Vec<files::NamedCount>> {
+    files::tag_counts(&state.conn(), &file_ids)
+}
+
 #[tauri::command]
 async fn existing_file_ids(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Vec<i64>> {
     files::existing_file_ids(&state.conn(), &file_ids)
@@ -654,6 +660,7 @@ pub fn run() {
             expand_playlist_item,
             playlists_with_file,
             existing_file_ids,
+            checked_tag_counts,
             link_missing_file,
             find_missing_in_folder,
             record_play,

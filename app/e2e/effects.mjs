@@ -21,14 +21,11 @@ async function openFrom(rel, label) {
   await fx(rel).selectOption({ label });
   await dialog().waitFor({ timeout: 3000 });
 }
-async function create(name) {
-  await page.getByLabel("新しいエフェクトセットの名前").fill(name);
-  await page.getByLabel("新しいエフェクトセットの名前").press("Enter");
-  await waitIdle();
-}
+const nameField = () => page.getByLabel("エフェクトセットの名前", { exact: true });
+const chainNames = () => page.getByTestId("effect-chain").evaluateAll((els) => els.map((e) => e.dataset.chainName));
 async function addEffect(kind) {
-  await page.getByLabel("加えるエフェクト").selectOption(kind);
-  await page.getByRole("button", { name: "加える", exact: true }).click();
+  await page.getByLabel("追加するエフェクト").selectOption(kind);
+  await page.getByRole("button", { name: "追加", exact: true }).click();
 }
 async function save() {
   await dialog().getByRole("button", { name: "保存" }).click();
@@ -39,7 +36,7 @@ async function close() {
   await page.waitForTimeout(300);
 }
 
-await step("E01", "準備：フォルダを登録し、プレイリストにファイルを2つ入れて開く。fx のプルダウンは「fx」で、最後に「新しいfxを作る」がある", async () => {
+await step("E01", "準備：フォルダを登録し、プレイリストにファイルを2つ入れて開く。fx のプルダウンは「fx なし」で、最後に「新しいfxを作る」がある", async () => {
   await addFolder(formats);
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("シナリオ");
@@ -52,18 +49,22 @@ await step("E01", "準備：フォルダを登録し、プレイリストにフ�
   await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
   await page.waitForTimeout(300);
   const options = await fx("chime.wav").locator("option").allInnerTexts();
-  expect(options.join(",") === "fx,新しいfxを作る", options.join(","));
+  expect(options.join(",") === "fx なし,新しいfxを作る", options.join(","));
   // 左の欄に「エフェクト」ボタンはない
   expect((await page.getByRole("button", { name: "エフェクトセットを管理" }).count()) === 0, "エフェクトのボタンが残っている");
 });
 
-await step("E02", "「新しいfxを作る」で管理画面が開く。作ったエフェクトセットは選ばれ、その項目に付く。エフェクトを加え・並べ替え・保存できる", async () => {
+await step("E02", "「新しいfxを作る」で、保存していない空のエフェクトセット（「新しいエフェクトセット」）が出る。保存すると一覧に加わって選ばれ、その項目に付く。エフェクトを追加・並べ替えできる", async () => {
   await openFrom("chime.wav", "新しいfxを作る");
-  await dialog().waitFor({ timeout: 3000 });
-  await create("強めの残響");
-  expect((await chainItem("強めの残響").getAttribute("class")).includes("active"), "作ったエフェクトセットが選ばれない");
+  // 保存するまでは一覧に加えない。名前は「新しいエフェクトセット」、中は空
+  expect((await nameField().inputValue()) === "新しいエフェクトセット", `名前: [${await nameField().inputValue()}]`);
+  expect((await chainNames()).length === 0, `一覧: [${(await chainNames()).join(",")}]`);
+  expect((await steps()) === "", `中: [${await steps()}]`);
+  // 「元に戻す」はない
+  expect((await dialog().getByRole("button", { name: "元に戻す" }).count()) === 0, "元に戻すが残っている");
+  await nameField().fill("強めの残響");
   // 「音量調整（自動）」は「ノーマライズ」と書く
-  const kinds = await page.getByLabel("加えるエフェクト").locator("option").allInnerTexts();
+  const kinds = await page.getByLabel("追加するエフェクト").locator("option").allInnerTexts();
   expect(kinds.includes("ノーマライズ") && !kinds.some((k) => k.includes("自動")), kinds.join(","));
   await addEffect("gain");
   await addEffect("reverb");
@@ -79,15 +80,16 @@ await step("E02", "「新しいfxを作る」で管理画面が開く。作っ�
   expect(right <= 10, `右に寄っていない: ${right}px`);
   await save();
   expect((await status()).includes("保存しました"), await status());
+  expect((await chainItem("強めの残響").getAttribute("class")).includes("active"), "作ったエフェクトセットが選ばれない");
   const title = await chainItem("強めの残響").getAttribute("title");
   expect(title === "リバーブ 1.5秒 50% → 音量調整 -6dB", title);
   await shot("E02_管理画面");
   await close();
-  // 作ったエフェクトセットは、開いた元の項目に付き、プルダウンに色が付く
+  // 作ったエフェクトセットは、開いた元の項目に付く。プルダウンの色は、付いていない項目と変わらない
   const chosen = await fx("chime.wav").evaluate((s) => s.selectedOptions[0].text);
   expect(chosen === "強めの残響", chosen);
-  expect((await fx("chime.wav").getAttribute("class")).includes("has-fx"), "色が付かない");
-  expect(!(await fx("chime.mp3").getAttribute("class")).includes("has-fx"), "付けていない項目に色が付く");
+  const bg = (rel) => fx(rel).evaluate((s) => getComputedStyle(s).backgroundColor + getComputedStyle(s).color);
+  expect((await bg("chime.wav")) === (await bg("chime.mp3")), `色が変わる: ${await bg("chime.wav")} / ${await bg("chime.mp3")}`);
 });
 
 await step("E04", "「このfxを編集」でそのエフェクトセットを選んで開く。保存していない変更があるときは、閉じる前に確かめる（キャンセルで残る）", async () => {
@@ -133,7 +135,7 @@ await step("E10", "チェックした項目の fx を変えると、チェック
   for (const rel of ["chime.mp3", "chime.wav"]) {
     await page.getByTestId("playlist-item").filter({ hasText: rel }).getByTestId("item-check").check();
   }
-  await fx("chime.wav").selectOption({ label: "fx" });
+  await fx("chime.wav").selectOption({ label: "fx なし" });
   await waitIdle();
   expect((await fx("chime.mp3").inputValue()) === "" && (await fx("chime.wav").inputValue()) === "", "まとめて外れない");
   await fx("chime.mp3").selectOption({ label: "強めの残響" });
@@ -158,7 +160,6 @@ await step("E08", "エフェクトセットを削除すると、付けていた�
 
 await step("E09", "試聴中に値を変えると、試聴を押し直さなくても鳴らし直す。保存していないときは保存が目立つ", async () => {
   await openFrom("chime.wav", "新しいfxを作る");
-  await create("調整");
   await addEffect("gain");
   const saveButton = dialog().getByRole("button", { name: "保存" });
   expect((await saveButton.getAttribute("class")).includes("primary"), "保存が目立たない");
@@ -173,6 +174,22 @@ await step("E09", "試聴中に値を変えると、試聴を押し直さなく�
   expect(await page.evaluate(() => document.querySelector("audio").paused), "止まらない");
   await save();
   expect(!((await saveButton.getAttribute("class")) ?? "").includes("primary"), "保存の後も目立つ");
+  // 名前を変えずに保存したので「新しいエフェクトセット」で一覧に加わる
+  expect((await chainNames()).join(",") === "新しいエフェクトセット", (await chainNames()).join(","));
+  await close();
+});
+
+await step("E11", "「新しいエフェクトセット」がすでにあるときは「新しいエフェクトセット(2)」になる。保存せずに閉じると確かめ、一覧には加わらない", async () => {
+  await openFrom("chime.mp3", "新しいfxを作る");
+  expect((await nameField().inputValue()) === "新しいエフェクトセット(2)", await nameField().inputValue());
+  await ui.setConfirmReply(true);
+  await close();
+  expect((await ui.lastConfirm()).includes("保存していない変更"), await ui.lastConfirm());
+  expect((await dialog().count()) === 0, "閉じない");
+  // 項目の fx は今のまま（付いていない）
+  expect((await fx("chime.mp3").inputValue()) === "", "閉じたのに付いた");
+  await openFrom("chime.wav", "このfxを編集");
+  expect((await chainNames()).join(",") === "新しいエフェクトセット", (await chainNames()).join(","));
   await close();
 });
 

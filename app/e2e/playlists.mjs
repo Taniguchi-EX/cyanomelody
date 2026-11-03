@@ -344,6 +344,21 @@ await step("P21", "シャッフル・1曲のボタンで、再生方法を選ん
     };
     const diff = Math.abs((await center(".play-main")) - (await center(".play-seek input")));
     expect(diff <= 2, `中央からずれている: ${diff}px`);
+    // 丸の中の記号は丸の中心に来る
+    const iconOff = await page.locator(".play-main").evaluate((b) => {
+      const o = b.getBoundingClientRect();
+      const i = b.querySelector("svg").getBoundingClientRect();
+      return Math.max(Math.abs(o.x + o.width / 2 - (i.x + i.width / 2)), Math.abs(o.y + o.height / 2 - (i.y + i.height / 2)));
+    });
+    expect(iconOff <= 1.5, `記号が丸の中心からずれている: ${iconOff}px`);
+    // 「■」（停止）の右端は、曲の長さの文字の右端とそろう
+    const rightGap = await page.evaluate(() => {
+      const stop = document.querySelector(".play-modes button:last-child").getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector("[data-testid=player-duration]"));
+      return Math.abs(stop.right - range.getBoundingClientRect().right);
+    });
+    expect(rightGap <= 2, `右端がそろっていない: ${rightGap}px`);
     await open("ドラッグ");
     await page.getByRole("button", { name: "順に再生" }).click();
     await ui.waitPlaying();

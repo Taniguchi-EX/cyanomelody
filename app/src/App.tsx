@@ -128,6 +128,8 @@ export default function App() {
     target: PreviewTarget | null;
     itemIds: number[];
     chainId: number | null;
+    /** 「新しいfxを作る」から開いた（保存していない新しいエフェクトセットを出す） */
+    startNew: boolean;
   } | null>(null);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
@@ -342,6 +344,29 @@ export default function App() {
       ok = true;
     });
     return ok;
+  };
+
+  // チェックしたファイルに付いているタグと件数（ファイルの一覧の、チェックの操作の行に出す）
+  const [checkedTags, setCheckedTags] = useState<{ id: number; name: string; count: number }[]>([]);
+  useEffect(() => {
+    if (checked.size === 0) return;
+    let alive = true;
+    api
+      .checkedTagCounts([...checked])
+      .then((list) => alive && setCheckedTags(list))
+      .catch(showError);
+    return () => {
+      alive = false;
+    };
+  }, [checked, dataVersion]);
+
+  /** チェックしたファイルすべてから、タグを外す（確認してから） */
+  const removeTagFromChecked = async (tag: { id: number; name: string; count: number }) => {
+    if (!(await confirmDialog(`チェックした${tag.count}件から、タグ「${tag.name}」を外しますか？`))) return;
+    run(async () => {
+      await api.removeTag(checks.ids(), tag.id);
+      showInfo(`${tag.count}件からタグ「${tag.name}」を外しました`);
+    });
   };
 
   const removeTag = (tagId: number) =>
@@ -819,7 +844,7 @@ export default function App() {
   const openEffects = async (item: PlaylistItem, chainId: number | null, itemIds: number[]) => {
     const first = (await playlistApi.itemFiles(item.id).catch(() => []))[0];
     const target = first ? { id: first.fileId, relPath: first.relPath, path: first.path } : null;
-    setEffectDialog({ target, itemIds, chainId });
+    setEffectDialog({ target, itemIds, chainId, startNew: chainId === null });
   };
 
   /** 管理画面で作ったエフェクトセットを、開いた元の項目に付ける */
@@ -1075,6 +1100,28 @@ export default function App() {
                   <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
                   チェックしたファイルだけ表示
                 </label>
+                {/* チェックしたファイルに付いているタグ。名前・件数・✕（押すとチェックしたファイルすべてから外す） */}
+                {checked.size > 0 && checkedTags.length > 0 && (
+                  <div className="filter-chips checked-tags" data-testid="checked-tags">
+                    {checkedTags.map((t) => (
+                      <button
+                        key={t.id}
+                        className="chip filter-chip"
+                        onClick={() => removeTagFromChecked(t)}
+                        disabled={busy}
+                        title="押すと、チェックしたファイルすべてから外す"
+                        aria-label={`${t.name}をチェックしたファイルから外す`}
+                        data-testid="checked-tag"
+                        data-tag-name={t.name}
+                      >
+                        <span className="chip-icon">🏷</span>
+                        {t.name}
+                        <span className="chip-count">{t.count}</span>
+                        <span className="chip-x">✕</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <FileList
@@ -1221,6 +1268,7 @@ export default function App() {
           chains={chains}
           busy={busy}
           initialChainId={effectDialog.chainId}
+          startNew={effectDialog.startNew}
           onCreated={attachCreatedChain}
           previewFileName={effectDialog.target?.relPath ?? null}
           onCreate={createChain}

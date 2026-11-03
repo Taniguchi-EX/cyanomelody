@@ -134,6 +134,46 @@ await step("B10", "チェックしていない行をつかんだときは、そ�
   expect((await ui.checkedCount()).startsWith("チェック 2件"), await ui.checkedCount());
 });
 
+await step("B12", "チェックしたファイルのタグを、チェックの操作の行に「名前 件数 ✕」で出す（件数は色を変える）。✕で、確かめてからチェックしたファイルすべてから外す", async () => {
+  await ui.check("chime.mp3");
+  const chips = page.getByTestId("checked-tags");
+  const chip = (name) => chips.locator(`[data-tag-name="${name}"]`);
+  // チェックを変えると読み直す（mp3 をチェックしたので、雨が2件になるのを待つ）
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid=checked-tag][data-tag-name="雨"] .chip-count')?.textContent === "2",
+    null,
+    { timeout: 3000 },
+  );
+  // チェックの操作の行（「全てチェック」と同じ行）の中に出る
+  expect((await checkToolbar().getByTestId("checked-tags").count()) === 1, "チェックの操作の行にない");
+  // wav・mp3 に雨、flac に風
+  const count = (name) => chip(name).locator(".chip-count").innerText();
+  expect((await count("雨")) === "2", `雨: ${await count("雨")}`);
+  expect((await count("風")) === "1", `風: ${await count("風")}`);
+  const colors = await chip("雨").evaluate((b) => [getComputedStyle(b).color, getComputedStyle(b.querySelector(".chip-count")).color]);
+  expect(colors[0] !== colors[1], `件数の色が同じ: ${colors.join(" / ")}`);
+  await shot("B12_チェックしたファイルのタグ");
+  // キャンセルすると外れない
+  await ui.setConfirmReply(false);
+  await chip("雨").click();
+  await page.waitForTimeout(300);
+  expect((await ui.lastConfirm()).includes("チェックした2件から、タグ「雨」を外しますか"), await ui.lastConfirm());
+  expect((await chip("雨").count()) === 1, "キャンセルしたのに外れた");
+  await ui.setConfirmReply(true);
+  await chip("雨").click();
+  await waitIdle();
+  expect((await status()).includes("2件からタグ「雨」を外しました"), await status());
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=checked-tag]").length === 1, null, { timeout: 3000 });
+  expect(!(await row("chime.wav").locator(".chip").allInnerTexts()).includes("雨"), "wavから外れていない");
+  expect(!(await row("chime.mp3").locator(".chip").allInnerTexts()).includes("雨"), "mp3から外れていない");
+  // チェックしていないファイルのタグは出さない（チェックを外すとその分減る）
+  await row("chime.flac").getByTestId("file-check").uncheck();
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=checked-tag]").length === 0, null, { timeout: 3000 });
+  await row("chime.flac").getByTestId("file-check").check();
+  await row("chime.mp3").getByTestId("file-check").uncheck();
+  expect((await ui.checkedCount()).startsWith("チェック 2件"), await ui.checkedCount());
+});
+
 await step("B11", "チェックしたファイルをライブラリから外すと、チェックからも外れる", async () => {
   fs.renameSync(path.join(formats, "chime.ogg"), path.join(dataDir, "chime.ogg.moved"));
   try {

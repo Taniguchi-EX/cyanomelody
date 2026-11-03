@@ -54,11 +54,11 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   // 子のプレイリストの項目の fx のプルダウンで「新しいfxを作る」を選び、エフェクトセットを作る（作るとその項目に付く）
   await openPlaylist("TRPG: 第1話");
   await page.getByLabel("シーン1のエフェクト").selectOption({ label: "新しいfxを作る" });
-  await page.getByLabel("新しいエフェクトセットの名前").fill("小さく");
-  await page.getByLabel("新しいエフェクトセットの名前").press("Enter");
-  await waitIdle();
-  await page.getByLabel("加えるエフェクト").selectOption("gain");
-  await page.getByRole("button", { name: "加える", exact: true }).click();
+  // 保存していない新しいエフェクトセットが出るので、名前を変えて保存する
+  await page.getByRole("dialog").waitFor({ timeout: 3000 });
+  await page.getByLabel("エフェクトセットの名前", { exact: true }).fill("小さく");
+  await page.getByLabel("追加するエフェクト").selectOption("gain");
+  await page.getByRole("button", { name: "追加", exact: true }).click();
   await page.getByLabel("1番目の増減").fill("-6");
   await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
   await waitIdle();

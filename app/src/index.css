@@ -348,8 +348,24 @@ h2:first-child {
   height: 34px;
   border-radius: 50%;
   padding: 0;
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+
+/* シャッフル・ランダム・停止は右端に寄せ、下の行の曲の長さの右端とそろえる */
+.play-modes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.play-modes button.icon:last-child {
+  padding-right: 0;
+}
+
+
 
 .play-seek {
   display: flex;
@@ -367,6 +383,11 @@ h2:first-child {
   font-variant-numeric: tabular-nums;
   min-width: 3em;
   text-align: center;
+}
+
+/* 曲の長さは右に寄せ、上の行の「■」の右端とそろえる */
+.play-seek .sub.play-duration {
+  text-align: right;
 }
 
 /* ===== 左の欄（たためる欄、木、絞り込みの一覧） ===== */
@@ -630,6 +651,17 @@ span.filter-chip {
 
 .filter-chip .chip-icon {
   margin-right: 3px;
+}
+
+/* チェックの操作の行の、チェックしたファイルのタグ。件数は名前と色を変える */
+.checked-tags {
+  padding: 0;
+}
+
+.filter-chip .chip-count {
+  margin-left: 4px;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .filter-chip .chip-x {
@@ -1124,13 +1156,6 @@ button.primary {
 
 .item-chain {
   max-width: 150px;
-}
-
-/* エフェクトセットが付いている項目の fx のプルダウン */
-.item-chain.has-fx {
-  background: var(--selected);
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 /* 詳細画面のチェックの操作の行 */

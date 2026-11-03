@@ -289,14 +289,14 @@ export function PlaylistEditor({
               )}
               {/* エフェクトセットが付いている行は色を付ける。最後の選び肢で管理画面を開く */}
               <select
-                className={"item-chain" + (item.effectChain ? " has-fx" : "")}
+                className="item-chain"
                 value={item.effectChain?.id ?? ""}
                 onChange={(e) => changeChain(item, e.target.value)}
                 disabled={busy}
                 aria-label={`${itemContent(item)}のエフェクト`}
                 title="この項目にかけるエフェクトセット"
               >
-                <option value="">fx</option>
+                <option value="">fx なし</option>
                 {chains.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}

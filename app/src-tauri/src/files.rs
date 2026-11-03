@@ -72,6 +72,30 @@ pub fn existing_file_ids(conn: &Connection, file_ids: &[i64]) -> Result<Vec<i64>
         .collect::<rusqlite::Result<_>>()?)
 }
 
+/// 指定したファイルに付いているタグと、そのタグが付いたファイルの数（タグの一覧の順）。
+/// チェックしたファイルの、タグの内訳に使う
+pub fn tag_counts(conn: &Connection, file_ids: &[i64]) -> Result<Vec<NamedCount>> {
+    let mut items: Vec<NamedCount> = conn
+        .prepare(
+            "SELECT t.id, t.name, count(*) FROM file_tags ft JOIN tags t ON t.id = ft.tag_id
+             WHERE ft.file_id IN (SELECT value FROM json_each(?1)) GROUP BY t.id",
+        )?
+        .query_map([ids_json(file_ids)], |r| Ok(NamedCount { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let rank = tag_rank(conn)?;
+    items.sort_by_key(|c| rank.get(&c.id).copied().unwrap_or(usize::MAX));
+    Ok(items)
+}
+
+/// 名前の付いた項目と、その数
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedCount {
+    pub id: i64,
+    pub name: String,
+    pub count: i64,
+}
+
 /// 絞り込みの条件を、audio_files（別名 a）に対する WHERE 句の条件にする。
 /// 戻り値の文字列は「 AND ...」の並び（条件がなければ空）
 pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Result<(String, Vec<Value>)> {
@@ -388,7 +412,7 @@ mod tests {
 
     #[test]
     fn filter_by_file_ids() {
-        let (_dir, conn) = setup();
+        let (_dir, mut conn) = setup();
         let a = id_of(&conn, "a.wav");
         let c = id_of(&conn, "sub/c_100%.flac");
         let f = FileFilter { file_ids: Some(vec![c, a, 9999]), ..Default::default() };
@@ -403,6 +427,13 @@ mod tests {
         let f = FileFilter { file_ids: Some(many.clone()), ..Default::default() };
         assert_eq!(list_files(&conn, &f).unwrap().len(), 3);
         assert_eq!(existing_file_ids(&conn, &many).unwrap().len(), 3);
+        // タグの内訳：付いているタグと、付いているファイルの数（タグの一覧の順）
+        let x = add_tag(&mut conn, &[a, c], "x").unwrap();
+        let y = add_tag(&mut conn, &[c], "y").unwrap();
+        move_tag(&mut conn, y, MoveTarget::Before(x)).unwrap();
+        let counts: Vec<(String, i64)> = tag_counts(&conn, &[a, c, 9999]).unwrap().into_iter().map(|t| (t.name, t.count)).collect();
+        assert_eq!(counts, vec![("y".to_string(), 1), ("x".to_string(), 2)]);
+        assert!(tag_counts(&conn, &[]).unwrap().is_empty());
         // ないidは除く
         assert_eq!(existing_file_ids(&conn, &[a, 9999]).unwrap(), vec![a]);
     }

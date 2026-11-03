@@ -15,6 +15,8 @@ type Props = {
   initialChainId?: number | null;
   /** この画面でエフェクトセットを作ったとき（開いた元の項目に設定するのに使う） */
   onCreated?: (id: number) => void;
+  /** 開いたとき、まだ保存していない新しいエフェクトセットを出す（保存するまで一覧には加えない） */
+  startNew?: boolean;
   onRename: (chain: EffectChain, name: string) => Promise<boolean>;
   onDelete: (chain: EffectChain) => void;
   onSave: (chain: EffectChain, effects: Effect[]) => Promise<boolean>;
@@ -24,6 +26,19 @@ type Props = {
   onStopPreview: () => void;
   onClose: () => void;
 };
+
+/** まだ保存していない新しいエフェクトセットの id（画面の中だけで使う） */
+const NEW_ID = -1;
+const NEW_NAME = "新しいエフェクトセット";
+
+/** 今ある名前と重ならない、新しいエフェクトセットの名前（「新しいエフェクトセット」「新しいエフェクトセット(2)」…） */
+function newChainName(chains: EffectChain[]) {
+  const names = new Set(chains.map((c) => c.name));
+  if (!names.has(NEW_NAME)) return NEW_NAME;
+  let n = 2;
+  while (names.has(`${NEW_NAME}(${n})`)) n++;
+  return `${NEW_NAME}(${n})`;
+}
 
 /** 試聴中に値を変えてから、鳴らし直すまでの待ち（ms）。入力の途中で何度も作り直さない */
 const REPREVIEW_DELAY = 500;
@@ -43,15 +58,23 @@ export function EffectManager({
   onClose,
   initialChainId = null,
   onCreated,
+  startNew = false,
 }: Props) {
   const [newName, setNewName] = useState("");
-  const initial = chains.find((c) => c.id === initialChainId) ?? chains[0] ?? null;
+  const initial = startNew
+    ? { id: NEW_ID, name: newChainName(chains) }
+    : (chains.find((c) => c.id === initialChainId) ?? chains[0] ?? null);
   const [selectedId, setSelectedId] = useState<number | null>(initial?.id ?? null);
-  const selected = chains.find((c) => c.id === selectedId) ?? null;
+  // まだ保存していない新しいエフェクトセットを出しているか
+  const isNew = selectedId === NEW_ID;
+  const selected: EffectChain | null = isNew
+    ? { id: NEW_ID, name: "", effects: [], itemCount: 0 }
+    : (chains.find((c) => c.id === selectedId) ?? null);
   // 編集中のエフェクトの並び（「保存」で保存する）。選んだエフェクトセットが変わったら読み直す
   const [draft, setDraft] = useState<{ chainId: number; effects: Effect[] } | null>(null);
   const effects = draft && draft.chainId === selectedId ? draft.effects : (selected?.effects ?? []);
-  const dirty = draft !== null && draft.chainId === selectedId;
+  // 保存していない新しいエフェクトセットは、中が空でも保存していない変更として扱う
+  const dirty = isNew || (draft !== null && draft.chainId === selectedId);
   const [name, setName] = useState(initial?.name ?? "");
   const [addKind, setAddKind] = useState<EffectKind>("gain");
 
@@ -89,6 +112,23 @@ export function EffectManager({
   };
 
   const edit = (next: Effect[]) => selected && setDraft({ chainId: selected.id, effects: next });
+
+  /** 保存する。新しいエフェクトセットは、ここで作って一覧に加え、開いた元の項目に付ける */
+  const save = async () => {
+    if (!selected) return;
+    if (!isNew) {
+      if (await onSave(selected, effects)) setDraft(null);
+      return;
+    }
+    const id = await onCreate(name);
+    if (id === null) return;
+    const created = { id, name: name.trim(), effects: [], itemCount: 0 };
+    if (effects.length > 0 && !(await onSave(created, effects))) return;
+    onCreated?.(id);
+    setDraft(null);
+    setSelectedId(id);
+    setName(created.name);
+  };
 
   const setParam = (index: number, key: string, value: number | string) =>
     edit(effects.map((e, i) => (i === index ? ({ ...e, [key]: value } as Effect) : e)));
@@ -164,15 +204,20 @@ export function EffectManager({
                     onChange={(e) => setName(e.target.value)}
                     aria-label="エフェクトセットの名前"
                   />
-                  <button
-                    onClick={() => onRename(selected, name)}
-                    disabled={busy || !name.trim() || name.trim() === selected.name}
-                  >
-                    名前を変える
-                  </button>
-                  <button onClick={() => onDelete(selected)} disabled={busy}>
-                    削除
-                  </button>
+                  {/* 保存していない新しいエフェクトセットは、名前も「保存」で決める */}
+                  {!isNew && (
+                    <>
+                      <button
+                        onClick={() => onRename(selected, name)}
+                        disabled={busy || !name.trim() || name.trim() === selected.name}
+                      >
+                        名前を変える
+                      </button>
+                      <button onClick={() => onDelete(selected)} disabled={busy}>
+                        削除
+                      </button>
+                    </>
+                  )}
                 </div>
                 <h2>中のエフェクト</h2>
                 {effects.length === 0 && <div className="sub">エフェクトはまだありません</div>}
@@ -241,7 +286,7 @@ export function EffectManager({
                   <select
                     value={addKind}
                     onChange={(e) => setAddKind(e.target.value as EffectKind)}
-                    aria-label="加えるエフェクト"
+                    aria-label="追加するエフェクト"
                   >
                     {EFFECT_DEFS.map((d) => (
                       <option key={d.kind} value={d.kind}>
@@ -249,7 +294,7 @@ export function EffectManager({
                       </option>
                     ))}
                   </select>
-                  <button onClick={() => edit([...effects, { ...effectDef(addKind).defaults }])}>加える</button>
+                  <button onClick={() => edit([...effects, { ...effectDef(addKind).defaults }])}>追加</button>
                 </div>
                 <div className="row effect-save">
                   {/* 右の欄のファイルにかけて鳴らす。試聴中に値を変えると、自動で鳴らし直す */}
@@ -267,14 +312,9 @@ export function EffectManager({
                     {previewing ? "■" : "▶"} {previewFileName ? baseName(previewFileName) : "試聴"}
                   </button>
                   <span style={{ flex: 1 }} />
-                  <button onClick={() => setDraft(null)} disabled={!dirty}>
-                    元に戻す
-                  </button>
                   <button
-                    onClick={async () => {
-                      if (await onSave(selected, effects)) setDraft(null);
-                    }}
-                    disabled={busy || !dirty}
+                    onClick={save}
+                    disabled={busy || !dirty || (isNew && !name.trim())}
                     className={dirty ? "primary" : ""}
                     title={dirty ? "保存していない変更があります" : undefined}
                   >

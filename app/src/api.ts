@@ -98,6 +98,9 @@ export const api = {
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   /** 指定したidのうち、ライブラリにあるもの */
   existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
+  /** チェックしたファイルに付いているタグと、そのタグが付いている件数 */
+  checkedTagCounts: (fileIds: number[]) =>
+    invoke<{ id: number; name: string; count: number }[]>("checked_tag_counts", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),

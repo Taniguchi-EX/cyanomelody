@@ -32,6 +32,20 @@ const SEEK_STEPS = 1000;
 const modeOf = (mode: PlayMode) => PLAY_MODES.find((m) => m.mode === mode)!;
 
 /** ウィンドウの下の、プレイリストの再生の欄。何も再生していないときも出しておく */
+// 中央の丸の中の記号。文字（▶⏸）は書体によって中心がずれるので、図形で描く
+const PLAY_ICON = (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    {/* 三角は見た目の重心が左に寄るので、少し右へずらす */}
+    <path d="M5 2.5 L13.5 8 L5 13.5 Z" fill="currentColor" />
+  </svg>
+);
+const PAUSE_ICON = (
+  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+    <rect x="3.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
+    <rect x="9.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
+  </svg>
+);
+
 export function PlayerBar({
   player,
   time,
@@ -74,13 +88,13 @@ export function PlayerBar({
   const main = player
     ? {
         label: player.paused ? "再開" : "一時停止",
-        icon: player.paused ? "▶" : "⏸",
+        icon: player.paused ? PLAY_ICON : PAUSE_ICON,
         onClick: onTogglePause,
         disabled: player.preparing,
       }
     : {
         label: modeOf("order").label,
-        icon: "▶",
+        icon: PLAY_ICON,
         onClick: () => onPlayOpen("order"),
         disabled: !canPlayOpen,
       };
@@ -142,6 +156,7 @@ export function PlayerBar({
             <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
               ⏭
             </button>
+            <div className="play-modes">
             <button
               className="icon"
               onClick={() => onPlayOpen("shuffle")}
@@ -163,6 +178,7 @@ export function PlayerBar({
             <button className="icon" onClick={onStop} disabled={!player} title="停止" aria-label="停止">
               ■
             </button>
+            </div>
           </div>
         </div>
         <div className="play-seek">
@@ -179,7 +195,7 @@ export function PlayerBar({
             aria-label="再生位置"
             data-testid="player-progress"
           />
-          <span className="sub" data-testid="player-duration">
+          <span className="sub play-duration" data-testid="player-duration">
             {clock(player ? time.duration : 0)}
           </span>
         </div>
