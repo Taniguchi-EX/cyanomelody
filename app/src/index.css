@@ -125,13 +125,6 @@ h2:first-child {
   background: var(--bg);
 }
 
-.chip-remove {
-  border: none;
-  background: none;
-  padding: 0 0 0 4px;
-  font-size: 11px;
-}
-
 /* 重複を見るときの、ハッシュ値の色の印（ハッシュ値がなければ点線の枠） */
 .hash {
   flex: none;
@@ -1188,18 +1181,6 @@ button.primary {
 button.icon {
   padding: 0 6px;
   line-height: 1.4;
-}
-
-.clear-all {
-  color: var(--fg-sub);
-}
-
-.item-content.editable {
-  cursor: text;
-}
-
-.item-content.editable:hover {
-  text-decoration: underline dotted;
 }
 
 /* ===== 再生 ===== */

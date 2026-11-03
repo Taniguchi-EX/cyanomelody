@@ -254,13 +254,6 @@ export async function connect(shotDir) {
     waitPlaying: (timeout = 5000) => page.locator("[data-testid=player-bar][data-playing=true]").waitFor({ timeout }),
     waitStopped: (timeout = 5000) => page.locator("[data-testid=player-bar][data-playing=false]").waitFor({ timeout }),
     isPlaying: async () => (await page.getByTestId("player-bar").getAttribute("data-playing")) === "true",
-    /** 開いているプレイリストの名前を、上の行の「✎」で変える（Enterで決める） */
-    async renameOpenPlaylist(name) {
-      await page.getByRole("button", { name: "プレイリストの名前を変える" }).click();
-      await page.getByLabel("プレイリストの名前", { exact: true }).fill(name);
-      await page.getByLabel("プレイリストの名前", { exact: true }).press("Enter");
-      await ui.waitIdle();
-    },
     async finish() {
       await ui.shot("最後の状態");
       await browser.close();
