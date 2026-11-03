@@ -40,7 +40,7 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   await addFolder(formats);
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("TRPG: 第1話");
-  await page.getByRole("button", { name: "作る", exact: true }).click();
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
   await addToPlaylist("chime.wav", "TRPG: 第1話");
   await openPlaylist("TRPG: 第1話");

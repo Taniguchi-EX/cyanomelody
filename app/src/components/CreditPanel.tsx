@@ -2,6 +2,7 @@ import type { CountItem, Credit, CreditKind } from "../api";
 import { CREDIT_LABEL } from "../credits";
 import { Collapsible } from "./Collapsible";
 import { TermMarks } from "./TermMarks";
+import { RowActions } from "./TreeParts";
 
 type Props = {
   kind: CreditKind;
@@ -12,7 +13,10 @@ type Props = {
   noneSelected: boolean;
   onToggle: (id: number) => void;
   onToggleNone: () => void;
-  onManage: () => void;
+  busy: boolean;
+  /** 作る・編集するフォームを開く（作るときは null） */
+  onEdit: (credit: Credit | null) => void;
+  onDelete: (credit: Credit) => void;
   /** 各項目を選んだときの件数（id が null は「なし」）。まだ求めていなければ null（総数を出す） */
   counts: CountItem[] | null;
 };
@@ -25,7 +29,9 @@ export function CreditPanel({
   noneSelected,
   onToggle,
   onToggleNone,
-  onManage,
+  busy,
+  onEdit,
+  onDelete,
   counts,
 }: Props) {
   const label = CREDIT_LABEL[kind];
@@ -40,8 +46,8 @@ export function CreditPanel({
       title={label}
       selectedCount={selectedIds.length + (noneSelected ? 1 : 0)}
       actions={
-        <button onClick={onManage} aria-label={`${label}を管理`}>
-          管理
+        <button className="icon" onClick={() => onEdit(null)} disabled={busy} title={`${label}を作る`} aria-label={`${label}を作る`}>
+          ＋
         </button>
       }
     >
@@ -63,8 +69,8 @@ export function CreditPanel({
             <li
               key={c.id}
               className={(selected ? "active" : "") + (disabled ? " disabled" : "")}
+              // aria-disabled は付けない（中の「✎」「🗑」まで押せない扱いになるため）。グレーアウトは class で示す
               onClick={() => !disabled && onToggle(c.id)}
-              aria-disabled={disabled}
               data-testid={kind}
               data-credit-name={c.name}
             >
@@ -73,6 +79,7 @@ export function CreditPanel({
               <span className="sub" data-testid="credit-count">
                 {count}
               </span>
+              <RowActions name={c.name} busy={busy} editLabel="編集" onEdit={() => onEdit(c)} onDelete={() => onDelete(c)} />
             </li>
           );
         })}

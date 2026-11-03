@@ -11,7 +11,7 @@ const { page, step, shot, fileCount, row, tagItem, waitIdle, addFolder, clearFil
 
 const sourceItem = (name) => page.locator(`[data-testid=source][data-credit-name="${name}"]`);
 const countOf = async (item) => parseInt(await item.locator(".sub").innerText(), 10);
-const disabled = async (item) => (await item.getAttribute("aria-disabled")) === "true";
+const disabled = async (item) => (await item.getAttribute("class")).split(" ").includes("disabled");
 /** 名前ごとの「件数（グレーアウトなら g）」を並べた文字列 */
 async function tagState() {
   const parts = [];
@@ -24,13 +24,12 @@ async function tagState() {
   return parts.join(" ");
 }
 async function setCredit(rel, name) {
-  // 右の欄では出典を作れないので、まだない出典は管理画面で作っておく
+  // 右の欄では出典を作れないので、まだない出典は左の欄の「＋」で作っておく
   if (!(await sourceItem(name).count())) {
-    await page.getByRole("button", { name: "出典を管理" }).click();
+    await page.getByRole("button", { name: "出典を作る" }).click();
     await page.getByLabel("名前", { exact: true }).fill(name);
     await page.getByTestId("credit-form").getByRole("button", { name: "作成", exact: true }).click();
     await waitIdle();
-    await page.getByRole("button", { name: "閉じる" }).click();
   }
   await row(rel).click();
   await page.getByLabel("設定する出典の名前").fill(name);

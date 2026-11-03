@@ -359,6 +359,8 @@ button.toggle.on {
 .tag-list li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 4px;
   padding: 2px 6px;
   border-radius: 4px;
   cursor: pointer;
@@ -370,8 +372,12 @@ button.toggle.on {
 
 .tag-list li.disabled {
   color: var(--fg-sub);
-  opacity: 0.45;
   cursor: default;
+}
+
+/* グレーアウトするのは名前・件数など。行の記号のボタン（✎・🗑）と取っ手は押せるので薄くしない */
+.tag-list li.disabled > :not(.row-actions):not(.drag-handle) {
+  opacity: 0.45;
 }
 
 .tag-list li.disabled:hover {
@@ -381,11 +387,6 @@ button.toggle.on {
 .tag-list li.active {
   background: var(--selected);
   font-weight: 600;
-}
-
-.tag-tree li {
-  align-items: center;
-  gap: 4px;
 }
 
 .tag-tree .tag-name {
@@ -398,6 +399,37 @@ button.toggle.on {
   font-size: 9px;
   color: var(--fg-sub);
   text-align: center;
+}
+
+/* 行の「✎」「🗑」。行にマウスを乗せたとき（行の中にフォーカスがあるとき）だけ出す。場所は常に取っておく */
+.row-actions {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  visibility: hidden;
+}
+
+li:hover > .row-actions,
+li:focus-within > .row-actions {
+  visibility: visible;
+}
+
+.row-icon {
+  font-size: 13px;
+  padding: 0 3px;
+  line-height: 16px;
+}
+
+/* その場で名前を入れる欄（タグ・プレイリストの作成と名前の変更） */
+.name-input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+li > .name-input {
+  margin-bottom: 0;
 }
 
 .mini-play {
@@ -718,60 +750,6 @@ button.filter-chip:hover .chip-x {
   margin: 0;
 }
 
-.tag-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 8px;
-}
-
-.tag-table th,
-.tag-table td {
-  text-align: left;
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--border);
-}
-
-.tag-table th {
-  font-size: 12px;
-  color: var(--fg-sub);
-  font-weight: normal;
-}
-
-.tag-table .num {
-  text-align: right;
-  width: 80px;
-}
-
-.tag-table .actions {
-  text-align: right;
-  white-space: nowrap;
-  width: 150px;
-}
-
-.tag-table .actions button + button {
-  margin-left: 4px;
-}
-
-.tag-table input[type="text"] {
-  width: 100%;
-}
-
-.terms-short {
-  font-size: 12px;
-}
-
-/* 出典・ライセンスの作成・編集のフォーム */
-.credit-form {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px;
-  background: var(--bg-sub);
-}
-
-.credit-form h2 {
-  margin-top: 0;
-}
-
 .form-grid {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -1053,6 +1031,8 @@ button.item-kind:hover:not(:disabled) .kind-play {
 
 /* 左の欄のライセンスの行：名前が長いときは名前を省く（条項と件数は残す） */
 .credit-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -28,7 +28,7 @@ const editor = () => page.getByTestId("playlist-editor");
 async function createPlaylist(name) {
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill(name);
-  await page.getByRole("button", { name: "作る", exact: true }).first().click();
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
 }
 async function open(name) {
@@ -56,8 +56,9 @@ await step("P01", "準備：フォルダを登録し、タグを付け、左の�
   expect((await tree()) === "戦闘:0 環境:0 足音:0", await tree());
   await createPlaylist("戦闘");
   expect((await status()).includes("同じ名前のプレイリストがあります"), await status());
-  // 作成の入力欄を閉じる
-  await page.getByRole("button", { name: "プレイリストを作る" }).click();
+  // 作れなかったときは入力欄が残る。Escで閉じる
+  await page.getByLabel("新しいプレイリストの名前").press("Escape");
+  expect((await page.getByLabel("新しいプレイリストの名前").count()) === 0, "Escで閉じない");
 });
 
 await step("P02", "一括操作の欄から、チェックしたファイルをプレイリストに追加できる（加えるだけなので確認しない）", async () => {
@@ -121,7 +122,7 @@ await step("P06", "別の階層のプレイリストを参照として加えら�
 await step("P07", "子のプレイリストを作ると、左の欄に子として出て、親の項目にも入る", async () => {
   await open("戦闘");
   await page.getByLabel("子のプレイリストの名前").fill("剣");
-  await page.getByRole("button", { name: "作る", exact: true }).last().click();
+  await page.getByRole("button", { name: "作る", exact: true }).click();
   await waitIdle();
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:0", await tree());
   expect((await items()).at(-1) === "子のプレイリスト:剣", (await items()).join(" / "));
@@ -227,15 +228,15 @@ await step("P14", "試聴を始めると、プレイリストの再生は止ま�
 await step("P15", "名前を変えられる（同じ名前はエラー）", async () => {
   await open("足音");
   await page.getByLabel("プレイリストの名前", { exact: true }).fill("環境");
-  await page.getByRole("button", { name: "名前を変える" }).click();
+  await page.getByRole("button", { name: "名前を変える", exact: true }).click();
   await waitIdle();
   expect((await status()).includes("同じ名前のプレイリストがあります"), await status());
   await page.getByLabel("プレイリストの名前", { exact: true }).fill("足音（短い）");
-  await page.getByRole("button", { name: "名前を変える" }).click();
+  await page.getByRole("button", { name: "名前を変える", exact: true }).click();
   await waitIdle();
   expect((await tree()).includes("足音（短い）:0"), await tree());
   // 名前を書き換えていないときは「名前を変える」を出さない
-  expect((await page.getByRole("button", { name: "名前を変える" }).count()) === 0, "名前を変えるが残っている");
+  expect((await page.getByRole("button", { name: "名前を変える", exact: true }).count()) === 0, "名前を変えるが残っている");
 });
 
 await step("P16", "削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {
@@ -375,6 +376,28 @@ await step("P23", "右の欄に、そのファイルを入れているプレイ�
   const name = await page.getByLabel("プレイリストの名前", { exact: true }).inputValue();
   expect(name === "ドラッグ", name);
   await back();
+});
+
+await step("P24", "左の欄の「✎」でプレイリストの名前を変え、「🗑」で削除できる。押しても中央で開かない", async () => {
+  await back();
+  await createPlaylist("消す用");
+  await ui.rowAction(playlistItem("消す用"), "消す用の名前を変える");
+  expect((await editor().count()) === 0, "✎を押して開いた");
+  const input = playlistItem("消す用").getByLabel("プレイリストの新しい名前");
+  await input.fill("やめる名前");
+  await input.press("Escape");
+  expect((await tree()).includes("消す用:0"), `Escで変わった: ${await tree()}`);
+  await ui.rowAction(playlistItem("消す用"), "消す用の名前を変える");
+  await playlistItem("消す用").getByLabel("プレイリストの新しい名前").fill("消す用2");
+  await page.getByLabel("プレイリストの新しい名前").press("Enter");
+  await waitIdle();
+  expect((await tree()).includes("消す用2:0"), await tree());
+  await shot("P24_名前を変えた");
+  await ui.rowAction(playlistItem("消す用2"), "消す用2を削除");
+  await waitIdle();
+  expect((await ui.lastConfirm()).includes("プレイリスト「消す用2」を削除しますか"), await ui.lastConfirm());
+  expect(!(await tree()).includes("消す用2"), await tree());
+  expect((await editor().count()) === 0, "🗑を押して開いた");
 });
 
 await ui.finish();

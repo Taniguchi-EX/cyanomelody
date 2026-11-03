@@ -15,8 +15,8 @@ const LABEL = { source: "出典", license: "ライセンス" };
 const leftItem = (kind, name) => page.locator(`[data-testid=${kind}][data-credit-name="${name}"]`);
 const leftCount = async (kind, name) => parseInt(await leftItem(kind, name).getByTestId("credit-count").innerText(), 10);
 const section = (id) => page.getByTestId(`section-${id}`);
-const manageRow = (name) => page.locator(`[data-testid=manage-credit][data-credit-name="${name}"]`);
-const manageNames = () => page.getByTestId("manage-credit").evaluateAll((rows) => rows.map((r) => r.dataset.creditName));
+const leftNames = (kind) => page.getByTestId(kind).evaluateAll((rows) => rows.map((r) => r.dataset.creditName));
+const form = () => page.getByTestId("credit-form");
 const termGroup = (label) => page.getByTestId("terms-editor").getByRole("group", { name: label, exact: true });
 const pressed = async (label) =>
   (await termGroup(label).locator("button[aria-pressed=true]").innerText()).trim();
@@ -24,20 +24,29 @@ const termsDisabled = () =>
   page.getByTestId("terms-editor").locator("button").evaluateAll((bs) => bs.every((b) => b.disabled));
 const termsEnabled = () =>
   page.getByTestId("terms-editor").locator("button").evaluateAll((bs) => bs.every((b) => !b.disabled));
-// 種類の名前と条項の言葉を、空白1つでつないだ文字列
-const shortTerms = async (name) => (await manageRow(name).getByTestId("terms-short").innerText()).replace(/\s+/g, " ");
+// 左の欄のライセンスの行の、条項の言葉（記号にマウスを乗せると出る言葉）
+const shortTerms = (name) => leftItem("license", name).getByTestId("term-marks").getAttribute("title");
 const current = (kind) => page.getByTestId(`current-${kind}`).innerText();
 const detail = (kind) => page.getByTestId(`detail-${kind}`).innerText();
 
-async function openManager(kind) {
-  await page.getByRole("button", { name: `${LABEL[kind]}を管理` }).click();
+/** 見出しの「＋」で、作るフォームを開く */
+async function openCreate(kind) {
+  await section(kind).getByRole("button", { name: `${LABEL[kind]}を作る` }).click();
 }
-async function closeManager() {
-  await page.getByRole("button", { name: "閉じる" }).click();
+/** 行の「✎」で、編集するフォームを開く */
+async function openEdit(kind, name) {
+  await ui.rowAction(leftItem(kind, name), `${name}の編集`);
 }
 async function submit(label = "作成") {
-  await page.getByTestId("credit-form").getByRole("button", { name: label, exact: true }).click();
+  await form().getByRole("button", { name: label, exact: true }).click();
   await waitIdle();
+}
+/** ライセンスの種類（編集のフォームを開いて読み、Escで閉じる） */
+async function typeOf(name) {
+  await openEdit("license", name);
+  const v = await page.getByLabel("種類").inputValue();
+  await page.keyboard.press("Escape");
+  return v;
 }
 async function setCredit(kind, name) {
   await page.getByLabel(`設定する${LABEL[kind]}の名前`).fill(name);
@@ -67,35 +76,41 @@ await step("C01", "準備：フォルダを登録する。左の欄に3つの欄
   await shot("C01_左の欄");
 });
 
-await step("C02", "出典を作成できる（名前・URL・メモ）。左の欄にも出る", async () => {
-  await openManager("source");
+await step("C02", "見出しの「＋」で出典を作成できる（名前・URL・メモ）。作るとフォームが閉じ、左の欄に出る", async () => {
+  await openCreate("source");
+  expect((await form().locator("h2").innerText()) === "新しい出典", await form().locator("h2").innerText());
   expect((await page.getByLabel("種類").count()) === 0, "出典に種類の欄がある");
   await page.getByLabel("名前", { exact: true }).fill(" 効果音サイトA ");
   await page.getByLabel("URL").fill("https://example.com/");
   await page.getByLabel("メモ").fill("クレジットは「効果音サイトA」");
   await submit();
+  expect((await form().count()) === 0, "作ってもフォームが閉じない");
+  await openCreate("source");
   await page.getByLabel("名前", { exact: true }).fill("自分で録音");
   await submit();
-  const names = await manageNames();
+  const names = await leftNames("source");
   expect(names.join(",") === "効果音サイトA,自分で録音", names.join(","));
-  expect((await manageRow("効果音サイトA").innerText()).includes("https://example.com/"), "URLが出ない");
-  await closeManager();
   expect((await leftCount("source", "効果音サイトA")) === 0, "左の欄の件数");
+  // URLは編集のフォームに入っている
+  await openEdit("source", "効果音サイトA");
+  expect((await page.getByLabel("URL").inputValue()) === "https://example.com/", "URLが保存されない");
+  await page.keyboard.press("Escape");
 });
 
-await step("C03", "同じ名前（大文字・小文字の違いを含む）の出典は作れない", async () => {
-  await openManager("source");
+await step("C03", "同じ名前（大文字・小文字の違いを含む）の出典は作れない（フォームは閉じない）", async () => {
+  await openCreate("source");
   await page.getByLabel("名前", { exact: true }).fill("効果音サイトa");
   await submit();
   const s = await status();
   expect(s.includes("同じ名前の出典があります"), `status: ${s}`);
-  expect((await manageNames()).length === 2, "増えた");
-  await page.getByLabel("名前", { exact: true }).fill("");
-  await closeManager();
+  expect((await leftNames("source")).length === 2, "増えた");
+  expect((await form().count()) === 1, "作れなかったのにフォームが閉じた");
+  await form().getByRole("button", { name: "やめる" }).click();
+  expect((await form().count()) === 0, "「やめる」で閉じない");
 });
 
 await step("C04", "ライセンスの作成：最初は種類が「独自」、条項はすべて「不明」で選べる", async () => {
-  await openManager("license");
+  await openCreate("license");
   expect((await page.getByLabel("種類").inputValue()) === "", "種類が独自でない");
   for (const label of ["商用利用", "クレジット表記", "改変", "再配布", "継承"]) {
     expect((await pressed(label)) === "不明", `${label} が不明でない`);
@@ -121,21 +136,25 @@ await step("C05", "種類を選ぶと条項が自動で設定されてグレー�
   await page.getByLabel("種類").selectOption("cc-by-nc-4.0");
   await submit();
   const t = await shortTerms("CC BY-NC 4.0");
-  expect(t.includes("CC BY-NC 4.0") && t.includes("商用不可 表記要 改変可 再配布可 継承不要"), t);
+  expect(t === "商用不可 表記要 改変可 再配布可 継承不要", t);
+  expect((await typeOf("CC BY-NC 4.0")) === "cc-by-nc-4.0", "種類が保存されない");
 });
 
 await step("C06", "種類が「独自」のライセンスは、条項を自由に選べる（選ばなかった条項は不明）", async () => {
+  await openCreate("license");
   await page.getByLabel("名前", { exact: true }).fill("サイトB規約");
   await termGroup("商用利用").getByRole("button", { name: "可", exact: true }).click();
   await termGroup("クレジット表記").getByRole("button", { name: "不要" }).click();
   await termGroup("改変").getByRole("button", { name: "不可" }).click();
   await submit();
   const t = await shortTerms("サイトB規約");
-  expect(t.includes("独自") && t.includes("商用可 表記不要 改変不可 再配布？ 継承？"), t);
+  expect(t === "商用可 表記不要 改変不可 再配布？ 継承？", t);
+  expect((await typeOf("サイトB規約")) === "", "独自でない");
 });
 
 await step("C07", "編集：「独自」に戻すと条項はそのままで選べるようになる。変更を保存できる", async () => {
-  await manageRow("CC BY-NC 4.0").getByRole("button", { name: "編集" }).click();
+  await openEdit("license", "CC BY-NC 4.0");
+  expect((await form().locator("h2").innerText()) === "「CC BY-NC 4.0」を編集", await form().locator("h2").innerText());
   expect(await termsDisabled(), "編集の最初はグレーアウトしていない");
   await page.getByLabel("種類").selectOption("");
   expect((await pressed("商用利用")) === "不可", "条項が引き継がれない");
@@ -143,19 +162,21 @@ await step("C07", "編集：「独自」に戻すと条項はそのままで選�
   await page.getByLabel("名前", { exact: true }).fill("サイトC規約");
   await termGroup("継承").getByRole("button", { name: "不明" }).click();
   await submit("保存");
+  expect((await form().count()) === 0, "保存してもフォームが閉じない");
   const t = await shortTerms("サイトC規約");
-  expect(t.includes("独自") && t.includes("商用不可 表記要 改変可 再配布可 継承？"), t);
-  expect((await manageRow("CC BY-NC 4.0").count()) === 0, "古い名前が残っている");
+  expect(t === "商用不可 表記要 改変可 再配布可 継承？", t);
+  expect((await typeOf("サイトC規約")) === "", "独自でない");
+  expect((await leftItem("license", "CC BY-NC 4.0").count()) === 0, "古い名前が残っている");
 });
 
 await step("C08", "編集で別の既存の名前にはできない", async () => {
-  await manageRow("サイトC規約").getByRole("button", { name: "編集" }).click();
+  await openEdit("license", "サイトC規約");
   await page.getByLabel("名前", { exact: true }).fill("サイトb規約");
   await submit("保存");
   const s = await status();
   expect(s.includes("同じ名前のライセンスがあります"), `status: ${s}`);
-  await page.getByTestId("credit-form").getByRole("button", { name: "やめる" }).click();
-  await closeManager();
+  await form().getByRole("button", { name: "やめる" }).click();
+  expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
 });
 
 await step("C09", "チェックしたファイル（複数）にまとめて出典を設定できる。右の欄にURL・メモが出る", async () => {
@@ -261,25 +282,31 @@ await step("C17", "削除：設定されていたファイルは「なし」に�
   await leftItem("license", "新しい規約").click();
   await page.waitForTimeout(400);
   expect((await fileCount()) === 2, `件数 ${await fileCount()}`);
-  await openManager("license");
-  await manageRow("新しい規約").getByRole("button", { name: "削除" }).click();
+  await ui.rowAction(leftItem("license", "新しい規約"), "新しい規約を削除");
   await waitIdle();
-  expect((await manageRow("新しい規約").count()) === 0, "消えていない");
-  await closeManager();
+  expect((await leftItem("license", "新しい規約").count()) === 0, "消えていない");
   expect((await fileCount()) === 5, `条件が外れない ${await fileCount()}`);
   await row("chime.wav").click();
   expect((await current("license")) === "なし", await current("license"));
 });
 
-await step("C18", "編集中のライセンスを削除すると、フォームは作成に戻る", async () => {
-  await openManager("license");
-  await manageRow("サイトB規約").getByRole("button", { name: "編集" }).click();
-  await manageRow("サイトB規約").getByRole("button", { name: "削除" }).click();
-  await waitIdle();
-  const head = await page.getByTestId("credit-form").locator("h2").innerText();
-  expect(head === "新しいライセンス", head);
-  expect((await page.getByTestId("credit-form").getByRole("button", { name: "作成" }).count()) === 1, "作成ボタンがない");
-  await closeManager();
+await step("C18", "フォームを「やめる」・Escで閉じると何も変わらない。🗑でキャンセルすると削除せず、絞り込みもしない", async () => {
+  await openEdit("license", "サイトB規約");
+  await page.getByLabel("名前", { exact: true }).fill("変えない");
+  await form().getByRole("button", { name: "やめる" }).click();
+  await openEdit("license", "サイトB規約");
+  await page.getByLabel("名前", { exact: true }).fill("変えない");
+  await page.getByLabel("名前", { exact: true }).press("Escape");
+  await page.waitForTimeout(200);
+  expect((await form().count()) === 0, "Escで閉じない");
+  expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
+  await ui.setConfirmReply(false);
+  await ui.rowAction(leftItem("license", "サイトB規約"), "サイトB規約を削除");
+  await page.waitForTimeout(300);
+  await ui.setConfirmReply(true);
+  expect((await ui.lastConfirm()).includes("ライセンス「サイトB規約」を削除しますか"), await ui.lastConfirm());
+  expect((await leftItem("license", "サイトB規約").count()) === 1, "キャンセルしたのに削除した");
+  expect((await page.getByTestId("selected-count").count()) === 0, "🗑を押して絞り込んだ");
 });
 
 await step("C19", "URLを押すとブラウザで開く（エラーが出ない）", async () => {
@@ -291,20 +318,20 @@ await step("C19", "URLを押すとブラウザで開く（エラーが出ない�
   expect(!(await page.getByTestId("status").getAttribute("class")).includes("error"), `status: ${s}`);
 });
 
-await step("C20", "管理画面：名前の欄でEnterを押すと作成できる。Escで閉じる（編集中のEscは編集をやめるだけ）", async () => {
-  await openManager("source");
+await step("C20", "行の「✎」「🗑」はマウスを乗せたときだけ出る。名前の欄でEnterを押すと作成できる", async () => {
+  const actions = leftItem("source", "効果音サイトA").getByTestId("row-actions");
+  await row("chime.wav").hover();
+  expect(!(await actions.isVisible()), "マウスを乗せる前から出ている");
+  await leftItem("source", "効果音サイトA").hover();
+  expect(await actions.isVisible(), "マウスを乗せても出ない");
+  expect((await page.getByTestId("source-none").getByTestId("row-actions").count()) === 0, "（出典なし）に出ている");
+  await shot("C20_行の記号");
+  await openCreate("source");
   await page.getByLabel("名前", { exact: true }).fill("Enterで作成");
   await page.getByLabel("名前", { exact: true }).press("Enter");
   await waitIdle();
-  expect((await manageRow("Enterで作成").count()) === 1, "作成されない");
-  await manageRow("Enterで作成").getByRole("button", { name: "編集" }).click();
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  const head = await page.getByTestId("credit-form").locator("h2").innerText();
-  expect(head === "新しい出典", `編集をやめていない: ${head}`);
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  expect((await page.getByTestId("credit-form").count()) === 0, "閉じない");
+  expect((await leftItem("source", "Enterで作成").count()) === 1, "作成されない");
+  expect((await form().count()) === 0, "閉じない");
 });
 
 await step("C21", "左の欄のライセンスの行に、条項が色分けした記号で出る（マウスを乗せると言葉）", async () => {

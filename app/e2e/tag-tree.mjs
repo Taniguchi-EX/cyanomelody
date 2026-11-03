@@ -125,43 +125,41 @@ await step("G10", "ファイルに付いたタグは、タグの一覧の順に�
   expect(chips === "強風,雨", `並べ替え後 ${chips}`);
 });
 
-await step("G11", "管理画面も同じ順番と階層で表示する", async () => {
-  await page.getByRole("button", { name: "タグを管理" }).click();
-  const rows = await page
-    .getByTestId("manage-tag")
-    .evaluateAll((rs) => rs.map((r) => `${r.dataset.tagName}:${r.dataset.depth}`).join(" "));
-  expect(rows === "風:0 強風:1 環境音:0 雨:1 爆発:1", rows);
-  await shot("G11_管理画面");
+await step("G11", "子のタグの名前を変えても、階層と位置は変わらない（入力欄は行の中に出る）", async () => {
+  await ui.rowAction(tagItem("強風"), "強風の名前を変える");
+  const input = tagItem("強風").getByLabel("タグの新しい名前");
+  expect((await input.count()) === 1, "入力欄が行の中に出ない");
+  await shot("G11_行の中の入力欄");
+  await input.fill("暴風");
+  await input.press("Enter");
+  await waitIdle();
+  expect((await tree()) === "風:0 暴風:1 環境音:0 雨:1 爆発:1", await tree());
+  await ui.renameTag("暴風", "強風");
 });
 
 await step("G12", "子孫のタグへの統合はできない", async () => {
-  const manageRow = page.locator(`[data-testid=manage-tag][data-tag-name="環境音"]`);
-  await manageRow.getByRole("button", { name: "名前変更" }).click();
+  await ui.rowAction(tagItem("環境音"), "環境音の名前を変える");
   await page.getByLabel("タグの新しい名前").fill("雨");
-  await page.getByRole("button", { name: "決定" }).click();
+  await page.getByLabel("タグの新しい名前").press("Enter");
   await waitIdle();
   expect((await status()).includes("子孫のタグに統合することはできません"), await status());
-  await page.getByRole("button", { name: "やめる" }).click();
+  await page.getByLabel("タグの新しい名前").press("Escape");
 });
 
 await step("G13", "子のあるタグを削除すると、子はその位置に繰り上がる（確認に書いてある）", async () => {
-  const manageRow = page.locator(`[data-testid=manage-tag][data-tag-name="環境音"]`);
-  await manageRow.getByRole("button", { name: "削除" }).click();
+  await ui.rowAction(tagItem("環境音"), "環境音を削除");
   await waitIdle();
   const message = await ui.lastConfirm();
   expect(message.includes("子のタグ2件は、削除したタグの位置に繰り上がります"), message);
-  await page.getByRole("button", { name: "閉じる" }).click();
   const t = await tree();
   expect(t === "風:0 強風:1 雨:0 爆発:0", t);
 });
 
 await step("G14", "確認ダイアログで「キャンセル」を選ぶと削除しない", async () => {
   await ui.setConfirmReply(false);
-  await page.getByRole("button", { name: "タグを管理" }).click();
-  await page.locator(`[data-testid=manage-tag][data-tag-name="雨"]`).getByRole("button", { name: "削除" }).click();
+  await ui.rowAction(tagItem("雨"), "雨を削除");
   await page.waitForTimeout(500);
   expect((await ui.lastConfirm()).includes("タグ「雨」を削除しますか"), await ui.lastConfirm());
-  await page.getByRole("button", { name: "閉じる" }).click();
   expect((await tree()) === "風:0 強風:1 雨:0 爆発:0", await tree());
   await ui.setConfirmReply(true);
 });

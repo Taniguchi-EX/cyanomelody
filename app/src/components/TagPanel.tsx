@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Facets, FileFilter, MoveTarget, Tag } from "../api";
 import { useStoredIdSet } from "../storage";
 import { descendantsAndSelf, parentIds, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, Twisty } from "./TreeParts";
+import { DragHandle, NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   tags: Tag[];
@@ -12,15 +12,34 @@ type Props = {
   busy: boolean;
   onToggleTag: (tagId: number) => void;
   onToggleUntagged: () => void;
-  onManage: () => void;
+  onCreate: (name: string) => Promise<boolean>;
+  /** 名前を変える。別のタグと同じ名前なら統合を確認する。終わったら true */
+  onRename: (tag: Tag, name: string) => Promise<boolean>;
+  onDelete: (tag: Tag) => void;
+  onDeleteUnused: () => void;
   onMove: (tag: Tag, target: MoveTarget) => void;
   /** 各項目を選んだときの件数。まだ求めていなければ null（タグの総数を出す） */
   facets: Facets | null;
 };
 
-/** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト */
-export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, onManage, onMove, facets }: Props) {
+/** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト、作成・名前変更・削除 */
+export function TagPanel({
+  tags,
+  filter,
+  busy,
+  onToggleTag,
+  onToggleUntagged,
+  onCreate,
+  onRename,
+  onDelete,
+  onDeleteUnused,
+  onMove,
+  facets,
+}: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.tagTree.collapsed");
+  const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const unused = tags.filter((t) => t.fileCount === 0).length;
 
   const parents = useMemo(() => parentIds(tags), [tags]);
   // 選んだときの件数。0件になる項目はグレーアウトし、選べないようにする（選んでいる項目は外せる）
@@ -51,11 +70,28 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
       title="タグ"
       selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
       actions={
-        <button onClick={onManage} aria-label="タグを管理">
-          管理
-        </button>
+        <span className="row">
+          {unused > 0 && (
+            <button className="icon" onClick={onDeleteUnused} disabled={busy} title="使われていないタグを削除" aria-label="使われていないタグを削除">
+              🧹
+            </button>
+          )}
+          <button className="icon" onClick={() => setCreating(true)} disabled={busy} title="タグを作る" aria-label="タグを作る">
+            ＋
+          </button>
+        </span>
       }
     >
+      {creating && (
+        <NameInput
+          label="新しいタグの名前"
+          placeholder="新しいタグの名前"
+          onCommit={async (name) => {
+            if (await onCreate(name)) setCreating(false);
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      )}
       <ul className={`tag-list tag-tree${drag.dragId !== null ? " dragging" : ""}`}>
         <li
           className={(filter.untaggedOnly ? "active" : "") + (untaggedDisabled ? " disabled" : "")}
@@ -78,8 +114,8 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
                 (moving.has(t.id) ? " drag-source" : "") +
                 drag.dropClass(t.id)
               }
+              // aria-disabled は付けない（中の「✎」「🗑」まで押せない扱いになるため）。グレーアウトは class で示す
               onClick={() => !disabled && onToggleTag(t.id)}
-              aria-disabled={disabled}
               data-testid="tag"
               data-tree="tags"
               data-node-id={t.id}
@@ -93,8 +129,26 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
                 collapsed={collapsed.has(t.id)}
                 onToggle={() => toggleCollapsed(t.id)}
               />
-              <span className="tag-name">{t.name}</span>
+              {editingId === t.id ? (
+                <NameInput
+                  label="タグの新しい名前"
+                  initial={t.name}
+                  onCommit={async (name) => {
+                    if (name.trim() === t.name || (await onRename(t, name))) setEditingId(null);
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              ) : (
+                <span className="tag-name">{t.name}</span>
+              )}
               <span className="sub">{countOf(t)}</span>
+              <RowActions
+                name={t.name}
+                busy={busy}
+                editLabel="名前を変える"
+                onEdit={() => setEditingId(t.id)}
+                onDelete={() => onDelete(t)}
+              />
               <DragHandle name={t.name} handlers={drag.handleProps(t.id)} />
             </li>
           );

@@ -159,17 +159,28 @@ export async function connect(shotDir) {
       );
       await page.waitForTimeout(1000);
     },
-    /** タグの管理画面で、ファイルに付けずにタグを作る（作った順に並ぶ） */
+    /** 左の欄の行の記号のボタン（✎・🗑）を押す。記号は行にマウスを乗せたときだけ出る */
+    async rowAction(item, name) {
+      await item.hover();
+      await item.getByRole("button", { name, exact: true }).click();
+    },
+    /** 左の欄のタグの「＋」で、ファイルに付けずにタグを作る（最上位の最後に入る） */
     async createTags(names) {
-      await page.getByRole("button", { name: "タグを管理" }).click();
       for (const n of names) {
+        await page.getByRole("button", { name: "タグを作る" }).click();
         await page.getByLabel("新しいタグの名前").fill(n);
-        await page.getByRole("button", { name: "作成" }).click();
+        await page.getByLabel("新しいタグの名前").press("Enter");
         await ui.waitIdle();
       }
-      await page.getByRole("button", { name: "閉じる" }).click();
     },
-    /** 右の欄で、表示中のファイルにタグを付ける。右の欄では作れないので、まだないタグは管理画面で作っておく */
+    /** 左の欄のタグの「✎」で名前を変える（Enterで決める） */
+    async renameTag(from, to) {
+      await ui.rowAction(ui.tagItem(from), `${from}の名前を変える`);
+      await page.getByLabel("タグの新しい名前").fill(to);
+      await page.getByLabel("タグの新しい名前").press("Enter");
+      await ui.waitIdle();
+    },
+    /** 右の欄で、表示中のファイルにタグを付ける。右の欄では作れないので、まだないタグは左の欄で作っておく */
     async addTag(name) {
       const key = name.trim().toLowerCase();
       if (!(await ui.tagNames()).some((n) => n.toLowerCase() === key)) {

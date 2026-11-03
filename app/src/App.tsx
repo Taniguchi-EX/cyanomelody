@@ -42,9 +42,8 @@ import { useChecks } from "./hooks/useChecks";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
-import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
-import { CreditManager } from "./components/CreditManager";
+import { CreditForm } from "./components/CreditForm";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { useStoredNumber } from "./storage";
@@ -91,11 +90,10 @@ export default function App() {
   const [facets, setFacets] = useState<Facets | null>(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
-  const [managing, setManaging] = useState(false);
   const [sources, setSources] = useState<Credit[]>([]);
   const [licenses, setLicenses] = useState<Credit[]>([]);
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
-  const [managingCredit, setManagingCredit] = useState<CreditKind | null>(null);
+  const [creditForm, setCreditForm] = useState<{ kind: CreditKind; credit: Credit | null } | null>(null);
   const [chains, setChains] = useState<EffectChain[]>([]);
   const [managingEffects, setManagingEffects] = useState(false);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
@@ -840,7 +838,10 @@ export default function App() {
           filter={filter}
           onToggleTag={toggleTag}
           onToggleUntagged={toggleUntagged}
-          onManage={() => setManaging(true)}
+          onCreate={createTag}
+          onRename={renameTag}
+          onDelete={deleteTag}
+          onDeleteUnused={deleteUnusedTags}
           facets={facets}
           busy={busy}
           onMove={moveTag}
@@ -852,6 +853,8 @@ export default function App() {
           onOpen={openPlaylist}
           onPlay={(id) => playPlaylist(id)}
           onCreate={(name) => createPlaylist(name)}
+          onRename={renamePlaylist}
+          onDelete={deletePlaylist}
           onMove={movePlaylist}
           onManageEffects={() => setManagingEffects(true)}
         />
@@ -865,7 +868,9 @@ export default function App() {
             counts={facets ? (kind === "source" ? facets.sources : facets.licenses) : null}
             onToggle={(id) => toggleCredit(kind, id)}
             onToggleNone={() => toggleCreditNone(kind)}
-            onManage={() => setManagingCredit(kind)}
+            busy={busy}
+            onEdit={(credit) => setCreditForm({ kind, credit })}
+            onDelete={(credit) => deleteCredit(kind, credit)}
           />
         ))}
       </aside>
@@ -1092,17 +1097,6 @@ export default function App() {
         )}
       </div>
       <audio {...audio.audioProps} />
-      {managing && (
-        <TagManager
-          tags={tags}
-          busy={busy}
-          onCreate={createTag}
-          onRename={renameTag}
-          onDelete={deleteTag}
-          onDeleteUnused={deleteUnusedTags}
-          onClose={() => setManaging(false)}
-        />
-      )}
       {managingEffects && (
         <EffectManager
           chains={chains}
@@ -1118,17 +1112,18 @@ export default function App() {
           onClose={() => setManagingEffects(false)}
         />
       )}
-      {managingCredit && (
-        <CreditManager
-          key={managingCredit}
-          kind={managingCredit}
-          credits={creditsOf(managingCredit)}
+      {creditForm && (
+        <CreditForm
+          kind={creditForm.kind}
+          credit={creditForm.credit}
           licenseTypes={licenseTypes}
           busy={busy}
-          onCreate={(input) => createCredit(managingCredit, input)}
-          onUpdate={(credit, input) => updateCredit(managingCredit, credit, input)}
-          onDelete={(credit) => deleteCredit(managingCredit, credit)}
-          onClose={() => setManagingCredit(null)}
+          onSubmit={(input) =>
+            creditForm.credit
+              ? updateCredit(creditForm.kind, creditForm.credit, input)
+              : createCredit(creditForm.kind, input)
+          }
+          onClose={() => setCreditForm(null)}
         />
       )}
     </div>

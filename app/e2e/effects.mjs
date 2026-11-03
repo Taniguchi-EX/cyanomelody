@@ -27,7 +27,7 @@ await step("E01", "準備：フォルダを登録し、プレイリストにフ�
   await addFolder(formats);
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("シナリオ");
-  await page.getByRole("button", { name: "作る", exact: true }).click();
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
   await ui.check("chime.wav");
   await ui.check("chime.mp3");
