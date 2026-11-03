@@ -10,7 +10,8 @@ const formats = path.join(dataDir, "formats");
 const ui = await connect(shotDir);
 const { page, step, shot, status, fileCount, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
 
-const detailPath = () => page.getByTestId("detail-path").innerText();
+// 右の欄のパス（絶対パス）のファイル名
+const detailPath = async () => path.win32.basename(await page.getByTestId("detail-path").innerText());
 const isChecked = (rel) => row(rel).getByTestId("file-check").isChecked();
 const filterText = async (text) => {
   await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill(text));

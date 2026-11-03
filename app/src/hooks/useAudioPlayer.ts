@@ -7,6 +7,8 @@ import { useStoredNumber } from "../storage";
 /** プレイリストの再生の状態 */
 export type Player = {
   name: string;
+  /** 再生しているプレイリストの id。ファイルの一覧を再生しているときは null */
+  sourceId: number | null;
   queue: PlayEntry[];
   index: number;
   paused: boolean;
@@ -114,8 +116,9 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
   };
 
   /** プレイリストの再生を始める */
-  const playQueue = (name: string, queue: PlayEntry[]) =>
-    playAt({ name, queue, index: 0, paused: false, preparing: false }, 0);
+  /** 再生の順番 queue を、start 番目から再生する。sourceId は再生するプレイリスト（ファイルの一覧なら null） */
+  const playQueue = (name: string, queue: PlayEntry[], start = 0, sourceId: number | null = null) =>
+    playAt({ name, sourceId, queue, index: start, paused: false, preparing: false }, start);
 
   const move = (delta: number) => {
     const p = playerRef.current;

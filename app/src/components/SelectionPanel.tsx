@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
+import { stem } from "../paths";
 import { Collapsible } from "./Collapsible";
 import { PlaylistPicker } from "./PlaylistPicker";
 
@@ -18,6 +19,8 @@ type Props = {
   /** 見つからないファイルと同じ音声のファイルを、選んだフォルダから探す */
   onFindInFolder: () => void;
   onShowSameAudio: (hash: string) => void;
+  /** ファイルのあるフォルダを、そのファイルを選んだ状態でエクスプローラーで開く */
+  onReveal: (path: string) => void;
   /** プレイリストの下に出す欄（出典・ライセンス） */
   children?: ReactNode;
   /** 一番上に出す欄（プレイリストの項目を押したときの「プレイリスト上での名前」） */
@@ -41,6 +44,7 @@ export function SelectionPanel({
   onLinkFile,
   onFindInFolder,
   onShowSameAudio,
+  onReveal,
   children,
   top,
   playlists,
@@ -103,14 +107,28 @@ export function SelectionPanel({
   return (
     <section data-testid="detail-panel">
       {top}
-      {trackTitle && (
-        <div className="track-title" data-testid="track-title">
-          {trackTitle}
-        </div>
-      )}
-      <div className="folder-path" data-testid="detail-path" title={file.path}>
-        {file.relPath}
+      {/* タイトル（曲名、なければ拡張子を除いたファイル名）と、ファイルのパス。パスを押すとエクスプローラーで見せる */}
+      <div className="track-title" data-testid="track-title">
+        {trackTitle ?? stem(file.relPath)}
       </div>
+      {file.missing ? (
+        <div className="folder-path" data-testid="detail-path">
+          {file.path}
+        </div>
+      ) : (
+        <a
+          href="#"
+          className="folder-path folder-link"
+          data-testid="detail-path"
+          title="エクスプローラーで見せる"
+          onClick={(e) => {
+            e.preventDefault();
+            onReveal(file.path);
+          }}
+        >
+          {file.path}
+        </a>
+      )}
 
       <Collapsible id="detail-tags" title="タグ" count={file.tags.length}>
         <div className="row">

@@ -437,6 +437,12 @@ async fn playlists_with_file(state: State<'_, AppState>, file_id: i64) -> Result
     playlists::playlists_with_file(&state.conn(), file_id)
 }
 
+/// 項目に入る曲をすべて（右の欄の曲のリスト）
+#[tauri::command]
+async fn playlist_item_files(state: State<'_, AppState>, item_id: i64) -> Result<Vec<PlayEntry>> {
+    playlists::item_files(&state.conn(), item_id)
+}
+
 #[tauri::command]
 async fn remove_file_from_playlist(state: State<'_, AppState>, id: i64, file_id: i64) -> Result<usize> {
     playlists::remove_file_from_playlist(&state.conn(), id, file_id)
@@ -652,6 +658,7 @@ pub fn run() {
             find_missing_in_folder,
             record_play,
             remove_file_from_playlist,
+            playlist_item_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

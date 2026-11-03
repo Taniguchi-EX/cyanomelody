@@ -258,6 +258,8 @@ export type PlayEntry = {
   alias: string | null;
   /** かけるエフェクトのまとまり（内側から外側の順）。空ならエフェクトなし */
   effects: number[];
+  /** この曲を出した、再生したプレイリストの（いちばん外側の）項目。ファイルの一覧の再生では null */
+  itemId: number | null;
 };
 
 export const playlistApi = {
@@ -280,6 +282,8 @@ export const playlistApi = {
   expandItem: (itemId: number) => invoke<PlayEntry[]>("expand_playlist_item", { itemId }),
   /** ファイルを項目として直接入れているプレイリストのid */
   withFile: (fileId: number) => invoke<number[]>("playlists_with_file", { fileId }),
+  /** 項目に入る曲をすべて（再生方法にかかわらず、順に再生したときの並び） */
+  itemFiles: (itemId: number) => invoke<PlayEntry[]>("playlist_item_files", { itemId }),
   /** プレイリストから、そのファイルの項目をすべて外す */
   removeFile: (id: number, fileId: number) => invoke<number>("remove_file_from_playlist", { id, fileId }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */

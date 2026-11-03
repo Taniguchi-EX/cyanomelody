@@ -23,6 +23,8 @@ type Props = {
   onSetMode: (item: PlaylistItem, mode: PlayMode) => void;
   /** 右の欄に出している項目 */
   focusedItemId: number | null;
+  /** 再生中の曲を出している項目（このプレイリストを再生しているときだけ） */
+  playingItemId: number | null;
   /** 項目の行を押したとき（右の欄にその項目を出す） */
   onFocusItem: (item: PlaylistItem) => void;
   chains: EffectChain[];
@@ -66,6 +68,7 @@ export function PlaylistEditor({
   onMoveItem,
   onSetMode,
   focusedItemId,
+  playingItemId,
   onFocusItem,
   chains,
   onSetChain,
@@ -75,9 +78,6 @@ export function PlaylistEditor({
   onBrowseFolder,
 }: Props) {
   const [renaming, setRenaming] = useState(false);
-  const [tagInput, setTagInput] = useState("");
-  const [pickedTags, setPickedTags] = useState<Tag[]>([]);
-  const [refId, setRefId] = useState("");
   const [exporting, setExporting] = useState(false);
   // 前に書き出したフォルダを入れておく（調整して何度も書き出すとき、選び直さなくてよい）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
@@ -130,12 +130,6 @@ export function PlaylistEditor({
     if (dest !== s.index) onMoveItem(detail.items[s.index], dest);
   };
 
-  const pickTag = () => {
-    const tag = tags.find((t) => t.name.toLowerCase() === tagInput.trim().toLowerCase());
-    if (tag && !pickedTags.some((p) => p.id === tag.id)) setPickedTags([...pickedTags, tag]);
-    if (tag) setTagInput("");
-  };
-
   return (
     <div className="playlist-editor" data-testid="playlist-editor">
       <div className="toolbar editor-head">
@@ -181,6 +175,7 @@ export function PlaylistEditor({
               className={
                 "playlist-item" +
                 (focusedItemId === item.id ? " selected" : "") +
+                (playingItemId === item.id ? " playing" : "") +
                 (dragIndex === index ? " drag-source" : "") +
                 (dropAt?.index === index ? ` drop-${dropAt.pos}` : "") +
                 (item.file?.missing ? " missing" : "")
@@ -290,66 +285,22 @@ export function PlaylistEditor({
           ))}
         </div>
 
+        {/* 項目を加える：左の欄で選んでいるタグの組み合わせと、プレイリスト（選んだらすぐ加える） */}
         <div className="playlist-add">
-          <h2>タグの組み合わせを加える</h2>
-          <div className="row">
-            <input
-              type="text"
-              list="playlist-tag-names"
-              placeholder="タグ名を入れて「選ぶ」"
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && pickTag()}
-              aria-label="組み合わせに選ぶタグ"
-            />
-            <datalist id="playlist-tag-names">
-              {tags.map((t) => (
-                <option key={t.id} value={t.name} />
-              ))}
-            </datalist>
-            <button
-              className="icon"
-              onClick={pickTag}
-              disabled={!tagInput.trim()}
-              title="組み合わせに入れる"
-              aria-label="選ぶ"
-            >
-              ＋
-            </button>
-          </div>
-          <div className="row picked-tags" data-testid="picked-tags">
-            {pickedTags.map((t) => (
-              <span className="chip" key={t.id}>
-                {t.name}
-                <button
-                  className="chip-remove"
-                  onClick={() => setPickedTags(pickedTags.filter((p) => p.id !== t.id))}
-                  aria-label={`${t.name}を選ぶのをやめる`}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <button
-              onClick={async () => {
-                if (await onAddTags(pickedTags.map((t) => t.id))) setPickedTags([]);
-              }}
-              disabled={busy || pickedTags.length === 0}
-            >
-              この組み合わせを加える
-            </button>
-          </div>
           <div className="row">
             <button onClick={() => onAddTags(filterTagIds)} disabled={busy || filterTagIds.length === 0}>
-              いまの絞り込みのタグを加える
+              選択タグをリストに追加
             </button>
             {filterTags.length > 0 && <span className="sub">{filterTags.map((t) => t.name).join(" ＋ ")}</span>}
           </div>
-
-          <h2>プレイリストを加える</h2>
           <div className="row">
-            <select value={refId} onChange={(e) => setRefId(e.target.value)} aria-label="加えるプレイリスト">
-              <option value="">（選んでください）</option>
+            <select
+              value=""
+              onChange={(e) => e.target.value !== "" && onAddRef(Number(e.target.value))}
+              disabled={busy}
+              aria-label="加えるプレイリスト"
+            >
+              <option value="">プレイリストを追加</option>
               {playlists.map((p) => (
                 <option key={p.id} value={p.id} disabled={loops.has(p.id)}>
                   {"　".repeat(p.depth)}
@@ -358,15 +309,6 @@ export function PlaylistEditor({
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => {
-                onAddRef(Number(refId));
-                setRefId("");
-              }}
-              disabled={busy || refId === ""}
-            >
-              加える
-            </button>
           </div>
         </div>
       </div>
@@ -396,7 +338,7 @@ export function PlaylistEditor({
       )}
       <div className="toolbar editor-foot">
         <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
-          書き出す
+          書出
         </button>
         <span style={{ flex: 1 }} />
         <button

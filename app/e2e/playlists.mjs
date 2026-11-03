@@ -74,17 +74,17 @@ await step("P03", "右の欄から、1件のファイルをプレイリストに
   expect(list === "ファイル:chime.ogg / ファイル:chime.wav / ファイル:chime.flac", list);
 });
 
-await step("P04", "タグの組み合わせを加えられる（選んで加える、いまの絞り込みのタグを加える）。ファイル数が出る", async () => {
-  await page.getByLabel("組み合わせに選ぶタグ").fill("雨");
-  await page.getByRole("button", { name: "選ぶ", exact: true }).click();
-  await page.getByRole("button", { name: "この組み合わせを加える" }).click();
-  await waitIdle();
-  expect((await itemRow("雨").locator(".item-count").innerText()) === "2件", "雨の件数");
-  await ui.filtered(() => tagItem("風").click());
-  await page.getByRole("button", { name: "いまの絞り込みのタグを加える" }).click();
-  await waitIdle();
-  expect((await itemRow("風").locator(".item-count").innerText()) === "1件", "風の件数");
-  await tagItem("風").click();
+await step("P04", "左の欄で選んでいるタグを「選択タグをリストに追加」で加えられる（選んでいないときは押せない）。ファイル数が出る", async () => {
+  const addSelected = page.getByRole("button", { name: "選択タグをリストに追加" });
+  expect(await addSelected.isDisabled(), "タグを選んでいないのに押せる");
+  expect((await page.getByLabel("組み合わせに選ぶタグ").count()) === 0, "タグをその場で選ぶ欄が残っている");
+  for (const [tag, count] of [["雨", "2件"], ["風", "1件"]]) {
+    await ui.filtered(() => tagItem(tag).click());
+    await addSelected.click();
+    await waitIdle();
+    expect((await itemRow(tag).locator(".item-count").innerText()) === count, `${tag}の件数`);
+    await ui.filtered(() => tagItem(tag).click());
+  }
   await shot("P04_タグの組み合わせ");
 });
 
@@ -96,9 +96,12 @@ await step("P05", "抽象的な項目の再生方法を変えられる（ラン�
 });
 
 await step("P06", "別の階層のプレイリストを参照として加えられる。ループになるプレイリストは選べない", async () => {
-  await page.getByLabel("加えるプレイリスト", { exact: true }).selectOption({ label: "環境" });
-  await page.getByRole("button", { name: "加える", exact: true }).click();
+  // プルダウンで選ぶとすぐに加わる（「加える」ボタンはない）
+  const select = page.getByLabel("加えるプレイリスト", { exact: true });
+  expect((await select.locator("option").first().innerText()) === "プレイリストを追加", await select.locator("option").first().innerText());
+  await select.selectOption({ label: "環境" });
   await waitIdle();
+  expect((await select.inputValue()) === "", "プルダウンが戻らない");
   expect((await items()).includes("プレイリスト:環境"), (await items()).join(" / "));
   // 自分自身は選べない
   expect(await page.locator("select[aria-label=加えるプレイリスト] option", { hasText: "戦闘" }).isDisabled(), "自分自身");
@@ -206,15 +209,16 @@ await step("P13", "再生できないファイルは飛ばして、そのこと�
   }
 });
 
-await step("P14", "試聴を始めると、プレイリストの再生は止まる", async () => {
+await step("P14", "一覧の行の「▶」を押すと、プレイリストの再生をやめて、表示中の一覧の再生になる", async () => {
   await open("足音");
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying();
   await back();
   await row("chime.wav").getByRole("button", { name: "再生", exact: true }).click();
-  await page.waitForTimeout(300);
-  expect(!(await ui.isPlaying()), "プレイリストの再生が止まらない");
+  await ui.waitPlaying();
+  expect((await page.locator(".player-name").innerText()) === "ファイルの一覧", await page.locator(".player-name").innerText());
   await row("chime.wav").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
 });
 
 await step("P15", "上の行の「✎」で名前を変えられる（同じ名前はエラー。Escでやめる）", async () => {
@@ -265,7 +269,7 @@ await step("P19", "項目の行を押すと右の欄に出て、「プレイリ�
   await itemRow("chime.wav").locator(".item-content").click();
   expect((await itemRow("chime.wav").getAttribute("class")).includes("selected"), "押した行に色が付かない");
   // 右の欄には、一番上に「プレイリスト上での名前」、その下にファイルの詳細が出る
-  expect((await page.getByTestId("detail-path").innerText()) === "chime.wav", await page.getByTestId("detail-path").innerText());
+  expect((await page.getByTestId("detail-path").innerText()).endsWith("chime.wav"), await page.getByTestId("detail-path").innerText());
   await alias.fill("途中でやめる");
   await alias.press("Escape");
   expect((await alias.inputValue()) === "", "Escで戻らない");
@@ -326,12 +330,20 @@ await step("P21", "シャッフル・1曲のボタンで、再生方法を選ん
   // 何も再生していないときの再生の欄と、シークバーのドラッグ（旧 P26）
   {
     await back();
-    for (const name of ["順に再生", "シャッフル再生", "ランダムセレクト再生", "前へ", "次へ", "停止"]) {
+    // 何も再生していないとき、「⏮」「⏭」「■」は押せない（「▶」「🔀」「🎲」は表示中の一覧を再生するので押せる）
+    for (const name of ["前へ", "次へ", "停止"]) {
       expect(await page.getByRole("button", { name, exact: true }).isDisabled(), `${name}が押せる`);
     }
     // ボタンの並びは「⏮ ▶ ⏭ 🔀 🎲 ■」（シャッフル再生は右に寄せる）
     const order = await page.locator(".play-buttons button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label")).join(","));
     expect(order === "前へ,順に再生,次へ,シャッフル再生,ランダムセレクト再生,停止", order);
+    // 「▶／⏸」はボタンの並びの中央（真下のシークバーの中央とそろう）
+    const center = async (sel) => {
+      const b = await page.locator(sel).boundingBox();
+      return b.x + b.width / 2;
+    };
+    const diff = Math.abs((await center(".play-main")) - (await center(".play-seek input")));
+    expect(diff <= 2, `中央からずれている: ${diff}px`);
     await open("ドラッグ");
     await page.getByRole("button", { name: "順に再生" }).click();
     await ui.waitPlaying();
@@ -401,15 +413,20 @@ await step("P25", "左の欄の行は開閉の印・名前・数・取っ手だ�
   expect((await item.getByTestId("drag-handle").count()) === 1, "取っ手がない");
   await createPlaylist("消す用");
   await open("消す用");
-  await page.getByLabel("組み合わせに選ぶタグ").fill("雨");
-  await page.getByRole("button", { name: "選ぶ", exact: true }).click();
-  await page.getByRole("button", { name: "この組み合わせを加える" }).click();
+  await ui.filtered(() => tagItem("雨").click());
+  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
   await waitIdle();
+  await ui.filtered(() => tagItem("雨").click());
   const foot = page.locator(".editor-foot");
-  expect((await foot.getByRole("button", { name: "書き出す" }).count()) === 1, "書き出すが下の行にない");
+  expect((await foot.getByRole("button", { name: "書出" }).count()) === 1, "書出が下の行にない");
   expect((await foot.getByRole("button", { name: "このプレイリストを削除" }).count()) === 1, "削除が下の行にない");
   await itemRow("雨").locator(".item-content").click();
   expect((await page.getByTestId("item-detail-content").innerText()) === "雨", await page.getByTestId("item-detail-content").innerText());
+  // その項目の曲のリスト（ファイル名で、順に再生したときの並び）と曲数
+  await page.getByTestId("item-tracks").waitFor({ timeout: 3000 });
+  const tracks = await page.getByTestId("item-tracks").locator("li").allInnerTexts();
+  expect(tracks.join(",") === "chime.mp3,chime.wav", tracks.join(","));
+  expect((await page.getByTestId("item-track-count").innerText()) === "2", "曲数");
   await page.getByLabel("プレイリスト上での名前").fill("雨の組");
   await page.getByLabel("プレイリスト上での名前").press("Enter");
   await waitIdle();
@@ -425,21 +442,20 @@ await step("P25", "左の欄の行は開閉の印・名前・数・取っ手だ�
   expect((await editor().count()) === 0, "削除したのに詳細画面が残っている");
 });
 
-await step("P27", "再生の欄：試聴中も曲名を出し、2行目にファイル名と「試聴」。プレイリストの再生中は、2行目にいつもファイル名を出す", async () => {
+await step("P27", "再生の欄：一覧の再生でも曲名を出し、2行目にファイル名と「ファイルの一覧」・何曲目", async () => {
   await back();
   await row("chime.mp3").getByRole("button", { name: "再生", exact: true }).click();
-  await page.waitForTimeout(300);
+  await ui.waitPlaying();
+  // 曲名はファイルから読むので、読み終わるのを待つ（それまでは拡張子を除いたファイル名）
+  await page.waitForFunction(() => document.querySelector("[data-testid=player-file]")?.textContent === "チャイム", null, {
+    timeout: 3000,
+  }).catch(() => {});
   expect((await page.getByTestId("player-file").innerText()) === "チャイム", await page.getByTestId("player-file").innerText());
   expect((await page.getByTestId("player-file-name").innerText()) === "chime.mp3", "ファイル名が出ない");
-  expect((await page.getByTestId("player-preview").innerText()) === "試聴", "試聴と出ない");
-  await shot("P27_試聴中");
+  expect((await page.locator(".player-name").innerText()) === "ファイルの一覧", "一覧の再生と出ない");
+  await shot("P27_一覧の再生");
   await row("chime.mp3").getByRole("button", { name: "停止", exact: true }).click();
-  await open("ドラッグ");
-  await page.getByRole("button", { name: "順に再生" }).click();
-  await ui.waitPlaying();
-  expect((await page.getByTestId("player-file-name").count()) === 1, "ファイル名が出ない");
-  await page.getByRole("button", { name: "停止", exact: true }).click();
-  await back();
+  await ui.waitStopped();
 });
 
 await step("P28", "再生の欄の音量のバーで音量を変えられる（試聴にも効く）。音量は再読み込み後も残る", async () => {
@@ -477,6 +493,47 @@ await step("P29", "「その他」の「直近で再生したもの」：試聴�
   expect((await page.getByTestId("filter-chips").innerText()).includes("直近で再生"), "チップが出ない");
   await shot("P29_直近で再生したもの");
   await ui.filtered(() => item.click());
+});
+
+await step("P30", "一覧の再生：行の「▶」でその行から表示中の一覧を順に再生し、「⏭」で次の行へ。プレイリストを開いていなければ再生の欄の「▶」も一覧を再生する", async () => {
+  await back();
+  await ui.clearFilter();
+  const rels = await page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
+  await row(rels[1]).getByRole("button", { name: "再生", exact: true }).click();
+  await ui.waitPlaying();
+  const position = () => page.getByTestId("player-position").innerText();
+  expect((await position()) === `2/${rels.length}`, await position());
+  await page.getByRole("button", { name: "次へ" }).click();
+  await page.waitForTimeout(300);
+  expect((await position()) === `3/${rels.length}`, await position());
+  // 鳴らしている行が移る
+  expect((await row(rels[2]).getByRole("button", { name: "停止", exact: true }).count()) === 1, "鳴らしている行が移らない");
+  await page.getByRole("button", { name: "停止", exact: true }).first().click();
+  await ui.waitStopped();
+  // プレイリストを開いていないとき、再生の欄の「▶」は表示中の一覧を最初から再生する
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  expect((await position()) === `1/${rels.length}`, await position());
+  expect((await page.locator(".player-name").innerText()) === "ファイルの一覧", "一覧の再生でない");
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
+});
+
+await step("P31", "プレイリストの再生中は、再生中の曲を出している項目の行がハイライトされる", async () => {
+  await open("ドラッグ");
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  const playing = () =>
+    page.getByTestId("playlist-item").evaluateAll((rows) => rows.findIndex((r) => r.classList.contains("playing")));
+  expect((await playing()) === 0, `1曲目: ${await playing()}`);
+  await page.getByRole("button", { name: "次へ" }).click();
+  await page.waitForTimeout(300);
+  expect((await playing()) === 1, `2曲目: ${await playing()}`);
+  await shot("P31_再生中の項目");
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
+  expect((await playing()) === -1, "止めてもハイライトが残る");
+  await back();
 });
 
 await ui.finish();

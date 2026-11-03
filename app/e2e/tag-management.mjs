@@ -22,6 +22,10 @@ await step("T01", "フォルダを登録すると、スキャンして5つの形
   expect(s.includes("5件"), `status: ${s}`);
   expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
   expect((await row("サブフォルダ/チャイム.m4a").count()) === 1, "サブフォルダのm4aがない");
+  // 一覧の行にはファイル名だけを出し、マウスを乗せると相対パスを出す
+  const name = row("サブフォルダ/チャイム.m4a").locator(".file-name");
+  expect((await name.innerText()) === "チャイム.m4a", await name.innerText());
+  expect((await name.getAttribute("title")) === "サブフォルダ/チャイム.m4a", await name.getAttribute("title"));
   const folder = page.getByTestId("folder");
   expect((await folder.getAttribute("class")).includes("active"), "フォルダが選ばれていない");
   expect((await folder.locator(".folder-name").innerText()) === "formats", await folder.innerText());
@@ -207,9 +211,13 @@ await step("T21", "右の欄は、トラック名・ファイル名・タグ・�
   await row("chime.mp3").locator(".file-name").click();
   await page.getByTestId("track-title").waitFor({ timeout: 3000 });
   expect((await page.getByTestId("track-title").innerText()) === "チャイム", await page.getByTestId("track-title").innerText());
+  // パスは絶対パスのリンク（押すとエクスプローラーでフォルダを開く。開いたかは確かめられないので、エラーが出ないことだけ）
   const p = page.getByTestId("detail-path");
-  expect((await p.innerText()) === "chime.mp3", await p.innerText());
-  expect((await p.getAttribute("title")) === path.join(formats, "chime.mp3"), `絶対パス ${await p.getAttribute("title")}`);
+  expect((await p.innerText()) === path.join(formats, "chime.mp3"), await p.innerText());
+  expect((await p.evaluate((e) => e.tagName)) === "A", "リンクでない");
+  await p.click();
+  await page.waitForTimeout(500);
+  expect(!(await page.getByTestId("status").getAttribute("class")).includes("error"), await ui.status());
   const order = await page.getByTestId("detail-panel").evaluate((panel) =>
     [...panel.querySelectorAll("[data-testid]")]
       .map((e) => e.dataset.testid)
@@ -336,7 +344,7 @@ await step("T27", "絞り込みの条件のチップが2つ以上になると、
   expect((await page.getByTestId("filter-chips").count()) === 0, "条件が残っている");
   expect((await page.getByLabel("検索", { exact: true }).inputValue()) === "", "検索の文字が残っている");
   expect((await ui.checkedCount()).startsWith("チェック 1件"), "チェックが外れた");
-  expect((await page.getByTestId("detail-path").innerText()) === "chime.flac", "右の欄が変わった");
+  expect((await page.getByTestId("detail-path").innerText()).endsWith("chime.flac"), "右の欄が変わった");
   await clearFilter();
 });
 

@@ -49,6 +49,10 @@ await step("PF01", "3万ファイルのフォルダを登録・表示・スク�
   done1 = doneCount(s);
   expect(done1 >= 0 && done1 < 30000, `中止までの件数 ${done1}`);
 
+  // 登録したフォルダだけの一覧になるのを待つ（3万件の読み直しは、処理の終わりより後になることがある）
+  await page
+    .waitForFunction(() => document.querySelector("[data-testid=file-count]")?.textContent === "30000件", null, { timeout: 30000 })
+    .catch(() => {});
   expect((await fileCount()) === 30000, `件数 ${await fileCount()}`);
   const list = page.getByTestId("file-list");
   const t1 = Date.now();
@@ -81,7 +85,7 @@ await step("PF02", "中止したハッシュ値の計算は、次のスキャン
 
 await step("PF03", "3万件をすべてチェックして、ドラッグでまとめてタグを付けられる", async () => {
   // フォルダを登録すると、そのフォルダだけの表示になるので、外して両方のフォルダを出す
-  await clearFilter();
+  await ui.filtered(() => clearFilter());
   await page.getByTestId("file-list").click();
   await page.keyboard.press("Control+a");
   await page.waitForTimeout(500);
@@ -101,10 +105,10 @@ await step("PF04", "3万件が対象のタグの組み合わせを再生し始�
   await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
   await page.locator('[data-testid=playlist][data-playlist-name="大量"] .tag-name').click();
-  await page.getByLabel("組み合わせに選ぶタグ").fill("大量");
-  await page.getByRole("button", { name: "選ぶ", exact: true }).click();
-  await page.getByRole("button", { name: "この組み合わせを加える" }).click();
+  await ui.filtered(() => tagItem("大量").locator(".tag-name").click());
+  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
   await waitIdle();
+  await ui.filtered(() => tagItem("大量").locator(".tag-name").click());
   const t0 = Date.now();
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying(30000);

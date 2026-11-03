@@ -25,7 +25,7 @@ async function addToPlaylist(rel, name) {
 async function exportTo(dest) {
   // 前に始めた書き出しで欄が閉じるのを待ってから開く
   await page.getByLabel("書き出し先のフォルダ").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  await page.getByRole("button", { name: "書き出す" }).click();
+  await page.getByRole("button", { name: "書出" }).click();
   await page.getByLabel("書き出し先のフォルダ").fill(dest);
   await page.getByRole("button", { name: "書き出しを始める" }).click();
 }
@@ -96,7 +96,7 @@ await step("X05", "書き出し先のフォルダがないときはエラーを�
   const field = page.getByLabel("書き出し先のフォルダ");
   await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click();
   await page.locator("[data-testid=playlist][data-playlist-name^=TRPG] .tag-name").first().click();
-  await page.getByRole("button", { name: "書き出す" }).click();
+  await page.getByRole("button", { name: "書出" }).click();
   const v = await field.inputValue();
   expect(v === out, v);
 });

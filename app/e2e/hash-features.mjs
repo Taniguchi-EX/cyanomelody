@@ -206,6 +206,8 @@ await step("H15", "再生の欄の曲の名前は、曲名がなければ拡張�
   await page.waitForTimeout(500);
   expect((await page.getByTestId("player-file").innerText()) === "no_title", await page.getByTestId("player-file").innerText());
   expect((await page.getByTestId("player-file-name").innerText()) === "no_title.wav", "2行目にファイル名が出ない");
+  await row("no_title.wav").locator(".file-name").click();
+  expect((await page.getByTestId("track-title").innerText()) === "no_title", "右の欄のタイトル");
   await row("no_title.wav").getByRole("button", { name: "停止", exact: true }).click();
   await search("");
   for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });

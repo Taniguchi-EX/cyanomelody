@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, PLAY_MODES, type AudioFile, type PlayMode } from "../api";
-import { baseName } from "../paths";
+import { stem } from "../paths";
 import type { Player } from "../hooks/useAudioPlayer";
 
 type Props = {
@@ -29,8 +29,6 @@ type Props = {
 const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 const SEEK_STEPS = 1000;
-/** 拡張子を除いたファイル名（パスは含めない） */
-const stem = (relPath: string) => baseName(relPath).replace(/\.[^.]+$/, "");
 const modeOf = (mode: PlayMode) => PLAY_MODES.find((m) => m.mode === mode)!;
 
 /** ウィンドウの下の、プレイリストの再生の欄。何も再生していないときも出しておく */
@@ -118,16 +116,19 @@ export function PlayerBar({
       </div>
 
       <div className="play-center">
+        {/* 「▶／⏸」が中央に来るよう、左右の欄を同じ幅にする（左に ⏮、右に ⏭ 🔀 🎲 ■） */}
         <div className="play-buttons">
-          <button
-            className="icon"
-            onClick={onPrev}
-            disabled={!player || player.index === 0}
-            title="前へ"
-            aria-label="前へ"
-          >
-            ⏮
-          </button>
+          <div className="play-side-left">
+            <button
+              className="icon"
+              onClick={onPrev}
+              disabled={!player || player.index === 0}
+              title="前へ"
+              aria-label="前へ"
+            >
+              ⏮
+            </button>
+          </div>
           <button
             className="play-main"
             onClick={main.onClick}
@@ -137,30 +138,32 @@ export function PlayerBar({
           >
             {main.icon}
           </button>
-          <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
-            ⏭
-          </button>
-          <button
-            className="icon"
-            onClick={() => onPlayOpen("shuffle")}
-            disabled={!canPlayOpen}
-            title={shuffle.label}
-            aria-label={shuffle.label}
-          >
-            {shuffle.icon}
-          </button>
-          <button
-            className="icon"
-            onClick={() => onPlayOpen("random")}
-            disabled={!canPlayOpen}
-            title={random.label}
-            aria-label={random.label}
-          >
-            {random.icon}
-          </button>
-          <button className="icon" onClick={onStop} disabled={!player} title="停止" aria-label="停止">
-            ■
-          </button>
+          <div className="play-side-right">
+            <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
+              ⏭
+            </button>
+            <button
+              className="icon"
+              onClick={() => onPlayOpen("shuffle")}
+              disabled={!canPlayOpen}
+              title={shuffle.label}
+              aria-label={shuffle.label}
+            >
+              {shuffle.icon}
+            </button>
+            <button
+              className="icon"
+              onClick={() => onPlayOpen("random")}
+              disabled={!canPlayOpen}
+              title={random.label}
+              aria-label={random.label}
+            >
+              {random.icon}
+            </button>
+            <button className="icon" onClick={onStop} disabled={!player} title="停止" aria-label="停止">
+              ■
+            </button>
+          </div>
         </div>
         <div className="play-seek">
           <span className="sub" data-testid="player-current">

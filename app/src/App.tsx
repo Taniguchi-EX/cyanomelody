@@ -22,6 +22,7 @@ import {
   playlistApi,
   type PlayMode,
   type PlaylistDetail,
+  type PlayEntry,
   type PlaylistItem,
   type PlaylistNode,
   type Tag,
@@ -67,6 +68,19 @@ const EMPTY_FILTER: FileFilter = {
   folderId: null,
   recentOnly: false,
 };
+
+/** ファイルの一覧を再生するときの、再生の欄の名前 */
+const LIST_NAME = "ファイルの一覧";
+
+/** 並びをばらばらにした写し（フィッシャー–イェーツ） */
+function shuffled<T>(list: T[]): T[] {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 /** 「ファイルを紐づける」で選べるファイル（スキャンの対象と同じ拡張子） */
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a"];
@@ -798,10 +812,37 @@ export default function App() {
         showInfo(`「${playlistName(id)}」には再生するファイルがありません`);
         return;
       }
-      audio.playQueue(playlistName(id), queue);
+      audio.playQueue(playlistName(id), queue, 0, id);
     } catch (e) {
       showError(e);
     }
+  };
+
+  /**
+   * 表示中のファイルの一覧を、プレイリストのように再生する（試聴）。見つからないファイルは除く。
+   * 再生を始めたときの一覧で再生し、途中で絞り込みを変えても順番は変わらない。start があればその曲から
+   */
+  const playList = (mode: PlayMode, start?: AudioFile) => {
+    let queue: PlayEntry[] = files
+      .filter((f) => !f.missing)
+      .map((f) => ({ fileId: f.id, relPath: f.relPath, path: f.path, alias: null, effects: [], itemId: null }));
+    if (queue.length === 0) {
+      showInfo("再生するファイルがありません");
+      return;
+    }
+    if (mode === "shuffle") queue = shuffled(queue);
+    if (mode === "random") queue = [queue[Math.floor(Math.random() * queue.length)]];
+    const index = start ? Math.max(0, queue.findIndex((e) => e.fileId === start.id)) : 0;
+    audio.playQueue(LIST_NAME, queue, index);
+  };
+
+  /** 鳴らしているファイル（一覧の再生・プレイリストの再生・エフェクトの試聴） */
+  const playingFileId = audio.previewId ?? audio.player?.queue[audio.player.index]?.fileId ?? null;
+
+  /** 一覧の行の「▶」：その行から一覧を再生する。鳴らしている行なら止める */
+  const toggleRowPlay = (file: AudioFile) => {
+    if (playingFileId === file.id) audio.stop();
+    else playList("order", file);
   };
 
   const playPlaylistItem = async (item: PlaylistItem) => {
@@ -811,7 +852,7 @@ export default function App() {
         showInfo("再生するファイルがありません");
         return;
       }
-      audio.playQueue(playlistDetail?.name ?? "", queue);
+      audio.playQueue(playlistDetail?.name ?? "", queue, 0, playlistDetail?.id ?? null);
     } catch (e) {
       showError(e);
     }
@@ -962,6 +1003,11 @@ export default function App() {
             onMoveItem={movePlaylistItem}
             onSetMode={setPlaylistItemMode}
             focusedItemId={focusedItemId}
+            playingItemId={
+              audio.player && audio.player.sourceId === playlistDetail.id
+                ? (audio.player.queue[audio.player.index]?.itemId ?? null)
+                : null
+            }
             onFocusItem={(item) => setFocusedItemId(item.id)}
             chains={chains}
             onSetChain={setPlaylistItemChain}
@@ -991,12 +1037,12 @@ export default function App() {
               files={files}
               focusedId={focusedId}
               checked={checked}
-              playingId={audio.previewId}
+              playingId={playingFileId}
               progress={audio.time.duration > 0 ? audio.time.current / audio.time.duration : 0}
               onFocus={(f) => setFocusedId(f.id)}
               onCheck={checks.checkRow}
               onCheckShown={checks.checkShown}
-              onPlay={audio.preview}
+              onPlay={toggleRowPlay}
               showHash={filter.duplicatesOnly || filter.hash !== null}
               onDrop={(ids, target) => {
                 if (target.kind === "playlists") addToPlaylist(target.id, ids);
@@ -1025,6 +1071,7 @@ export default function App() {
             item={focusedItem}
             busy={busy}
             onSave={(alias) => setPlaylistItemAlias(focusedItem, alias)}
+            dataVersion={dataVersion}
           />
         )}
         <SelectionPanel
@@ -1049,6 +1096,7 @@ export default function App() {
           onLinkFile={() => focusedFile && linkMissingFile(focusedFile)}
           onFindInFolder={() => focusedFile && findMissingInFolder(focusedFile)}
           onShowSameAudio={showSameAudio}
+          onReveal={(path) => revealItemInDir(path).catch(showError)}
           playlists={playlists}
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
           onOpenPlaylist={openPlaylist}
@@ -1073,8 +1121,9 @@ export default function App() {
       <PlayerBar
         player={audio.player}
         time={audio.time}
-        canPlayOpen={playlistDetail !== null}
-        onPlayOpen={(mode) => playlistDetail && playPlaylist(playlistDetail.id, mode)}
+        // プレイリストを開いていればそのプレイリスト、開いていなければ表示中の一覧を再生する
+        canPlayOpen={playlistDetail !== null || files.some((f) => !f.missing)}
+        onPlayOpen={(mode) => (playlistDetail ? playPlaylist(playlistDetail.id, mode) : playList(mode))}
         onSeek={audio.seek}
         onPrev={audio.prev}
         onNext={audio.next}

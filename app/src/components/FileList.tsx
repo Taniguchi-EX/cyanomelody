@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
+import { baseName } from "../paths";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 
 const ROW_HEIGHT = 30;
@@ -128,8 +129,9 @@ export function FileList({
                       data-hash={f.hash ?? ""}
                     />
                   )}
-                  <span className="file-name" title={f.path}>
-                    {f.relPath}
+                  {/* ファイル名だけを出す。マウスを乗せると相対パス（サブフォルダの同じ名前を見分ける） */}
+                  <span className="file-name" title={f.relPath}>
+                    {baseName(f.relPath)}
                   </span>
                   <span>
                     {f.tags.map((t) => (

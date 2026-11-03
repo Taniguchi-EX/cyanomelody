@@ -309,10 +309,24 @@ h2:first-child {
   gap: 2px;
 }
 
+/* 左右の欄を同じ幅（1fr）にして、真ん中の「▶／⏸」を中央に置く */
 .play-buttons {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.play-side-left,
+.play-side-right {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.play-side-left {
+  justify-content: flex-end;
 }
 
 .play-buttons button.icon {
@@ -883,6 +897,21 @@ button.filter-chip:hover .chip-x {
   flex: 1;
 }
 
+/* 右の欄の、タグの組み合わせ・プレイリストの項目の曲のリスト */
+.item-tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+
+.item-tracks li {
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 右の欄の「プレイリスト上での名前」 */
 .alias-field input {
   width: 100%;
@@ -942,6 +971,20 @@ button.filter-chip:hover .chip-x {
 
 .playlist-item.selected {
   background: var(--selected);
+}
+
+/* 再生中の曲を出している項目：左端に色の線を引き、種類の記号の代わりに「▶」を出す */
+.playlist-item.playing:not(.drop-before):not(.drop-after) {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.playlist-item.playing button.item-kind .kind-icon {
+  display: none;
+}
+
+.playlist-item.playing button.item-kind .kind-play {
+  display: inline;
+  color: var(--accent);
 }
 
 /* 左の欄の一番上の絞り込み。左の欄をスクロールしても残す */
