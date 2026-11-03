@@ -981,14 +981,6 @@ pub fn remove_empty_tag_items(conn: &Connection) -> Result<usize> {
     )?)
 }
 
-/// プレイリストのタグの組み合わせで使われているタグ
-pub fn tags_in_use(conn: &Connection) -> Result<HashSet<i64>> {
-    Ok(conn
-        .prepare("SELECT DISTINCT tag_id FROM playlist_item_tags")?
-        .query_map([], |r| r.get(0))?
-        .collect::<rusqlite::Result<_>>()?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1231,8 +1223,6 @@ mod tests {
         let only_rain = add_tags(&mut conn, a, &[rain]).unwrap();
         add_tags(&mut conn, a, &[rain, wind]).unwrap();
         add_tags(&mut conn, a, &[storm]).unwrap();
-        // ファイルに付いていなくても、プレイリストで使われているタグは「使われていない」として消さない
-        assert_eq!(crate::tags::delete_unused_tags(&conn).unwrap(), 0);
         // 統合すると、組み合わせのタグも統合先になる
         crate::tags::rename_tag(&mut conn, rain, "風", true).unwrap();
         let items = get_playlist(&conn, a).unwrap().items;

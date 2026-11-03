@@ -252,11 +252,6 @@ async fn move_tag(state: State<'_, AppState>, tag_id: i64, target: MoveTarget) -
 }
 
 #[tauri::command]
-async fn delete_unused_tags(state: State<'_, AppState>) -> Result<usize> {
-    tags::delete_unused_tags(&state.conn())
-}
-
-#[tauri::command]
 async fn add_tag(state: State<'_, AppState>, file_ids: Vec<i64>, name: String) -> Result<i64> {
     files::add_tag(&mut state.conn(), &file_ids, &name)
 }
@@ -555,7 +550,6 @@ pub fn run() {
             create_tag,
             rename_tag,
             delete_tag,
-            delete_unused_tags,
             move_tag,
             add_tag,
             remove_tag,

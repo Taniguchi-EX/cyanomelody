@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::db::now;
@@ -305,23 +305,6 @@ pub fn delete_tag(conn: &mut Connection, tag_id: i64) -> Result<()> {
     Ok(())
 }
 
-/// そのタグにも子孫にもファイルが付いておらず、プレイリストのタグの組み合わせでも（子孫を含めて）使われていない
-/// タグを削除し、削除した数を返す。
-pub fn delete_unused_tags(conn: &Connection) -> Result<usize> {
-    let in_playlists = crate::playlists::tags_in_use(conn)?;
-    let mut unused = Vec::new();
-    for t in list_tags(conn)?.into_iter().filter(|t| t.file_count == 0) {
-        if !descendants_and_self(conn, t.id)?.iter().any(|d| in_playlists.contains(d)) {
-            unused.push(t.id);
-        }
-    }
-    if unused.is_empty() {
-        return Ok(0);
-    }
-    let marks = vec!["?"; unused.len()].join(", ");
-    Ok(conn.execute(&format!("DELETE FROM tags WHERE id IN ({marks})"), params_from_iter(&unused))?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -412,20 +395,6 @@ mod tests {
         let files: i64 = conn.query_row("SELECT count(*) FROM audio_files", [], |r| r.get(0)).unwrap();
         assert_eq!(files, 3);
         assert!(delete_tag(&mut conn, id).is_err());
-    }
-
-    #[test]
-    fn delete_unused_keeps_tags_on_missing_files() {
-        let conn = setup();
-        let used = create_tag(&conn, "used").unwrap();
-        let on_missing = create_tag(&conn, "on_missing").unwrap();
-        create_tag(&conn, "unused1").unwrap();
-        create_tag(&conn, "unused2").unwrap();
-        attach(&conn, 1, used);
-        attach(&conn, 3, on_missing);
-        conn.execute("UPDATE audio_files SET missing = 1 WHERE id = 3", []).unwrap();
-        assert_eq!(delete_unused_tags(&conn).unwrap(), 2);
-        assert_eq!(names(&conn), vec!["used", "on_missing"]);
     }
 
     /// 名前と深さを階層の順に
@@ -522,14 +491,5 @@ mod tests {
         assert_eq!(r, RenameResult { tag_id: boom, merged: true });
         assert_eq!(tree(&conn), vec![t("環境音", 0), t("雨", 1), t("爆発", 0), t("強風", 1)]);
         let _ = gale;
-    }
-
-    #[test]
-    fn delete_unused_keeps_parents_of_used_tags() {
-        let (conn, [env, _, wind, gale, _]) = setup_tree();
-        attach(&conn, 1, gale);
-        assert_eq!(delete_unused_tags(&conn).unwrap(), 2);
-        assert_eq!(tree(&conn), vec![t("環境音", 0), t("風", 1), t("強風", 2)]);
-        let _ = (env, wind);
     }
 }

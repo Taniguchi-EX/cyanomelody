@@ -3,12 +3,15 @@ import { useRef } from "react";
 /** この距離（px）より動かしたらドラッグとみなす（クリックと区別する） */
 const DRAG_THRESHOLD = 6;
 
+/** ファイルを落とせる先：左の欄のプレイリスト（加える）とタグ（付ける） */
+export type FileDropTarget = { kind: "playlists" | "tags"; id: number };
+
 /**
- * ファイルの行を、左の欄のプレイリストへドラッグして加える。
- * ドラッグ中は、つかんだ件数をポインタの横に出し、落とす先のプレイリストを枠で示す。
+ * ファイルの行を、左の欄のプレイリスト・タグへドラッグして、加える・付ける。
+ * ドラッグ中は、つかんだ件数をポインタの横に出し、落とす先の行を枠で示す。「（タグなし）」の行には落とせない。
  * HTMLのドラッグアンドドロップはTauri（Windows）で動かないことがあるので、pointerイベントで作る。
  */
-export function useFileDrag(onDrop: (fileIds: number[], playlistId: number) => void) {
+export function useFileDrag(onDrop: (fileIds: number[], target: FileDropTarget) => void) {
   const state = useRef<{
     x: number;
     y: number;
@@ -18,7 +21,9 @@ export function useFileDrag(onDrop: (fileIds: number[], playlistId: number) => v
   } | null>(null);
 
   const targetAt = (x: number, y: number) =>
-    document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-tree="playlists"][data-node-id]') ?? null;
+    document
+      .elementFromPoint(x, y)
+      ?.closest<HTMLElement>('[data-tree="playlists"][data-node-id], [data-tree="tags"][data-node-id]') ?? null;
 
   const cleanup = () => {
     const s = state.current;
@@ -54,7 +59,7 @@ export function useFileDrag(onDrop: (fileIds: number[], playlistId: number) => v
     const dropped = s?.ghost ? targetAt(e.clientX, e.clientY) : null;
     const ids = s?.ids ?? [];
     cleanup();
-    if (dropped) onDrop(ids, Number(dropped.dataset.nodeId));
+    if (dropped) onDrop(ids, { kind: dropped.dataset.tree as FileDropTarget["kind"], id: Number(dropped.dataset.nodeId) });
   };
 
   /** 行で押したときに呼ぶ。ids はつかむファイル */

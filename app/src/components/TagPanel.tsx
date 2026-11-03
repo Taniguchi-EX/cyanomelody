@@ -16,7 +16,6 @@ type Props = {
   /** 名前を変える。別のタグと同じ名前なら統合を確認する。終わったら true */
   onRename: (tag: Tag, name: string) => Promise<boolean>;
   onDelete: (tag: Tag) => void;
-  onDeleteUnused: () => void;
   onMove: (tag: Tag, target: MoveTarget) => void;
   /** 各項目を選んだときの件数。まだ求めていなければ null（タグの総数を出す） */
   facets: Facets | null;
@@ -32,14 +31,12 @@ export function TagPanel({
   onCreate,
   onRename,
   onDelete,
-  onDeleteUnused,
   onMove,
   facets,
 }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.tagTree.collapsed");
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  const unused = tags.filter((t) => t.fileCount === 0).length;
 
   const parents = useMemo(() => parentIds(tags), [tags]);
   // 選んだときの件数。0件になる項目はグレーアウトし、選べないようにする（選んでいる項目は外せる）
@@ -70,16 +67,9 @@ export function TagPanel({
       title="タグ"
       selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
       actions={
-        <span className="row">
-          {unused > 0 && (
-            <button className="icon" onClick={onDeleteUnused} disabled={busy} title="使われていないタグを削除" aria-label="使われていないタグを削除">
-              🧹
-            </button>
-          )}
-          <button className="icon" onClick={() => setCreating(true)} disabled={busy} title="タグを作る" aria-label="タグを作る">
-            ＋
-          </button>
-        </span>
+        <button className="icon" onClick={() => setCreating(true)} disabled={busy} title="タグを作る" aria-label="タグを作る">
+          ＋
+        </button>
       }
     >
       {creating && (

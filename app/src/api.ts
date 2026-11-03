@@ -107,7 +107,6 @@ export const api = {
   renameTag: (tagId: number, name: string, merge: boolean) =>
     invoke<RenameResult>("rename_tag", { tagId, name, merge }),
   deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),
-  deleteUnusedTags: () => invoke<number>("delete_unused_tags"),
   moveTag: (tagId: number, target: MoveTarget) => invoke<void>("move_tag", { tagId, target }),
   startHashing: () => invoke<void>("start_hashing"),
   cancelHashing: () => invoke<void>("cancel_hashing"),

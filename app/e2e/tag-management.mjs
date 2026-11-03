@@ -214,6 +214,9 @@ await step("T17", "3万件をすべてチェックして、まとめてタグを
 });
 
 await step("T18", "フォルダの登録を解除すると、ファイルとタグの情報が消える", async () => {
+  // フォルダが複数あっても「すべてスキャン」は出さない（フォルダごとの「⟳」を使う）
+  expect((await page.getByTestId("folder").count()) === 2, "フォルダが2つでない");
+  expect((await page.getByRole("button", { name: "すべてスキャン" }).count()) === 0, "すべてスキャンが残っている");
   const folder = page.getByTestId("folder").filter({ hasText: "large" });
   await folder.getByRole("button", { name: "登録解除" }).click();
   await waitIdle();
@@ -361,6 +364,7 @@ await step("T24", "左の欄はライブラリ・タグ・プレイリスト・�
   await section.locator(".collapse-toggle").click();
   expect((await page.getByTestId("folder").count()) === 0, "たためない");
   expect(await page.getByRole("button", { name: "フォルダを追加" }).isEnabled(), "追加が押せない");
+  expect((await page.getByRole("button", { name: "フォルダを追加" }).innerText()) === "＋", "「＋」でない");
   await section.locator(".collapse-toggle").click();
   expect((await page.getByTestId("folder").count()) === 1, "開かない");
 });
@@ -373,7 +377,14 @@ await step("T25", "絞り込みの操作（検索・✕・⧉・🔊・条件の
   }
   expect((await bar.getByLabel("検索", { exact: true }).count()) === 1, "検索が左の欄にない");
   expect((await page.locator("main").getByLabel("検索", { exact: true }).count()) === 0, "検索が中央に残っている");
-  expect((await page.locator("main").getByTestId("file-count").count()) === 1, "件数が中央にない");
+  await ui.clearChecks();
+  // 一覧の件数とチェックしている件数は、一番下の行に出す
+  expect((await page.locator("main").getByTestId("file-count").count()) === 0, "件数が中央に残っている");
+  expect((await page.locator(".status-bar").getByTestId("file-count").count()) === 1, "件数が下の行にない");
+  expect((await page.locator(".status-bar").getByTestId("checked-count").innerText()).startsWith("チェック 0件"), "チェックの件数が下の行にない");
+  // チェックしていないときは、中央のツールバー（チェックの操作）を出さない。一覧の見出しに「ファイル」の文字は出さない
+  expect((await page.locator("main .toolbar").count()) === 0, "中央のツールバーが出ている");
+  expect((await page.locator(".list-head").innerText()).trim() === "", `見出しに文字がある: ${await page.locator(".list-head").innerText()}`);
   // フォルダを選ぶと、条件のチップが出る
   await page.getByTestId("folder").first().click();
   await page.waitForTimeout(300);
@@ -395,6 +406,31 @@ await step("T25", "絞り込みの操作（検索・✕・⧉・🔊・条件の
   });
   expect(Math.abs(b.y - a.y) < 2, `スクロールで動いた: ${b.y} / ${a.y}`);
   await clearFilter();
+});
+
+await step("T26", "ファイルの行をタグの行にドラッグするとタグが付く（チェックした行ならすべて）。（タグなし）には落とせない", async () => {
+  await ui.createTags(["ドラッグ先"]);
+  const target = tagItem("ドラッグ先");
+  await ui.dragTo(row("chime.flac").locator(".file-name"), target, 0.5);
+  await waitIdle();
+  expect((await row("chime.flac").locator(".chip").allInnerTexts()).includes("ドラッグ先"), "付いていない");
+  expect((await status()).includes("1件にタグ「ドラッグ先」を付けました"), await status());
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await ui.dragTo(row("chime.wav").locator(".file-name"), target, 0.5);
+  await waitIdle();
+  for (const rel of ["chime.wav", "chime.mp3"]) {
+    expect((await row(rel).locator(".chip").allInnerTexts()).includes("ドラッグ先"), `${rel}に付いていない`);
+  }
+  expect((await status()).includes("2件にタグ「ドラッグ先」を付けました"), await status());
+  await ui.clearChecks();
+  // （タグなし）の行は落とす先にならない
+  const before = await status();
+  await ui.dragTo(row("サブフォルダ/チャイム.m4a").locator(".file-name"), page.getByTestId("untagged"), 0.5, false);
+  expect(!(await page.getByTestId("untagged").getAttribute("class")).includes("drop-target"), "（タグなし）に枠が出る");
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  expect((await status()) === before, `何かが起きた: ${await status()}`);
 });
 
 await ui.finish();

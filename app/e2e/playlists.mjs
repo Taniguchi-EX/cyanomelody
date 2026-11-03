@@ -323,6 +323,8 @@ await step("P19", "項目の行を押すと右の欄に出て、「プレイリ�
   await ui.waitPlaying();
   const label = await page.getByTestId("player-file").innerText();
   expect(label === "激しめの雨", label);
+  // プレイリスト上での名前があるときは、2行目にファイル名も出す
+  expect((await page.getByTestId("player-file-name").innerText()) === "chime.wav", "ファイル名が出ない");
   await page.getByRole("button", { name: "停止", exact: true }).click();
   await page.getByLabel("プレイリスト上での名前").fill("");
   await page.getByLabel("プレイリスト上での名前").press("Enter");
@@ -448,6 +450,39 @@ await step("P26", "再生の欄：何も再生していないときは、開い�
   await shot("P26_再生の欄");
   await page.getByRole("button", { name: "停止", exact: true }).click();
   await back();
+});
+
+await step("P27", "再生の欄：試聴中はファイル名と「試聴」を出す。プレイリスト上での名前がない曲は、ファイル名を2行目に重ねて出さない", async () => {
+  await back();
+  await row("chime.mp3").getByRole("button", { name: "再生", exact: true }).click();
+  await page.waitForTimeout(300);
+  expect((await page.getByTestId("player-file").innerText()) === "chime.mp3", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-preview").innerText()) === "試聴", "試聴と出ない");
+  await shot("P27_試聴中");
+  await row("chime.mp3").getByRole("button", { name: "停止", exact: true }).click();
+  await open("ドラッグ");
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  expect((await page.getByTestId("player-file-name").count()) === 0, "ファイル名が重ねて出ている");
+  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await back();
+});
+
+await step("P28", "再生の欄の音量のバーで音量を変えられる（試聴にも効く）。音量は再読み込み後も残る", async () => {
+  const volume = page.getByLabel("音量");
+  expect((await volume.inputValue()) === "100", `最初の音量: ${await volume.inputValue()}`);
+  await volume.focus();
+  for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowLeft");
+  expect((await volume.inputValue()) === "60", await volume.inputValue());
+  const v = await page.evaluate(() => document.querySelector("audio").volume);
+  expect(Math.abs(v - 0.6) < 0.001, `音が小さくならない: ${v}`);
+  await ui.reload();
+  expect((await page.getByLabel("音量").inputValue()) === "60", "再読み込みで戻った");
+  await row("chime.wav").getByRole("button", { name: "再生", exact: true }).click();
+  await page.waitForTimeout(300);
+  const pv = await page.evaluate(() => document.querySelector("audio").volume);
+  expect(Math.abs(pv - 0.6) < 0.001, `試聴の音量: ${pv}`);
+  await row("chime.wav").getByRole("button", { name: "停止", exact: true }).click();
 });
 
 await ui.finish();

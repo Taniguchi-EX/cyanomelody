@@ -1,4 +1,4 @@
-import { PLAY_MODES, type PlayMode } from "../api";
+import { PLAY_MODES, type AudioFile, type PlayMode } from "../api";
 import type { Player } from "../hooks/useAudioPlayer";
 
 type Props = {
@@ -15,6 +15,13 @@ type Props = {
   onNext: () => void;
   onTogglePause: () => void;
   onStop: () => void;
+  /** 試聴中のファイル（一覧の行の再生ボタン）。なければ null */
+  previewFile: AudioFile | null;
+  /** 音量（0〜1） */
+  volume: number;
+  onVolume: (volume: number) => void;
+  /** 音量のバーを動かし終えたとき（保存する） */
+  onVolumeCommit: () => void;
 };
 
 const clock = (s: number) =>
@@ -33,6 +40,10 @@ export function PlayerBar({
   onNext,
   onTogglePause,
   onStop,
+  previewFile,
+  volume,
+  onVolume,
+  onVolumeCommit,
 }: Props) {
   const entry = player?.queue[player.index];
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
@@ -56,26 +67,28 @@ export function PlayerBar({
 
   return (
     <div className="play-area" data-testid="player-bar" data-playing={player !== null}>
+      {/* 1行目に曲の名前、2行目にファイル名（1行目と同じなら出さない）・プレイリスト名・何曲目。試聴中はファイル名と「試聴」 */}
       <div className="play-now">
-        <div
-          className="player-file"
-          title={entry ? `${entry.relPath}\n${entry.path}` : undefined}
-          data-testid="player-file"
-        >
-          {entry ? (entry.alias ?? entry.relPath) : ""}
+        <div className="player-file" title={entry?.path ?? previewFile?.path} data-testid="player-file">
+          {entry ? (entry.alias ?? entry.relPath) : (previewFile?.relPath ?? "")}
         </div>
         {player && (
           <div className="sub play-where">
-            <span className="player-name">{player.name}</span>{" "}
+            {entry?.alias && <span data-testid="player-file-name">{entry.relPath}</span>}
+            <span className="player-name">{player.name}</span>
             <span data-testid="player-position">
               {player.index + 1}/{player.queue.length}
             </span>
             {player.preparing && (
               <span className="warn" data-testid="player-preparing">
-                {" "}
                 準備中…
               </span>
             )}
+          </div>
+        )}
+        {!player && previewFile && (
+          <div className="sub play-where" data-testid="player-preview">
+            試聴
           </div>
         )}
       </div>
@@ -145,7 +158,23 @@ export function PlayerBar({
         </div>
       </div>
 
-      <div className="play-side" />
+      <div className="play-side">
+        <span className="sub" aria-hidden="true">
+          🔈
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(volume * 100)}
+          onChange={(e) => onVolume(Number(e.target.value) / 100)}
+          onPointerUp={onVolumeCommit}
+          onKeyUp={onVolumeCommit}
+          title={`音量 ${Math.round(volume * 100)}%`}
+          aria-label="音量"
+          data-testid="player-volume"
+        />
+      </div>
     </div>
   );
 }

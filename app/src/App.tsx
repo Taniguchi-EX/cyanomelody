@@ -449,16 +449,6 @@ export default function App() {
       showInfo(`タグ「${tag.name}」を移しました`);
     });
 
-  const deleteUnusedTags = async () => {
-    const unused = tags.filter((t) => t.fileCount === 0);
-    if (!(await confirmDialog(`どのファイルにも付いていないタグ${unused.length}件を削除しますか？`))) return;
-    run(async () => {
-      const n = await api.deleteUnusedTags();
-      for (const t of unused) replaceFilterTag(t.id, null);
-      showInfo(`使われていないタグ${n}件を削除しました`);
-    });
-  };
-
   const creditsOf = (kind: CreditKind) => (kind === "source" ? sources : licenses);
 
   /** 出典どうし・ライセンスどうしはOR。「なし」とは同時に選べない */
@@ -646,6 +636,16 @@ export default function App() {
       ok = true;
     });
     return ok;
+  };
+
+  /** ファイルの行をタグに落としたとき。外しやすいので、プレイリストへの追加と同じく確認しない */
+  const addTagByDrop = (tagId: number, fileIds: number[]) => {
+    const tag = tags.find((t) => t.id === tagId);
+    if (!tag) return;
+    run(async () => {
+      await api.addTag(fileIds, tag.name);
+      showInfo(`${fileIds.length}件にタグ「${tag.name}」を付けました`);
+    });
   };
 
   // 加えるのは元に戻しやすい（編集画面で外せる）ので、確認しない
@@ -902,7 +902,6 @@ export default function App() {
           onAdd={browseAndAddFolder}
           onRemove={removeFolder}
           onScan={(f) => scan([f])}
-          onScanAll={() => scan(folders)}
           selectedId={filter.folderId}
           onSelect={(id) => setFilter((f) => ({ ...f, folderId: f.folderId === id ? null : id }))}
         />
@@ -914,7 +913,6 @@ export default function App() {
           onCreate={createTag}
           onRename={renameTag}
           onDelete={deleteTag}
-          onDeleteUnused={deleteUnusedTags}
           facets={facets}
           busy={busy}
           onMove={moveTag}
@@ -982,26 +980,18 @@ export default function App() {
           />
         ) : (
           <>
-            <div className="toolbar">
-              <span className="sub" data-testid="file-count">
-                {files.length}件
-              </span>
-              {/* チェックしている件数は常に出す。チェックの操作は、チェックがあるときだけ出す */}
-              <span className="checked-count" data-testid="checked-count">
-                チェック {checked.size}件（表示中 {checks.shownChecked}件）
-              </span>
-              {(checked.size > 0 || checkedOnly) && (
-                <>
-                  <button onClick={checks.clear} disabled={checked.size === 0}>
-                    チェックをすべて外す
-                  </button>
-                  <label>
-                    <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
-                    チェックしたファイルだけ
-                  </label>
-                </>
-              )}
-            </div>
+            {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
+            {(checked.size > 0 || checkedOnly) && (
+              <div className="toolbar">
+                <button onClick={checks.clear} disabled={checked.size === 0}>
+                  チェックをすべて外す
+                </button>
+                <label>
+                  <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
+                  チェックしたファイルだけ
+                </label>
+              </div>
+            )}
             {checked.size > 0 && (
               <BulkBar
                 checkedCount={checked.size}
@@ -1033,7 +1023,9 @@ export default function App() {
               onCheckShown={checks.checkShown}
               onPlay={audio.preview}
               showHash={filter.duplicatesOnly || filter.hash !== null}
-          onDropToPlaylist={(ids, playlistId) => addToPlaylist(playlistId, ids)}
+              onDrop={(ids, target) =>
+                target.kind === "playlists" ? addToPlaylist(target.id, ids) : addTagByDrop(target.id, ids)
+              }
             />
           </>
         )}
@@ -1108,10 +1100,21 @@ export default function App() {
         onNext={audio.next}
         onTogglePause={audio.togglePause}
         onStop={audio.stop}
+        previewFile={audio.previewFile}
+        volume={audio.volume}
+        onVolume={audio.setVolume}
+        onVolumeCommit={audio.commitVolume}
       />
       <div className="status-bar">
         <div className={`status${status.error ? " error" : ""}`} data-testid="status">
           {busy ? "処理中…" : status.text || " "}
+        </div>
+        {/* 一覧の件数と、チェックしている件数（0件のときも常に出す） */}
+        <div className="counts">
+          <span data-testid="file-count">{files.length}件</span>
+          <span className="checked-count" data-testid="checked-count">
+            チェック {checked.size}件（表示中 {checks.shownChecked}件）
+          </span>
         </div>
         {exportProgress && (
           <div className="hash-status" data-testid="export-status">

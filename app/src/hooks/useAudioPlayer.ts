@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AudioFile, PlayEntry } from "../api";
 import { chainApi } from "../effects";
+import { useStoredNumber } from "../storage";
 
 /** プレイリストの再生の状態 */
 export type Player = {
@@ -25,7 +26,14 @@ type Options = {
 export function useAudioPlayer({ onInfo, onError }: Options) {
   const audioRef = useRef<HTMLAudioElement>(null);
   /** 試聴中のファイル */
-  const [previewId, setPreviewId] = useState<number | null>(null);
+  const [previewFile, setPreviewFile] = useState<AudioFile | null>(null);
+  const previewId = previewFile?.id ?? null;
+  /** 音量（0〜1）。試聴とプレイリストの再生で同じものを使い、アプリを閉じても覚えておく */
+  // 動かしている間は音量だけを変え、動かし終えたとき（commitVolume）に保存する
+  const [volume, setVolume, commitVolume] = useStoredNumber("cyanomelody.volume", 1);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [volume]);
   const [player, setPlayerState] = useState<Player | null>(null);
   // audio のイベントから今の再生の状態を見るため、状態と同じものを ref にも持つ
   const playerRef = useRef<Player | null>(null);
@@ -41,7 +49,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
   const preview = (file: AudioFile) => {
     if (previewId === file.id) {
       audioRef.current?.pause();
-      setPreviewId(null);
+      setPreviewFile(null);
       return;
     }
     previewPath(file, file.path);
@@ -53,9 +61,9 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     if (!audio) return;
     setPlayer(null);
     audio.src = convertFileSrc(path);
-    setPreviewId(file.id);
+    setPreviewFile(file);
     audio.play().catch((e) => {
-      setPreviewId(null);
+      setPreviewFile(null);
       onError(`再生できませんでした: ${file.relPath}（${e}）`);
     });
   };
@@ -73,7 +81,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     const entry = p.queue[index];
     const next = { ...p, index, paused: false, preparing: entry.effects.length > 0 };
     setPlayer(next);
-    setPreviewId(null);
+    setPreviewFile(null);
     if (!next.preparing) {
       audio.src = convertFileSrc(entry.path);
       audio.play().catch((e) => skip(next, String(e)));
@@ -143,12 +151,13 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     onEnded: () => {
       const p = playerRef.current;
       if (p) playAt(p, p.index + 1);
-      else setPreviewId(null);
+      else setPreviewFile(null);
     },
   };
 
   return {
     previewId,
+    previewFile,
     player,
     preview,
     previewPath,
@@ -159,6 +168,9 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     togglePause,
     time,
     seek,
+    volume,
+    setVolume,
+    commitVolume,
     audioProps,
   };
 }

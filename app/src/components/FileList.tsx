@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
-import { useFileDrag } from "../hooks/useFileDrag";
+import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 
 const ROW_HEIGHT = 30;
 
@@ -26,7 +26,8 @@ type Props = {
   /** 行にハッシュ値の色の印を出す（重複を見るとき） */
   showHash: boolean;
   /** 行を左の欄のプレイリストへドラッグしたとき。チェックした行をつかんだら、チェックしたファイルすべて */
-  onDropToPlaylist: (fileIds: number[], playlistId: number) => void;
+  /** 行を左の欄のプレイリスト・タグに落としたとき */
+  onDrop: (fileIds: number[], target: FileDropTarget) => void;
 };
 
 export function FileList({
@@ -40,9 +41,9 @@ export function FileList({
   onCheckShown,
   onPlay,
   showHash,
-  onDropToPlaylist,
+  onDrop,
 }: Props) {
-  const beginDrag = useFileDrag(onDropToPlaylist);
+  const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: files.length,
@@ -57,7 +58,6 @@ export function FileList({
   return (
     <>
       <div className="list-head">
-        <span className="sub">ファイル</span>
         <label className="check-cell" title="表示中のファイルをすべてチェック">
           <input
             type="checkbox"

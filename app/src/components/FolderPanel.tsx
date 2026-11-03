@@ -9,7 +9,6 @@ type Props = {
   onAdd: () => void;
   onRemove: (folder: LibraryFolder) => void;
   onScan: (folder: LibraryFolder) => void;
-  onScanAll: () => void;
   /** 絞り込みに選んでいるフォルダ */
   selectedId: number | null;
   /** 押したフォルダで絞り込む（選んでいるフォルダなら外す） */
@@ -17,15 +16,15 @@ type Props = {
 };
 
 /** 左の欄の「ライブラリ」。登録したフォルダの一覧 */
-export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll, selectedId, onSelect }: Props) {
+export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, selectedId, onSelect }: Props) {
   return (
     <Collapsible
       id="folders"
       title="ライブラリ"
       selectedCount={selectedId !== null ? 1 : 0}
       actions={
-        <button onClick={onAdd} disabled={busy} aria-label="フォルダを追加">
-          追加
+        <button className="icon" onClick={onAdd} disabled={busy} title="フォルダを追加" aria-label="フォルダを追加">
+          ＋
         </button>
       }
     >
@@ -74,13 +73,6 @@ export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll,
           </button>
         </div>
       ))}
-      {folders.length > 1 && (
-        <div className="row" style={{ marginTop: 6 }}>
-          <button onClick={onScanAll} disabled={busy}>
-            すべてスキャン
-          </button>
-        </div>
-      )}
     </Collapsible>
   );
 }

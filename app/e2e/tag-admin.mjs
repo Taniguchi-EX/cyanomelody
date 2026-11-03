@@ -115,17 +115,14 @@ await step("A08", "「🗑」でタグを削除すると、ファイルから外
   expect((await tagNames()).join(",") === "未使用タグ", "キャンセルしたのに削除した");
 });
 
-await step("A09", "使われていないタグがあるときだけ「🧹」が出て、まとめて削除できる", async () => {
+await step("A09", "「使われていないタグを削除」はなく、使われていないタグは行の「🗑」で1つずつ消す", async () => {
   await row("chime.ogg").click();
   await addTag("使用中");
-  const sweep = page.getByRole("button", { name: "使われていないタグを削除" });
-  expect((await sweep.count()) === 1, "🧹が出ない");
-  await sweep.click();
+  expect((await page.getByRole("button", { name: "使われていないタグを削除" }).count()) === 0, "🧹が残っている");
+  await rowAction(tagItem("未使用タグ"), "未使用タグを削除");
   await waitIdle();
   const names = await tagNames();
   expect(names.join(",") === "使用中", names.join(","));
-  expect((await sweep.count()) === 0, "使われていないタグがないのに🧹が出る");
-  await shot("A09_一括削除後");
 });
 
 await step("A10", "空の名前には変えられない。Escで名前の変更をやめる", async () => {
