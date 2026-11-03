@@ -71,6 +71,9 @@ export type Facets = {
 /** 件数の内訳の1項目。id が null は「なし」 */
 export type CountItem = { id: number | null; count: number };
 
+/** タグと、そのタグが付いているファイルの数（チェックしたファイルのうち） */
+export type TagCount = { id: number; name: string; count: number };
+
 export type Tag = {
   id: number;
   name: string;
@@ -99,8 +102,7 @@ export const api = {
   /** 指定したidのうち、ライブラリにあるもの */
   existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
   /** チェックしたファイルに付いているタグと、そのタグが付いている件数 */
-  checkedTagCounts: (fileIds: number[]) =>
-    invoke<{ id: number; name: string; count: number }[]>("checked_tag_counts", { fileIds }),
+  checkedTagCounts: (fileIds: number[]) => invoke<TagCount[]>("checked_tag_counts", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),

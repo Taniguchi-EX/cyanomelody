@@ -4,17 +4,14 @@ import { pickPath } from "./dialogs";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
-  describeHashing,
   describeScan,
   type AudioFile,
   type Credit,
   type CreditInput,
   type CreditKind,
-  type FileFilter,
   type Facets,
   type HashProgress,
   type ExportProgress,
-  describeExport,
   type LibraryFolder,
   type LicenseType,
   type LinkOutcome,
@@ -26,12 +23,12 @@ import {
   type PlaylistItem,
   type PlaylistNode,
   type Tag,
+  type TagCount,
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
 import { confirmDialog } from "./confirm";
 import { FolderPanel } from "./components/FolderPanel";
-import { baseName } from "./paths";
-import { FilterChips, type FilterChip } from "./components/FilterChips";
+import { FilterChips } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
 import { FileList } from "./components/FileList";
 import type { FileDropTarget } from "./hooks/useFileDrag";
@@ -40,35 +37,19 @@ import { PlaylistEditor } from "./components/PlaylistEditor";
 import { PlayerBar } from "./components/PlayerBar";
 import { useAudioPlayer, type PreviewTarget } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
+import { EMPTY_FILTER, FILTER_KEYS, useFileFilter } from "./hooks/useFileFilter";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
+import { CheckBar } from "./components/CheckBar";
+import { StatusBar, type Status } from "./components/StatusBar";
 import { AliasField, ItemDetail } from "./components/ItemDetail";
 import { CreditPanel } from "./components/CreditPanel";
 import { OtherPanel } from "./components/OtherPanel";
-import { OTHER_ITEMS, type OtherKey } from "./otherFilters";
 import { CreditForm } from "./components/CreditForm";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { useStoredNumber } from "./storage";
-
-type Status = { text: string; error: boolean };
-
-const EMPTY_FILTER: FileFilter = {
-  text: "",
-  tagIds: [],
-  untaggedOnly: false,
-  missingOnly: false,
-  duplicatesOnly: false,
-  hash: null,
-  sourceIds: [],
-  noSource: false,
-  licenseIds: [],
-  noLicense: false,
-  fileIds: null,
-  folderId: null,
-  recentOnly: false,
-};
 
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
 const LIST_NAME = "ファイルの一覧";
@@ -86,12 +67,6 @@ function shuffled<T>(list: T[]): T[] {
 /** 「ファイルを紐づける」で選べるファイル（スキャンの対象と同じ拡張子） */
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a"];
 
-/** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
-const FILTER_KEYS = {
-  source: { ids: "sourceIds", none: "noSource" },
-  license: { ids: "licenseIds", none: "noLicense" },
-} as const;
-
 /** 左・右の欄の最小の幅と、中央の欄に残す最小の幅 */
 const SIDE_MIN = 180;
 const MAIN_MIN = 320;
@@ -102,8 +77,9 @@ export default function App() {
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [files, setFiles] = useState<AudioFile[]>([]);
-  const [filter, setFilter] = useState<FileFilter>(EMPTY_FILTER);
-  const [text, setText] = useState("");
+  /** 絞り込みの条件 */
+  const fileFilter = useFileFilter();
+  const { filter, text, setText, toggleTag, toggleUntagged, toggleCredit, toggleCreditNone, toggleOther } = fileFilter;
   /** クリックして右の欄に出しているファイル */
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
@@ -252,12 +228,6 @@ export default function App() {
     };
   }, []);
 
-  // ファイル名の入力は少し待ってから絞り込む
-  useEffect(() => {
-    const timer = setTimeout(() => setFilter((f) => (f.text === text ? f : { ...f, text })), 200);
-    return () => clearTimeout(timer);
-  }, [text]);
-
   /**
    * 処理中は操作できないようにし、終わったら一覧を読み直す。読み直しが済むまでを処理中とする。
    * 処理が成功したかを返す（失敗したときはエラーを出して false）
@@ -305,7 +275,7 @@ export default function App() {
       showInfo(describeScan(path, r));
       // 取り込んだファイルを整理できるよう、そのフォルダだけを表示する
       clearAll();
-      setFilter({ ...EMPTY_FILTER, folderId: r.folderId });
+      fileFilter.reset({ folderId: r.folderId });
       startHashing();
     });
 
@@ -317,7 +287,7 @@ export default function App() {
     if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.removeFolder(folder.id);
-      setFilter((f) => (f.folderId === folder.id ? { ...f, folderId: null } : f));
+      fileFilter.dropFolder(folder.id);
       showInfo(`登録を解除しました: ${folder.path}`);
     });
   };
@@ -344,22 +314,8 @@ export default function App() {
       showInfo(`タグ「${name.trim()}」を付けました`);
     });
 
-  // チェックしたファイルに付いているタグと件数（ファイルの一覧の、チェックの操作の行に出す）
-  const [checkedTags, setCheckedTags] = useState<{ id: number; name: string; count: number }[]>([]);
-  useEffect(() => {
-    if (checked.size === 0) return;
-    let alive = true;
-    api
-      .checkedTagCounts([...checked])
-      .then((list) => alive && setCheckedTags(list))
-      .catch(showError);
-    return () => {
-      alive = false;
-    };
-  }, [checked, dataVersion]);
-
   /** チェックしたファイルすべてから、タグを外す（確認してから） */
-  const removeTagFromChecked = async (tag: { id: number; name: string; count: number }) => {
+  const removeTagFromChecked = async (tag: TagCount) => {
     if (!(await confirmDialog(`チェックした${tag.count}件から、タグ「${tag.name}」を外しますか？`))) return;
     run(async () => {
       await api.removeTag(checks.ids(), tag.id);
@@ -396,17 +352,15 @@ export default function App() {
 
   /** 絞り込み・チェック・右の欄の表示を、すべて解除する */
   const clearAll = () => {
-    setText("");
+    fileFilter.reset();
     setCheckedOnly(false);
-    setFilter(EMPTY_FILTER);
     checks.clear();
     setFocusedId(null);
   };
 
   const showSameAudio = (hash: string) => {
-    setText("");
+    fileFilter.reset({ hash });
     setCheckedOnly(false);
-    setFilter({ ...EMPTY_FILTER, hash });
   };
 
   /** フォルダを選んで、そのまま登録する */
@@ -414,24 +368,6 @@ export default function App() {
     const path = await pickPath({ directory: true }).catch(showError);
     if (typeof path === "string") await addFolder(path);
   };
-
-  const toggleTag = (tagId: number) =>
-    setFilter((f) => ({
-      ...f,
-      untaggedOnly: false,
-      tagIds: f.tagIds.includes(tagId) ? f.tagIds.filter((id) => id !== tagId) : [...f.tagIds, tagId],
-    }));
-
-  const toggleUntagged = () => setFilter((f) => ({ ...f, tagIds: [], untaggedOnly: !f.untaggedOnly }));
-
-  /** 削除・統合したタグを、絞り込みの条件から外す・置き換える */
-  const replaceFilterTag = (from: number, to: number | null) =>
-    setFilter((f) => {
-      if (!f.tagIds.includes(from)) return f;
-      const ids = f.tagIds.filter((id) => id !== from);
-      if (to !== null && !ids.includes(to)) ids.push(to);
-      return { ...f, tagIds: ids };
-    });
 
   const createTag = async (name: string) => 
     run(async () => {
@@ -455,7 +391,7 @@ export default function App() {
     return run(async () => {
       const r = await api.renameTag(tag.id, newName, other !== undefined);
       if (r.merged) {
-        replaceFilterTag(tag.id, r.tagId);
+        fileFilter.replaceTag(tag.id, r.tagId);
         showInfo(`タグ「${tag.name}」を「${other?.name}」に統合しました`);
       } else {
         showInfo(`タグ「${tag.name}」の名前を「${newName}」に変えました`);
@@ -472,7 +408,7 @@ export default function App() {
     if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.deleteTag(tag.id);
-      replaceFilterTag(tag.id, null);
+      fileFilter.replaceTag(tag.id, null);
       showInfo(`タグ「${tag.name}」を削除しました`);
     });
   };
@@ -484,26 +420,6 @@ export default function App() {
     });
 
   const creditsOf = (kind: CreditKind) => (kind === "source" ? sources : licenses);
-
-  /** 出典どうし・ライセンスどうしはOR。「なし」とは同時に選べない */
-  const toggleCredit = (kind: CreditKind, id: number) => {
-    const k = FILTER_KEYS[kind];
-    setFilter((f) => ({
-      ...f,
-      [k.none]: false,
-      [k.ids]: f[k.ids].includes(id) ? f[k.ids].filter((x) => x !== id) : [...f[k.ids], id],
-    }));
-  };
-
-  const toggleCreditNone = (kind: CreditKind) => {
-    const k = FILTER_KEYS[kind];
-    setFilter((f) => ({ ...f, [k.ids]: [], [k.none]: !f[k.none] }));
-  };
-
-  const removeFilterCredit = (kind: CreditKind, id: number) => {
-    const k = FILTER_KEYS[kind];
-    setFilter((f) => (f[k.ids].includes(id) ? { ...f, [k.ids]: f[k.ids].filter((x) => x !== id) } : f));
-  };
 
   const createCredit = async (kind: CreditKind, input: CreditInput) => 
     run(async () => {
@@ -526,7 +442,7 @@ export default function App() {
     if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.deleteCredit(kind, credit.id);
-      removeFilterCredit(kind, credit.id);
+      fileFilter.dropCredit(kind, credit.id);
       showInfo(`${label}「${credit.name}」を削除しました`);
     });
   };
@@ -637,9 +553,6 @@ export default function App() {
       showInfo(`プレイリスト「${playlistName(playlistId)}」から外しました`);
     });
 
-  /** 「その他」の条件（重複・直近で再生・リンク切れ）を選ぶ・外す */
-  const toggleOther = (key: OtherKey) => setFilter((f) => ({ ...f, [key]: !f[key] }));
-
   /** 結び付けの結果を出す。フォルダを登録したときは、ハッシュ値の計算を始める */
   const reportLink = (r: LinkOutcome) => {
     showInfo(
@@ -666,12 +579,6 @@ export default function App() {
       if (r) reportLink(r);
       else showInfo(`同じ音声のファイルは見つかりませんでした: ${folder}`);
     });
-  };
-
-  /** 絞り込みの条件だけをすべて外す（チェックと右の欄の表示はそのまま） */
-  const clearConditions = () => {
-    setText("");
-    setFilter(EMPTY_FILTER);
   };
 
   /** ファイルの行をタグに落としたとき。外しやすいので、プレイリストへの追加と同じく確認しない */
@@ -873,55 +780,8 @@ export default function App() {
     }
   };
 
-  // 選んでいる絞り込みの条件（一覧の上にチップで出す。押すとその条件だけ外す）
-  const nameOf = (list: { id: number; name: string }[], id: number) => list.find((x) => x.id === id)?.name ?? "?";
-  const filterChips: FilterChip[] = [];
-  if (filter.folderId !== null) {
-    const folder = folders.find((f) => f.id === filter.folderId);
-    filterChips.push({
-      key: "folder",
-      icon: "📁",
-      label: folder ? baseName(folder.path) : "?",
-      title: folder?.path,
-      onRemove: () => setFilter((f) => ({ ...f, folderId: null })),
-    });
-  }
-  if (filter.untaggedOnly) filterChips.push({ key: "untagged", icon: "🏷", label: "タグなし", onRemove: toggleUntagged });
-  for (const id of filter.tagIds) {
-    filterChips.push({ key: `tag-${id}`, icon: "🏷", label: nameOf(tags, id), onRemove: () => toggleTag(id) });
-  }
-  for (const kind of ["source", "license"] as const) {
-    const k = FILTER_KEYS[kind];
-    const icon = kind === "source" ? "🔗" : "⚖";
-    if (filter[k.none]) {
-      filterChips.push({ key: `${kind}-none`, icon, label: `${CREDIT_LABEL[kind]}なし`, onRemove: () => toggleCreditNone(kind) });
-    }
-    for (const id of filter[k.ids]) {
-      filterChips.push({
-        key: `${kind}-${id}`,
-        icon,
-        label: nameOf(creditsOf(kind), id),
-        title: CREDIT_LABEL[kind],
-        onRemove: () => toggleCredit(kind, id),
-      });
-    }
-  }
-  for (const item of OTHER_ITEMS) {
-    if (filter[item.key]) {
-      filterChips.push({ key: item.key, icon: item.icon, label: item.chip, title: item.label, onRemove: () => toggleOther(item.key) });
-    }
-  }
-  if (filter.hash) {
-    const hash = filter.hash;
-    filterChips.push({
-      key: "hash",
-      icon: "🔊",
-      label: "同じ音声",
-      title: hash,
-      onRemove: () => setFilter((f) => ({ ...f, hash: null })),
-      testId: "hash-filter",
-    });
-  }
+  // 選んでいる絞り込みの条件（検索の欄の下にチップで出す。押すとその条件だけ外す）
+  const filterChips = fileFilter.chips({ folders, tags, credits: creditsOf });
 
   return (
     // ウィンドウを狭くしたときは、左・右の欄が最小の幅まで縮んでから中央の欄が縮む
@@ -937,7 +797,7 @@ export default function App() {
           <div className="row">
             <input type="text" placeholder="検索" value={text} onChange={(e) => setText(e.target.value)} aria-label="検索" />
           </div>
-          <FilterChips chips={filterChips} onClearAll={clearConditions} />
+          <FilterChips chips={filterChips} onClearAll={() => fileFilter.reset()} />
         </div>
         <FolderPanel
           folders={folders}
@@ -946,7 +806,7 @@ export default function App() {
           onRemove={removeFolder}
           onScan={(f) => scan([f])}
           selectedId={filter.folderId}
-          onSelect={(id) => setFilter((f) => ({ ...f, folderId: f.folderId === id ? null : id }))}
+          onSelect={fileFilter.toggleFolder}
         />
         <TagPanel
           tags={tags}
@@ -1038,40 +898,18 @@ export default function App() {
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (
-              <div className="toolbar">
-                <button onClick={() => checks.checkShown(true)} disabled={checks.shownChecked === files.length}>
-                  全てチェック
-                </button>
-                <button onClick={checks.clear} disabled={checked.size === 0}>
-                  チェックをすべて外す
-                </button>
-                <label>
-                  <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
-                  チェックしたファイルだけ表示
-                </label>
-                {/* チェックしたファイルに付いているタグ。名前・件数・✕（押すとチェックしたファイルすべてから外す） */}
-                {checked.size > 0 && checkedTags.length > 0 && (
-                  <div className="filter-chips checked-tags" data-testid="checked-tags">
-                    {checkedTags.map((t) => (
-                      <button
-                        key={t.id}
-                        className="chip filter-chip"
-                        onClick={() => removeTagFromChecked(t)}
-                        disabled={busy}
-                        title="押すと、チェックしたファイルすべてから外す"
-                        aria-label={`${t.name}をチェックしたファイルから外す`}
-                        data-testid="checked-tag"
-                        data-tag-name={t.name}
-                      >
-                        <span className="chip-icon">🏷</span>
-                        {t.name}
-                        <span className="chip-count">{t.count}</span>
-                        <span className="chip-x">✕</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <CheckBar
+                checked={checked}
+                allShownChecked={checks.shownChecked === files.length}
+                checkedOnly={checkedOnly}
+                busy={busy}
+                dataVersion={dataVersion}
+                onCheckShown={() => checks.checkShown(true)}
+                onClear={checks.clear}
+                onCheckedOnly={setCheckedOnly}
+                onRemoveTag={removeTagFromChecked}
+                onError={showError}
+              />
             )}
             <FileList
               files={files}
@@ -1170,47 +1008,18 @@ export default function App() {
         onVolume={audio.setVolume}
         onVolumeCommit={audio.commitVolume}
       />
-      <div className="status-bar">
-        <div className={`status${status.error ? " error" : ""}`} data-testid="status" data-run-count={runCount}>
-          {busy ? "処理中…" : status.text || " "}
-        </div>
-        {/* 一覧の件数と、チェックしている件数（0件のときも常に出す） */}
-        <div className="counts" data-testid="counts" data-list-version={listVersion}>
-          <span data-testid="file-count">{files.length}件</span>
-          <span className="checked-count" data-testid="checked-count">
-            チェック {checked.size}件（表示中 {checks.shownChecked}件）
-          </span>
-        </div>
-        {exportProgress && (
-          <div className="hash-status" data-testid="export-status">
-            {describeExport(exportProgress)}
-            {/* 書き出したフォルダは、押すとエクスプローラーで見せる（渡すときに探さなくてよい） */}
-            {!exportProgress.running && (
-              <a
-                href="#"
-                className="folder-link"
-                title="エクスプローラーで見せる"
-                data-testid="export-folder"
-                onClick={(e) => {
-                  e.preventDefault();
-                  revealItemInDir(exportProgress.folder).catch(showError);
-                }}
-              >
-                {exportProgress.folder}
-              </a>
-            )}
-            {exportProgress.running && (
-              <button onClick={() => playlistApi.cancelExport().catch(showError)}>中止</button>
-            )}
-          </div>
-        )}
-        {hashProgress && (
-          <div className="hash-status" data-testid="hash-status">
-            {describeHashing(hashProgress)}
-            {hashProgress.running && <button onClick={() => api.cancelHashing().catch(showError)}>中止</button>}
-          </div>
-        )}
-      </div>
+      <StatusBar
+        status={status}
+        busy={busy}
+        runCount={runCount}
+        listVersion={listVersion}
+        fileCount={files.length}
+        checkedCount={checked.size}
+        shownChecked={checks.shownChecked}
+        exportProgress={exportProgress}
+        hashProgress={hashProgress}
+        onError={showError}
+      />
       <audio {...audio.audioProps} />
       {effectDialog && (
         <EffectManager
