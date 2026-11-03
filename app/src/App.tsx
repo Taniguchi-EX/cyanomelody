@@ -258,11 +258,16 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [text]);
 
-  /** 処理中は操作できないようにし、終わったら一覧を読み直す。読み直しが済むまでを処理中とする */
+  /**
+   * 処理中は操作できないようにし、終わったら一覧を読み直す。読み直しが済むまでを処理中とする。
+   * 処理が成功したかを返す（失敗したときはエラーを出して false）
+   */
   const run = async (task: () => Promise<void>) => {
     setBusy(true);
+    let ok = false;
     try {
       await task();
+      ok = true;
     } catch (e) {
       showError(e);
     } finally {
@@ -270,6 +275,7 @@ export default function App() {
       setBusy(false);
       setRunCount((n) => n + 1);
     }
+    return ok;
   };
 
   const listFocusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
@@ -293,19 +299,15 @@ export default function App() {
       : null
     : listFocusedFile;
   const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
-  const addFolder = async (path: string) => {
-    let ok = false;
-    await run(async () => {
+  const addFolder = (path: string) =>
+    run(async () => {
       const r = await api.addFolder(path);
       showInfo(describeScan(path, r));
-      ok = true;
       // 取り込んだファイルを整理できるよう、そのフォルダだけを表示する
       clearAll();
       setFilter({ ...EMPTY_FILTER, folderId: r.folderId });
       startHashing();
     });
-    return ok;
-  };
 
   const removeFolder = async (folder: LibraryFolder) => {
     const message =
@@ -336,15 +338,11 @@ export default function App() {
       startHashing();
     });
 
-  const addTag = async (name: string) => {
-    let ok = false;
-    await run(async () => {
+  const addTag = async (name: string) => 
+    run(async () => {
       await api.addTag(focusedIds(), name);
       showInfo(`タグ「${name.trim()}」を付けました`);
-      ok = true;
     });
-    return ok;
-  };
 
   // チェックしたファイルに付いているタグと件数（ファイルの一覧の、チェックの操作の行に出す）
   const [checkedTags, setCheckedTags] = useState<{ id: number; name: string; count: number }[]>([]);
@@ -435,15 +433,11 @@ export default function App() {
       return { ...f, tagIds: ids };
     });
 
-  const createTag = async (name: string) => {
-    let ok = false;
-    await run(async () => {
+  const createTag = async (name: string) => 
+    run(async () => {
       await api.createTag(name);
       showInfo(`タグ「${name.trim()}」を作成しました`);
-      ok = true;
     });
-    return ok;
-  };
 
   const renameTag = async (tag: Tag, name: string) => {
     const newName = name.trim();
@@ -458,8 +452,7 @@ export default function App() {
     ) {
       return false;
     }
-    let ok = false;
-    await run(async () => {
+    return run(async () => {
       const r = await api.renameTag(tag.id, newName, other !== undefined);
       if (r.merged) {
         replaceFilterTag(tag.id, r.tagId);
@@ -467,9 +460,7 @@ export default function App() {
       } else {
         showInfo(`タグ「${tag.name}」の名前を「${newName}」に変えました`);
       }
-      ok = true;
     });
-    return ok;
   };
 
   const deleteTag = async (tag: Tag) => {
@@ -514,25 +505,17 @@ export default function App() {
     setFilter((f) => (f[k.ids].includes(id) ? { ...f, [k.ids]: f[k.ids].filter((x) => x !== id) } : f));
   };
 
-  const createCredit = async (kind: CreditKind, input: CreditInput) => {
-    let ok = false;
-    await run(async () => {
+  const createCredit = async (kind: CreditKind, input: CreditInput) => 
+    run(async () => {
       await api.createCredit(kind, input);
       showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を作成しました`);
-      ok = true;
     });
-    return ok;
-  };
 
-  const updateCredit = async (kind: CreditKind, credit: Credit, input: CreditInput) => {
-    let ok = false;
-    await run(async () => {
+  const updateCredit = async (kind: CreditKind, credit: Credit, input: CreditInput) => 
+    run(async () => {
       await api.updateCredit(kind, credit.id, input);
       showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を保存しました`);
-      ok = true;
     });
-    return ok;
-  };
 
   const deleteCredit = async (kind: CreditKind, credit: Credit) => {
     const label = CREDIT_LABEL[kind];
@@ -548,15 +531,11 @@ export default function App() {
     });
   };
 
-  const setFileCredit = async (kind: CreditKind, name: string) => {
-    let ok = false;
-    await run(async () => {
+  const setFileCredit = async (kind: CreditKind, name: string) => 
+    run(async () => {
       await api.setFileCredit(kind, focusedIds(), name);
       showInfo(`${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`);
-      ok = true;
     });
-    return ok;
-  };
 
   const clearFileCredit = (kind: CreditKind) =>
     run(async () => {
@@ -579,25 +558,17 @@ export default function App() {
     setPlaylistDetail(null);
   };
 
-  const createPlaylist = async (name: string, parent: number | null = null) => {
-    let ok = false;
-    await run(async () => {
+  const createPlaylist = async (name: string, parent: number | null = null) => 
+    run(async () => {
       await playlistApi.create(name, parent);
       showInfo(`プレイリスト「${name.trim()}」を作りました`);
-      ok = true;
     });
-    return ok;
-  };
 
-  const renamePlaylist = async (id: number, name: string) => {
-    let ok = false;
-    await run(async () => {
+  const renamePlaylist = async (id: number, name: string) => 
+    run(async () => {
       await playlistApi.rename(id, name);
       showInfo(`プレイリストの名前を「${name.trim()}」に変えました`);
-      ok = true;
     });
-    return ok;
-  };
 
   const deletePlaylist = async (id: number) => {
     const node = playlists.find((p) => p.id === id);
@@ -624,15 +595,11 @@ export default function App() {
   const playlistName = (id: number) => playlists.find((p) => p.id === id)?.name ?? "";
 
   /** ファイルをプレイリストの最後に加える */
-  const addToPlaylist = async (playlistId: number, fileIds: number[]) => {
-    let ok = false;
-    await run(async () => {
+  const addToPlaylist = async (playlistId: number, fileIds: number[]) => 
+    run(async () => {
       await playlistApi.addFiles(playlistId, fileIds);
       showInfo(`${fileIds.length}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
-      ok = true;
     });
-    return ok;
-  };
 
   /** ファイルを左の欄のプレイリスト・タグ・出典・ライセンスに落としたとき */
   const dropFiles = (fileIds: number[], target: FileDropTarget) => {
@@ -719,13 +686,10 @@ export default function App() {
 
   const addTagsToPlaylist = async (tagIds: number[]) => {
     if (!playlistDetail) return false;
-    let ok = false;
-    await run(async () => {
+    return run(async () => {
       await playlistApi.addTags(playlistDetail.id, tagIds);
       showInfo("タグの組み合わせを加えました");
-      ok = true;
     });
-    return ok;
   };
 
   const addRefToPlaylist = (refId: number) =>
@@ -748,13 +712,10 @@ export default function App() {
   /** チェックした項目をまとめて外す（確認する） */
   const removePlaylistItems = async (items: PlaylistItem[]) => {
     if (!(await confirmDialog(`チェックした${items.length}件の項目をプレイリストから外しますか？`))) return false;
-    let ok = false;
-    await run(async () => {
+    return run(async () => {
       for (const item of items) await playlistApi.removeItem(item.id);
       showInfo(`${items.length}件の項目を外しました`);
-      ok = true;
     });
-    return ok;
   };
 
   const movePlaylistItem = (item: PlaylistItem, index: number) =>
@@ -772,15 +733,11 @@ export default function App() {
     return id;
   };
 
-  const renameChain = async (chain: EffectChain, name: string) => {
-    let ok = false;
-    await run(async () => {
+  const renameChain = async (chain: EffectChain, name: string) => 
+    run(async () => {
       await chainApi.rename(chain.id, name);
       showInfo(`エフェクトセットの名前を「${name.trim()}」に変えました`);
-      ok = true;
     });
-    return ok;
-  };
 
   const deleteChain = async (chain: EffectChain) => {
     let message = `エフェクトセット「${chain.name}」を削除しますか？`;
@@ -792,15 +749,11 @@ export default function App() {
     });
   };
 
-  const saveChain = async (chain: EffectChain, effects: Effect[]) => {
-    let ok = false;
-    await run(async () => {
+  const saveChain = async (chain: EffectChain, effects: Effect[]) => 
+    run(async () => {
       await chainApi.setEffects(chain.id, effects);
       showInfo(`エフェクトセット「${chain.name}」を保存しました`);
-      ok = true;
     });
-    return ok;
-  };
 
   /** 右の欄に出しているファイルに、エフェクトをかけて試聴する */
   const previewChain = async (effects: Effect[]) => {
@@ -856,15 +809,11 @@ export default function App() {
     });
   };
 
-  const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => {
-    let ok = false;
-    await run(async () => {
+  const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => 
+    run(async () => {
       await playlistApi.setItemAlias(item.id, alias);
       showInfo(alias.trim() ? `プレイリスト上での名前を「${alias.trim()}」にしました` : "プレイリスト上での名前を外しました");
-      ok = true;
     });
-    return ok;
-  };
 
   const setPlaylistItemMode = (item: PlaylistItem, mode: PlayMode) =>
     run(async () => {
