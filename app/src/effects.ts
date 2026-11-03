@@ -41,7 +41,7 @@ export const EFFECT_DEFS: EffectDef[] = [
   },
   {
     kind: "normalize",
-    label: "音量調整（自動）",
+    label: "ノーマライズ",
     params: [{ key: "targetDb", label: "目標", unit: "dBFS", min: -40, max: 0, step: 0.5 }],
     defaults: { kind: "normalize", method: "peak", targetDb: -1 },
   },

@@ -68,7 +68,7 @@ export function TagPanel({
       selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
       actions={(expand) => (
         <button
-          className="icon"
+          className="icon add-button"
           onClick={() => {
             // たたんでいるときは、開いてから入力欄を出す
             expand();

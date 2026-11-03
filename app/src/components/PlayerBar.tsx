@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, PLAY_MODES, type AudioFile, type PlayMode } from "../api";
+import { api, PLAY_MODES, type PlayMode } from "../api";
 import { stem } from "../paths";
-import type { Player } from "../hooks/useAudioPlayer";
+import type { Player, PreviewTarget } from "../hooks/useAudioPlayer";
 
 type Props = {
   /** プレイリストの再生。何も再生していなければ null */
@@ -18,7 +18,7 @@ type Props = {
   onTogglePause: () => void;
   onStop: () => void;
   /** 試聴中のファイル（一覧の行の再生ボタン）。なければ null */
-  previewFile: AudioFile | null;
+  previewFile: PreviewTarget | null;
   /** 音量（0〜1） */
   volume: number;
   onVolume: (volume: number) => void;

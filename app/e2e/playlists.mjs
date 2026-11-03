@@ -536,4 +536,35 @@ await step("P31", "プレイリストの再生中は、再生中の曲を出し�
   await back();
 });
 
+await step("P32", "詳細画面の項目のチェック：チェックした行をタグにドラッグすると中の曲すべてに付く（タグの組み合わせの行は中の曲すべて）。まとめて外せる", async () => {
+  await open("ドラッグ");
+  const check = (content) => itemRow(content).getByTestId("item-check");
+  await check("chime.ogg").check();
+  await check("chime.flac").check();
+  expect((await page.getByTestId("item-checks").innerText()).includes("チェック 2件"), await page.getByTestId("item-checks").innerText());
+  await ui.createTags(["項目から"]);
+  await ui.dragTo(itemRow("chime.ogg").locator(".item-content"), tagItem("項目から"), 0.5);
+  expect((await status()).includes("2件にタグ「項目から」を付けました"), await status());
+  // タグの組み合わせの行：中の曲すべて（雨は2件）
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
+  await waitIdle();
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  await page.getByRole("button", { name: "チェックをすべて外す" }).click();
+  await ui.createTags(["組み合わせから"]);
+  await ui.dragTo(itemRow("雨").locator(".item-content"), tagItem("組み合わせから"), 0.5);
+  expect((await status()).includes("2件にタグ「組み合わせから」を付けました"), await status());
+  await shot("P32_項目のチェック");
+  // まとめて外す（確認する）
+  await check("chime.ogg").check();
+  await check("雨").check();
+  const before = (await items()).length;
+  await page.getByRole("button", { name: "まとめて外す" }).click();
+  await waitIdle();
+  expect((await ui.lastConfirm()).includes("チェックした2件の項目"), await ui.lastConfirm());
+  expect((await items()).length === before - 2, (await items()).join(" / "));
+  expect((await page.getByTestId("item-checks").count()) === 0, "チェックの操作の行が残る");
+  await back();
+});
+
 await ui.finish();

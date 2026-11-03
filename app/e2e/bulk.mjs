@@ -72,19 +72,18 @@ await step("B04", "チェックは絞り込みの条件を変えても外れな�
   expect((await isChecked("chime.wav")) && (await isChecked("chime.flac")) && (await isChecked("chime.mp3")), "外れた");
 });
 
-await step("B05", "「チェックしたファイルだけ表示」はほかの条件とANDで、「✕」（すべて解除）で絞り込みもチェックも右の欄の表示も外れる", async () => {
+await step("B05", "「チェックしたファイルだけ表示」はほかの条件とAND。チェックをすべて外すと「チェックしたファイルだけ表示」も消える", async () => {
   await ui.filtered(() => checkedOnly().check());
   expect((await fileCount()) === 3, `チェックしたファイルだけ ${await fileCount()}`);
   await filterText("wav");
   expect((await fileCount()) === 1, `ファイル名とAND ${await fileCount()}`);
-  await row("chime.wav").click();
   await clearFilter();
   // チェックがなくなると「チェックしたファイルだけ表示」自体が消える
   expect((await checkedOnly().count()) === 0, "チェックしたファイルだけが残っている");
   expect((await fileCount()) === 5, `解除後 ${await fileCount()}`);
   expect((await ui.checkedCount()).startsWith("チェック 0件"), "チェックが外れない");
-  expect((await page.getByTestId("detail-panel").count()) === 0, "右の欄の表示が残る");
-  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "解除するものがないのにボタンが出ている");
+  // 検索の欄の右に「✕」（すべて解除）はない
+  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "すべて解除が残っている");
 });
 
 await step("B06", "「全てチェック」で表示中のファイルをすべてチェックする（すべてチェック済みなら押せない）。Ctrl+A でも同じ。「チェックをすべて外す」で外れる", async () => {
@@ -119,7 +118,7 @@ await step("B08", "表示していないファイルも含めて、チェック�
   expect((await fileCount()) === 1, "絞り込めていない");
   await ui.dragChecked(page.locator("[data-testid=license][data-credit-name=規約A]"));
   expect((await status()).includes("2件にライセンス「規約A」を設定しました"), await status());
-  // 絞り込みだけを外す（「すべて解除」だとチェックも外れる）
+  // 絞り込みだけを外す（チェックは残す）
   await ui.filtered(() => tagItem("雨").click());
   const n = await page.getByTestId("license").filter({ hasText: "規約A" }).locator(".sub").innerText();
   expect(n === "2", `規約Aの件数 ${n}`);

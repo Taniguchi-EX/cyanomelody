@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AudioFile, PlayEntry } from "../api";
+
+/** 試聴するファイル（エフェクトの管理画面の試聴）。ファイルの一覧のファイルでも、プレイリストの項目の曲でもよい */
+export type PreviewTarget = Pick<AudioFile, "id" | "relPath" | "path">;
 import { chainApi } from "../effects";
 import { useStoredNumber } from "../storage";
 
@@ -30,7 +33,7 @@ type Options = {
 export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
   const audioRef = useRef<HTMLAudioElement>(null);
   /** 試聴中のファイル */
-  const [previewFile, setPreviewFile] = useState<AudioFile | null>(null);
+  const [previewFile, setPreviewFile] = useState<PreviewTarget | null>(null);
   const previewId = previewFile?.id ?? null;
   /** 音量（0〜1）。試聴とプレイリストの再生で同じものを使い、アプリを閉じても覚えておく */
   // 動かしている間は音量だけを変え、動かし終えたとき（commitVolume）に保存する
@@ -49,18 +52,14 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     setPlayerState(p);
   };
 
-  /** 試聴。同じファイルをもう一度押すと止める */
-  const preview = (file: AudioFile) => {
-    if (previewId === file.id) {
-      audioRef.current?.pause();
-      setPreviewFile(null);
-      return;
-    }
-    previewPath(file, file.path);
+  /** 試聴を止める */
+  const stopPreview = () => {
+    audioRef.current?.pause();
+    setPreviewFile(null);
   };
 
   /** ファイルの試聴として、path の音（エフェクトをかけた音など）を鳴らす */
-  const previewPath = (file: AudioFile, path: string) => {
+  const previewPath = (file: PreviewTarget, path: string) => {
     const audio = audioRef.current;
     if (!audio) return;
     setPlayer(null);
@@ -166,7 +165,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     previewId,
     previewFile,
     player,
-    preview,
+    stopPreview,
     previewPath,
     playQueue,
     next: () => move(1),

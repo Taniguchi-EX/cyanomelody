@@ -15,7 +15,7 @@ const TARGETS = (["playlists", "tags", "source", "license"] as const)
  * ドラッグ中は、つかんだ件数をポインタの横に出し、落とす先の行を枠で示す。「（タグなし）」などの「なし」の行には落とせない。
  * HTMLのドラッグアンドドロップはTauri（Windows）で動かないことがあるので、pointerイベントで作る。
  */
-export function useFileDrag(onDrop: (fileIds: number[], target: FileDropTarget) => void) {
+export function useFileDrag(onDrop: (ids: number[], target: FileDropTarget) => void) {
   const state = useRef<{
     x: number;
     y: number;
@@ -67,8 +67,8 @@ export function useFileDrag(onDrop: (fileIds: number[], target: FileDropTarget) 
   /** 行で押したときに呼ぶ。ids はつかむファイル */
   const begin = (e: React.PointerEvent, ids: number[]) => {
     if (e.button !== 0) return;
-    // ボタンやチェックボックスを押したときはドラッグにしない
-    if ((e.target as HTMLElement).closest("button, input, label")) return;
+    // ボタン・チェックボックス・プルダウン・並べ替えの取っ手を押したときはドラッグにしない
+    if ((e.target as HTMLElement).closest("button, input, label, select, .drag-handle")) return;
     cleanup();
     state.current = { x: e.clientX, y: e.clientY, ids, ghost: null, target: null };
     window.addEventListener("pointermove", onMove);

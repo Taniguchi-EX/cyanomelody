@@ -51,10 +51,11 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   const node = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`);
   await ui.dragTo(node("シーン1").getByTestId("drag-handle"), node("TRPG: 第1話"), 0.5);
   await addToPlaylist("chime.mp3", "シーン1");
-  // エフェクトのまとまりを作って、子のプレイリストの項目に結び付ける
-  await page.getByRole("button", { name: "エフェクトのまとまりを管理" }).click();
-  await page.getByLabel("新しいエフェクトのまとまりの名前").fill("小さく");
-  await page.getByLabel("新しいエフェクトのまとまりの名前").press("Enter");
+  // 子のプレイリストの項目の fx のプルダウンで「新しいfxを作る」を選び、エフェクトセットを作る（作るとその項目に付く）
+  await openPlaylist("TRPG: 第1話");
+  await page.getByLabel("シーン1のエフェクト").selectOption({ label: "新しいfxを作る" });
+  await page.getByLabel("新しいエフェクトセットの名前").fill("小さく");
+  await page.getByLabel("新しいエフェクトセットの名前").press("Enter");
   await waitIdle();
   await page.getByLabel("加えるエフェクト").selectOption("gain");
   await page.getByRole("button", { name: "加える", exact: true }).click();
@@ -68,8 +69,7 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   await page.getByLabel("プレイリスト上での名前").fill("激しめの雨");
   await page.getByLabel("プレイリスト上での名前").press("Enter");
   await waitIdle();
-  await page.getByLabel("シーン1のエフェクト").selectOption({ label: "小さく" });
-  await waitIdle();
+  expect((await page.getByLabel("シーン1のエフェクト").inputValue()) !== "", "作ったエフェクトセットが付いていない");
 });
 
 await step("X02", "書き出すと、階層がフォルダになり、別名と順番の数字が名前に付く。エフェクトのない曲はそのままコピー、ある曲はWAV", async () => {

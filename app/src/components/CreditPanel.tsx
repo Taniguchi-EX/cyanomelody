@@ -46,7 +46,7 @@ export function CreditPanel({
       title={label}
       selectedCount={selectedIds.length + (noneSelected ? 1 : 0)}
       actions={
-        <button className="icon" onClick={() => onEdit(null)} disabled={busy} title={`${label}を作る`} aria-label={`${label}を作る`}>
+        <button className="icon add-button" onClick={() => onEdit(null)} disabled={busy} title={`${label}を作る`} aria-label={`${label}を作る`}>
           ＋
         </button>
       }

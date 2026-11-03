@@ -964,9 +964,11 @@ button.filter-chip:hover .chip-x {
   border-bottom: none;
 }
 
-/* 項目の行は押すと右の欄に出す。押した行は、ファイルの一覧で選んだ行と同じ色 */
+/* 項目の行は押すと右の欄に出す。押した行は、ファイルの一覧で選んだ行と同じ色。
+   行をつかんで左の欄に落とせるので、ドラッグで文字を選ばないようにする（ファイルの一覧の行と同じ） */
 .playlist-item {
   cursor: pointer;
+  user-select: none;
 }
 
 .playlist-item.selected {
@@ -1043,6 +1045,9 @@ button.filter-chip:hover .chip-x {
 }
 
 .effect-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
 }
@@ -1065,6 +1070,13 @@ button.filter-chip:hover .chip-x {
 .effect-param input {
   width: 64px;
   margin: 0 2px 0 4px;
+}
+
+/* エフェクトの行の「↑」「↓」「✕」は右に寄せる */
+.effect-actions {
+  margin-left: auto;
+  display: flex;
+  flex: none;
 }
 
 .effect-actions button {
@@ -1097,6 +1109,18 @@ button.primary {
 
 .item-chain {
   max-width: 150px;
+}
+
+/* エフェクトセットが付いている項目の fx のプルダウン */
+.item-chain.has-fx {
+  background: var(--selected);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 詳細画面のチェックの操作の行 */
+.item-checks {
+  gap: 8px;
 }
 
 /* ===== ドラッグでプレイリストへ加える ===== */
@@ -1171,4 +1195,17 @@ button.item-kind:hover:not(:disabled) .kind-play {
 .tag-list li .term-marks {
   flex: none;
   flex-wrap: nowrap;
+}
+
+/* 欄の見出しの「＋」：枠を付けず、記号だけを出す */
+button.add-button {
+  border: none;
+  background: none;
+  padding: 0 4px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+button.add-button:hover:not(:disabled) {
+  color: var(--accent);
 }

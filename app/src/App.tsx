@@ -34,10 +34,11 @@ import { baseName } from "./paths";
 import { FilterChips, type FilterChip } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
 import { FileList } from "./components/FileList";
+import type { FileDropTarget } from "./hooks/useFileDrag";
 import { PlaylistPanel } from "./components/PlaylistPanel";
 import { PlaylistEditor } from "./components/PlaylistEditor";
 import { PlayerBar } from "./components/PlayerBar";
-import { useAudioPlayer } from "./hooks/useAudioPlayer";
+import { useAudioPlayer, type PreviewTarget } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
@@ -119,7 +120,15 @@ export default function App() {
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
   const [creditForm, setCreditForm] = useState<{ kind: CreditKind; credit: Credit | null } | null>(null);
   const [chains, setChains] = useState<EffectChain[]>([]);
-  const [managingEffects, setManagingEffects] = useState(false);
+  /**
+   * エフェクトセットの管理画面。開いた元の項目（作ったエフェクトセットを設定する項目）と、試聴するファイル。
+   * fx のプルダウンの「新しいfxを作る」「このfxを編集」から開く
+   */
+  const [effectDialog, setEffectDialog] = useState<{
+    target: PreviewTarget | null;
+    itemIds: number[];
+    chainId: number | null;
+  } | null>(null);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
@@ -362,25 +371,6 @@ export default function App() {
       showInfo(parts.join("、"));
     });
 
-  /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
-
-  const anyActive =
-    filter.folderId !== null ||
-    filter.tagIds.length > 0 ||
-    filter.untaggedOnly ||
-    filter.missingOnly ||
-    filter.duplicatesOnly ||
-    filter.recentOnly ||
-    filter.hash !== null ||
-    filter.sourceIds.length > 0 ||
-    filter.noSource ||
-    filter.licenseIds.length > 0 ||
-    filter.noLicense ||
-    checkedOnly ||
-    text !== "" ||
-    checked.size > 0 ||
-    focusedId !== null;
-
   /** 絞り込み・チェック・右の欄の表示を、すべて解除する */
   const clearAll = () => {
     setText("");
@@ -619,6 +609,24 @@ export default function App() {
     return ok;
   };
 
+  /** ファイルを左の欄のプレイリスト・タグ・出典・ライセンスに落としたとき */
+  const dropFiles = (fileIds: number[], target: FileDropTarget) => {
+    if (fileIds.length === 0) return;
+    if (target.kind === "playlists") addToPlaylist(target.id, fileIds);
+    else if (target.kind === "tags") addTagByDrop(target.id, fileIds);
+    else setCreditByDrop(target.kind, target.id, fileIds);
+  };
+
+  /** プレイリストの項目を左の欄に落としたとき。対象は、その項目に入る曲すべて（再生方法にかかわらず） */
+  const dropItems = async (itemIds: number[], target: FileDropTarget) => {
+    try {
+      const lists = await Promise.all(itemIds.map((id) => playlistApi.itemFiles(id)));
+      dropFiles([...new Set(lists.flat().map((e) => e.fileId))], target);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
   /** ファイルの行を出典・ライセンスに落としたとき。設定済みなら置き換わる。確認はしない */
   const setCreditByDrop = (kind: CreditKind, creditId: number, fileIds: number[]) => {
     const credit = creditsOf(kind).find((c) => c.id === creditId);
@@ -712,17 +720,29 @@ export default function App() {
       );
     });
 
+  /** チェックした項目をまとめて外す（確認する） */
+  const removePlaylistItems = async (items: PlaylistItem[]) => {
+    if (!(await confirmDialog(`チェックした${items.length}件の項目をプレイリストから外しますか？`))) return false;
+    let ok = false;
+    await run(async () => {
+      for (const item of items) await playlistApi.removeItem(item.id);
+      showInfo(`${items.length}件の項目を外しました`);
+      ok = true;
+    });
+    return ok;
+  };
+
   const movePlaylistItem = (item: PlaylistItem, index: number) =>
     run(async () => {
       await playlistApi.moveItem(item.id, index);
     });
 
-  // エフェクトのまとまり
+  // エフェクトセット
   const createChain = async (name: string) => {
     let id: number | null = null;
     await run(async () => {
       id = await chainApi.create(name);
-      showInfo(`エフェクトのまとまり「${name.trim()}」を作りました`);
+      showInfo(`エフェクトセット「${name.trim()}」を作りました`);
     });
     return id;
   };
@@ -731,19 +751,19 @@ export default function App() {
     let ok = false;
     await run(async () => {
       await chainApi.rename(chain.id, name);
-      showInfo(`エフェクトのまとまりの名前を「${name.trim()}」に変えました`);
+      showInfo(`エフェクトセットの名前を「${name.trim()}」に変えました`);
       ok = true;
     });
     return ok;
   };
 
   const deleteChain = async (chain: EffectChain) => {
-    let message = `エフェクトのまとまり「${chain.name}」を削除しますか？`;
+    let message = `エフェクトセット「${chain.name}」を削除しますか？`;
     if (chain.itemCount > 0) message += `\n結び付けているプレイリストの項目${chain.itemCount}件から外れます。`;
     if (!(await confirmDialog(message))) return;
     await run(async () => {
       await chainApi.remove(chain.id);
-      showInfo(`エフェクトのまとまり「${chain.name}」を削除しました`);
+      showInfo(`エフェクトセット「${chain.name}」を削除しました`);
     });
   };
 
@@ -751,7 +771,7 @@ export default function App() {
     let ok = false;
     await run(async () => {
       await chainApi.setEffects(chain.id, effects);
-      showInfo(`エフェクトのまとまり「${chain.name}」を保存しました`);
+      showInfo(`エフェクトセット「${chain.name}」を保存しました`);
       ok = true;
     });
     return ok;
@@ -759,7 +779,7 @@ export default function App() {
 
   /** 右の欄に出しているファイルに、エフェクトをかけて試聴する */
   const previewChain = async (effects: Effect[]) => {
-    const file = focusedFile;
+    const file = effectDialog?.target;
     if (!file) return;
     showInfo(`試聴の準備中: ${file.relPath}`);
     try {
@@ -785,10 +805,31 @@ export default function App() {
 
   const browseFolder = () => pickPath({ directory: true });
 
-  const setPlaylistItemChain = (item: PlaylistItem, chainId: number | null) =>
+  /** 項目（チェックした項目なら、チェックした項目すべて）にエフェクトセットを付ける。null なら外す */
+  const setPlaylistItemChain = (items: PlaylistItem[], chainId: number | null) =>
     run(async () => {
-      await chainApi.setItemChain(item.id, chainId);
+      for (const item of items) await chainApi.setItemChain(item.id, chainId);
+      if (items.length > 1) showInfo(`${items.length}件の項目の fx を変えました`);
     });
+
+  /**
+   * エフェクトセットの管理画面を開く。試聴するのは、その項目の曲（タグの組み合わせ・プレイリストの項目は中の最初の曲）。
+   * chainId を選んだ状態で開き、作ったエフェクトセットは itemIds の項目に付ける
+   */
+  const openEffects = async (item: PlaylistItem, chainId: number | null, itemIds: number[]) => {
+    const first = (await playlistApi.itemFiles(item.id).catch(() => []))[0];
+    const target = first ? { id: first.fileId, relPath: first.relPath, path: first.path } : null;
+    setEffectDialog({ target, itemIds, chainId });
+  };
+
+  /** 管理画面で作ったエフェクトセットを、開いた元の項目に付ける */
+  const attachCreatedChain = (chainId: number) => {
+    const ids = effectDialog?.itemIds ?? [];
+    if (ids.length === 0) return;
+    run(async () => {
+      for (const id of ids) await chainApi.setItemChain(id, chainId);
+    });
+  };
 
   const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => {
     let ok = false;
@@ -921,11 +962,6 @@ export default function App() {
         <div className="filter-bar" data-testid="filter-bar">
           <div className="row">
             <input type="text" placeholder="検索" value={text} onChange={(e) => setText(e.target.value)} aria-label="検索" />
-            {anyActive && (
-              <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
-                ✕
-              </button>
-            )}
           </div>
           <FilterChips chips={filterChips} onClearAll={clearConditions} />
         </div>
@@ -957,7 +993,6 @@ export default function App() {
           onOpen={openPlaylist}
           onCreate={(name) => createPlaylist(name)}
           onMove={movePlaylist}
-          onManageEffects={() => setManagingEffects(true)}
         />
         {creditKinds.map((kind) => (
           <CreditPanel
@@ -1011,6 +1046,9 @@ export default function App() {
             onFocusItem={(item) => setFocusedItemId(item.id)}
             chains={chains}
             onSetChain={setPlaylistItemChain}
+            onOpenEffects={openEffects}
+            onRemoveItems={removePlaylistItems}
+            onDropItems={dropItems}
             onAddTags={addTagsToPlaylist}
             onAddRef={addRefToPlaylist}
             onExport={(dest) => exportPlaylist(playlistDetail.id, dest)}
@@ -1044,11 +1082,7 @@ export default function App() {
               onCheckShown={checks.checkShown}
               onPlay={toggleRowPlay}
               showHash={filter.duplicatesOnly || filter.hash !== null}
-              onDrop={(ids, target) => {
-                if (target.kind === "playlists") addToPlaylist(target.id, ids);
-                else if (target.kind === "tags") addTagByDrop(target.id, ids);
-                else setCreditByDrop(target.kind, target.id, ids);
-              }}
+              onDrop={dropFiles}
             />
           </>
         )}
@@ -1176,19 +1210,21 @@ export default function App() {
         )}
       </div>
       <audio {...audio.audioProps} />
-      {managingEffects && (
+      {effectDialog && (
         <EffectManager
           chains={chains}
           busy={busy}
-          previewFileName={focusedFile?.relPath ?? null}
+          initialChainId={effectDialog.chainId}
+          onCreated={attachCreatedChain}
+          previewFileName={effectDialog.target?.relPath ?? null}
           onCreate={createChain}
           onRename={renameChain}
           onDelete={deleteChain}
           onSave={saveChain}
           onPreview={previewChain}
-          previewing={audio.previewId !== null && audio.previewId === focusedFile?.id}
-          onStopPreview={() => focusedFile && audio.preview(focusedFile)}
-          onClose={() => setManagingEffects(false)}
+          previewing={audio.previewId !== null && audio.previewId === effectDialog.target?.id}
+          onStopPreview={audio.stopPreview}
+          onClose={() => setEffectDialog(null)}
         />
       )}
       {creditForm && (

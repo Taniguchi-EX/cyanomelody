@@ -131,11 +131,18 @@ export async function connect(shotDir) {
       await page.getByRole("button", { name: "フォルダを追加" }).click();
       await ui.waitIdle();
     },
+    /** 絞り込みの条件（検索の文字、条件のチップ、チェックしたファイルだけ表示）とチェックを外す */
     async clearFilter() {
-      // 「すべて解除」は、絞り込みと一緒にチェックと右の欄の表示も外す
-      const b = page.getByRole("button", { name: "すべて解除" });
-      if (await b.count()) await b.click();
-      await page.waitForTimeout(400);
+      const search = page.getByLabel("検索", { exact: true });
+      if ((await search.count()) && (await search.inputValue())) await ui.filtered(() => search.fill(""));
+      // 条件のチップが2つ以上なら名前のない「✕」でまとめて、1つならそのチップを押して外す
+      const all = page.getByRole("button", { name: "絞り込みの条件をすべて外す" });
+      const chip = page.getByTestId("filter-chips").getByRole("button");
+      if (await all.count()) await ui.filtered(() => all.click());
+      else if (await chip.count()) await ui.filtered(() => chip.first().click());
+      const only = page.getByLabel("チェックしたファイルだけ表示");
+      if ((await only.count()) && (await only.isChecked())) await ui.filtered(() => only.uncheck());
+      await ui.clearChecks();
     },
     /** 行のチェックボックスを押す（Shift などは opts で） */
     check: (rel, opts) => page.locator(`[data-testid=file-row][data-rel-path="${rel}"]`).getByTestId("file-check").click(opts),

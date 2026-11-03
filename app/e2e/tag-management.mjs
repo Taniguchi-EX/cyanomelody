@@ -29,7 +29,6 @@ await step("T01", "フォルダを登録すると、スキャンして5つの形
   const folder = page.getByTestId("folder");
   expect((await folder.getAttribute("class")).includes("active"), "フォルダが選ばれていない");
   expect((await folder.locator(".folder-name").innerText()) === "formats", await folder.innerText());
-  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 1, "すべて解除が出ない");
   await shot("T01_フォルダ登録");
   // もう一度押すと外れる
   await ui.filtered(() => folder.locator(".folder-name").click());
@@ -205,11 +204,16 @@ await step("T20", "聞き比べ：↑↓で右の欄のファイルを移し、�
 });
 
 await step("T21", "右の欄は、トラック名・ファイル名・タグ・プレイリスト・出典・ライセンス・ハッシュ値の順に出る。何も選んでいないときは空", async () => {
+  // 何も選んでいない状態から始める（読み込み直すと、右の欄の表示は消える）
   await clearFilter();
+  await ui.reload();
   expect((await page.getByTestId("detail-panel").count()) === 0, "選んでいないのに右の欄が出る");
   expect(!(await page.locator(".detail").innerText()).includes("ファイルの詳細"), "見出しが残っている");
   await row("chime.mp3").locator(".file-name").click();
-  await page.getByTestId("track-title").waitFor({ timeout: 3000 });
+  // タイトルは、曲名を読み終わるまでは拡張子を除いたファイル名を出す。読み終わるのを待つ
+  await page
+    .waitForFunction(() => document.querySelector("[data-testid=track-title]")?.textContent === "チャイム", null, { timeout: 3000 })
+    .catch(() => {});
   expect((await page.getByTestId("track-title").innerText()) === "チャイム", await page.getByTestId("track-title").innerText());
   // パスは絶対パスのリンク（押すとエクスプローラーでフォルダを開く。開いたかは確かめられないので、エラーが出ないことだけ）
   const p = page.getByTestId("detail-path");
@@ -310,7 +314,8 @@ await step("T25", "左の欄の並び（ライブラリ・タグ・プレイリ�
   // フォルダを選ぶと、条件のチップが出る
   await ui.filtered(() => page.getByTestId("folder").first().click());
   expect((await bar.getByTestId("filter-chips").count()) === 1, "条件のチップが左の欄にない");
-  expect((await bar.getByRole("button", { name: "すべて解除" }).count()) === 1, "✕が左の欄にない");
+  // 検索の欄の右の「✕」（すべて解除）はない。条件はチップで外す
+  expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "すべて解除が残っている");
   // 左の欄を高くしてスクロールしても、絞り込みの部分は一番上に残る
   await side.evaluate((el) => {
     const spacer = document.createElement("div");

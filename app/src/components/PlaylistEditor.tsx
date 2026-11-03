@@ -5,6 +5,7 @@ import type { EffectChain } from "../effects";
 import { useStoredString } from "../storage";
 import { NameInput } from "./TreeParts";
 import { itemContent } from "../playlistItem";
+import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 
 type Props = {
   detail: PlaylistDetail;
@@ -28,7 +29,14 @@ type Props = {
   /** 項目の行を押したとき（右の欄にその項目を出す） */
   onFocusItem: (item: PlaylistItem) => void;
   chains: EffectChain[];
-  onSetChain: (item: PlaylistItem, chainId: number | null) => void;
+  /** 項目にエフェクトセットを付ける（null なら外す）。チェックした項目の fx を変えたときは、チェックした項目すべて */
+  onSetChain: (items: PlaylistItem[], chainId: number | null) => void;
+  /** エフェクトセットの管理画面を開く。試聴はその項目の曲で。chainId を選んで開き、作ったら itemIds の項目に付ける */
+  onOpenEffects: (item: PlaylistItem, chainId: number | null, itemIds: number[]) => void;
+  /** チェックした項目をまとめて外す（確認する）。外したら true */
+  onRemoveItems: (items: PlaylistItem[]) => Promise<boolean>;
+  /** 項目を左の欄のタグ・プレイリスト・出典・ライセンスに落としたとき（中の曲すべてが対象） */
+  onDropItems: (itemIds: number[], target: FileDropTarget) => void;
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
   /** dest の中に書き出し始める。始められたら true */
@@ -38,6 +46,9 @@ type Props = {
 };
 
 const DRAG_THRESHOLD = 4;
+/** fx のプルダウンの、管理画面を開く選び肢 */
+const NEW_FX = "new-fx";
+const EDIT_FX = "edit-fx";
 
 function kindLabel(item: PlaylistItem): string {
   if (item.kind === "file") return "ファイル";
@@ -72,12 +83,38 @@ export function PlaylistEditor({
   onFocusItem,
   chains,
   onSetChain,
+  onOpenEffects,
+  onRemoveItems,
+  onDropItems,
   onAddTags,
   onAddRef,
   onExport,
   onBrowseFolder,
 }: Props) {
   const [renaming, setRenaming] = useState(false);
+  /** チェックした項目（ファイルの一覧と同じく、まとめて操作する対象）。開いているプレイリストの中だけ */
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  // 外した項目は、チェックからも外す
+  const checkedItems = detail.items.filter((i) => checked.has(i.id));
+  const toggleCheck = (id: number) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  /** 操作の対象：チェックした項目を操作したならチェックした項目すべて、そうでなければその項目だけ */
+  const targetsOf = (item: PlaylistItem) => (checked.has(item.id) ? checkedItems : [item]);
+  // 項目の行をつかんで、左の欄に落とす（チェックした行ならチェックした項目すべて）
+  const beginItemDrag = useFileDrag(onDropItems);
+
+  /** fx のプルダウン：エフェクトセットを付ける・外す、または管理画面を開く */
+  const changeChain = (item: PlaylistItem, value: string) => {
+    const targets = targetsOf(item);
+    if (value === NEW_FX) onOpenEffects(item, null, targets.map((t) => t.id));
+    else if (value === EDIT_FX) onOpenEffects(item, item.effectChain?.id ?? null, []);
+    else onSetChain(targets, value === "" ? null : Number(value));
+  };
   const [exporting, setExporting] = useState(false);
   // 前に書き出したフォルダを入れておく（調整して何度も書き出すとき、選び直さなくてよい）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
@@ -167,6 +204,27 @@ export function PlaylistEditor({
       </div>
 
       <div className="editor-body">
+        {/* チェックしているときだけ、チェックの操作を出す */}
+        {checkedItems.length > 0 && (
+          <div className="toolbar item-checks" data-testid="item-checks">
+            <span className="checked-count">チェック {checkedItems.length}件</span>
+            <button
+              onClick={() => setChecked(new Set(detail.items.map((i) => i.id)))}
+              disabled={checkedItems.length === detail.items.length}
+            >
+              全てチェック
+            </button>
+            <button onClick={() => setChecked(new Set())}>チェックをすべて外す</button>
+            <button
+              onClick={async () => {
+                if (await onRemoveItems(checkedItems)) setChecked(new Set());
+              }}
+              disabled={busy}
+            >
+              まとめて外す
+            </button>
+          </div>
+        )}
         <div className="playlist-items">
           {detail.items.length === 0 && <div className="empty">項目はまだありません</div>}
           {detail.items.map((item, index) => (
@@ -183,10 +241,11 @@ export function PlaylistEditor({
               data-testid="playlist-item"
               data-item-index={index}
               data-item-kind={item.kind}
-              // 行の中のボタン・プルダウン・取っ手を押したときは、その操作だけにする
+              // 行の中のボタン・プルダウン・チェックボックス・取っ手を押したときは、その操作だけにする
               onClick={(e) => {
-                if (!(e.target as HTMLElement).closest("button, select, input, .drag-handle")) onFocusItem(item);
+                if (!(e.target as HTMLElement).closest("button, select, input, label, .drag-handle")) onFocusItem(item);
               }}
+              onPointerDown={(e) => beginItemDrag(e, targetsOf(item).map((t) => t.id))}
             >
               <button
                 className="item-kind"
@@ -227,20 +286,23 @@ export function PlaylistEditor({
                   </span>
                 </>
               )}
+              {/* エフェクトセットが付いている行は色を付ける。最後の選び肢で管理画面を開く */}
               <select
-                className="item-chain"
+                className={"item-chain" + (item.effectChain ? " has-fx" : "")}
                 value={item.effectChain?.id ?? ""}
-                onChange={(e) => onSetChain(item, e.target.value === "" ? null : Number(e.target.value))}
+                onChange={(e) => changeChain(item, e.target.value)}
                 disabled={busy}
                 aria-label={`${itemContent(item)}のエフェクト`}
-                title="この項目にかけるエフェクトのまとまり"
+                title="この項目にかけるエフェクトセット"
               >
-                <option value="">fx なし</option>
+                <option value="">fx</option>
                 {chains.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}
+                <option value={NEW_FX}>新しいfxを作る</option>
+                {item.effectChain && <option value={EDIT_FX}>このfxを編集</option>}
               </select>
               <button
                 className="icon"
@@ -281,6 +343,15 @@ export function PlaylistEditor({
               >
                 ≡
               </span>
+              <label className="check-cell" title="チェックすると、まとめて操作できる">
+                <input
+                  type="checkbox"
+                  checked={checked.has(item.id)}
+                  onChange={() => toggleCheck(item.id)}
+                  aria-label={`${itemContent(item)}をチェック`}
+                  data-testid="item-check"
+                />
+              </label>
             </div>
           ))}
         </div>

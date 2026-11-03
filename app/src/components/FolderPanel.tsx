@@ -23,7 +23,7 @@ export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, selectedId
       title="ライブラリ"
       selectedCount={selectedId !== null ? 1 : 0}
       actions={
-        <button className="icon" onClick={onAdd} disabled={busy} title="フォルダを追加" aria-label="フォルダを追加">
+        <button className="icon add-button" onClick={onAdd} disabled={busy} title="フォルダを追加" aria-label="フォルダを追加">
           ＋
         </button>
       }

@@ -15,12 +15,10 @@ type Props = {
   onOpen: (id: number) => void;
   onCreate: (name: string) => Promise<boolean>;
   onMove: (id: number, target: MoveTarget) => void;
-  /** エフェクトのまとまりの管理画面を開く */
-  onManageEffects: () => void;
 };
 
 /** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成（再生・名前変更・削除は中央の詳細画面で行う） */
-export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMove, onManageEffects }: Props) {
+export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMove }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
 
@@ -57,11 +55,8 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMov
       selectedCount={0}
       actions={(expand) => (
         <span className="row">
-          <button onClick={onManageEffects} aria-label="エフェクトのまとまりを管理">
-            エフェクト
-          </button>
           <button
-            className="icon"
+            className="icon add-button"
             onClick={() => {
               // たたんでいるときは、開いてから入力欄を出す
               expand();

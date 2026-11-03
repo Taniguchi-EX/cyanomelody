@@ -9,8 +9,12 @@ type Props = {
   busy: boolean;
   /** 試聴に使うファイル（右の欄に出しているファイル）の名前。なければ null */
   previewFileName: string | null;
-  /** 作ったまとまりのidを返す。作れなかったら null */
+  /** 作ったエフェクトセットのidを返す。作れなかったら null */
   onCreate: (name: string) => Promise<number | null>;
+  /** 開いたときに選んでおくエフェクトセット。省くと一覧の最初 */
+  initialChainId?: number | null;
+  /** この画面でエフェクトセットを作ったとき（開いた元の項目に設定するのに使う） */
+  onCreated?: (id: number) => void;
   onRename: (chain: EffectChain, name: string) => Promise<boolean>;
   onDelete: (chain: EffectChain) => void;
   onSave: (chain: EffectChain, effects: Effect[]) => Promise<boolean>;
@@ -24,7 +28,7 @@ type Props = {
 /** 試聴中に値を変えてから、鳴らし直すまでの待ち（ms）。入力の途中で何度も作り直さない */
 const REPREVIEW_DELAY = 500;
 
-/** エフェクトのまとまりの管理画面。左にまとまりの一覧、右に選んだまとまりの中身 */
+/** エフェクトセットの管理画面。左にエフェクトセットの一覧、右に選んだエフェクトセットの中身 */
 export function EffectManager({
   chains,
   busy,
@@ -37,15 +41,18 @@ export function EffectManager({
   previewing,
   onStopPreview,
   onClose,
+  initialChainId = null,
+  onCreated,
 }: Props) {
   const [newName, setNewName] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(chains[0]?.id ?? null);
+  const initial = chains.find((c) => c.id === initialChainId) ?? chains[0] ?? null;
+  const [selectedId, setSelectedId] = useState<number | null>(initial?.id ?? null);
   const selected = chains.find((c) => c.id === selectedId) ?? null;
-  // 編集中のエフェクトの並び（「保存」で保存する）。選んだまとまりが変わったら読み直す
+  // 編集中のエフェクトの並び（「保存」で保存する）。選んだエフェクトセットが変わったら読み直す
   const [draft, setDraft] = useState<{ chainId: number; effects: Effect[] } | null>(null);
   const effects = draft && draft.chainId === selectedId ? draft.effects : (selected?.effects ?? []);
   const dirty = draft !== null && draft.chainId === selectedId;
-  const [name, setName] = useState(chains[0]?.name ?? "");
+  const [name, setName] = useState(initial?.name ?? "");
   const [addKind, setAddKind] = useState<EffectKind>("gain");
 
   /** 保存していない変更があれば、捨ててよいか確かめてから action を行う */
@@ -97,7 +104,8 @@ export function EffectManager({
     leave(async () => {
       const id = await onCreate(newName);
       if (id === null) return;
-      // 作ったまとまりを選んで、すぐにエフェクトを加えられるようにする
+      onCreated?.(id);
+      // 作ったエフェクトセットを選んで、すぐにエフェクトを加えられるようにする
       setNewName("");
       setSelectedId(id);
       setName(newName.trim());
@@ -105,9 +113,9 @@ export function EffectManager({
 
   return (
     <div className="overlay">
-      <div className="dialog effect-dialog" role="dialog" aria-label="エフェクトのまとまりの管理">
+      <div className="dialog effect-dialog" role="dialog" aria-label="エフェクトセットの管理">
         <div className="dialog-head">
-          <h2>エフェクトのまとまりの管理（{chains.length}件）</h2>
+          <h2>エフェクトセットの管理（{chains.length}件）</h2>
           <button onClick={() => leave(onClose)}>閉じる</button>
         </div>
         <div className="effect-layout">
@@ -115,11 +123,11 @@ export function EffectManager({
             <div className="row">
               <input
                 type="text"
-                placeholder="新しいまとまりの名前"
+                placeholder="新しいエフェクトセットの名前"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !busy && newName.trim() && create()}
-                aria-label="新しいエフェクトのまとまりの名前"
+                aria-label="新しいエフェクトセットの名前"
               />
               <button onClick={create} disabled={busy || !newName.trim()}>
                 作成
@@ -142,11 +150,11 @@ export function EffectManager({
                 </li>
               ))}
             </ul>
-            {chains.length === 0 && <div className="sub">まとまりはまだありません</div>}
+            {chains.length === 0 && <div className="sub">エフェクトセットはまだありません</div>}
           </div>
 
           <div className="effect-steps" data-testid="effect-steps">
-            {!selected && <div className="sub">左の一覧からまとまりを選んでください</div>}
+            {!selected && <div className="sub">左の一覧からエフェクトセットを選んでください</div>}
             {selected && (
               <>
                 <div className="row">
@@ -154,7 +162,7 @@ export function EffectManager({
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    aria-label="エフェクトのまとまりの名前"
+                    aria-label="エフェクトセットの名前"
                   />
                   <button
                     onClick={() => onRename(selected, name)}
