@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import type { LibraryFolder } from "../api";
 import { baseName } from "../paths";
+import { Collapsible } from "./Collapsible";
 
 type Props = {
   folders: LibraryFolder[];
   busy: boolean;
-  onAdd: (path: string) => Promise<boolean>;
+  /** フォルダを選んで登録する */
+  onAdd: () => void;
   onRemove: (folder: LibraryFolder) => void;
   onScan: (folder: LibraryFolder) => void;
   onScanAll: () => void;
@@ -16,37 +16,19 @@ type Props = {
   onSelect: (id: number) => void;
 };
 
+/** 左の欄の「ライブラリ」。登録したフォルダの一覧 */
 export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll, selectedId, onSelect }: Props) {
-  const [path, setPath] = useState("");
-
-  const browse = async () => {
-    const selected = await open({ directory: true, multiple: false });
-    if (typeof selected === "string") setPath(selected);
-  };
-
-  const add = async () => {
-    if (await onAdd(path.trim())) setPath("");
-  };
-
   return (
-    <section>
-      <h2>ライブラリフォルダ</h2>
-      <div className="row">
-        <input
-          type="text"
-          placeholder="フォルダのパス"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && path.trim() && add()}
-          aria-label="フォルダのパス"
-        />
-        <button onClick={browse} disabled={busy}>
-          参照
+    <Collapsible
+      id="folders"
+      title="ライブラリ"
+      selectedCount={selectedId !== null ? 1 : 0}
+      actions={
+        <button onClick={onAdd} disabled={busy} aria-label="フォルダを追加">
+          追加
         </button>
-        <button onClick={add} disabled={busy || !path.trim()}>
-          登録
-        </button>
-      </div>
+      }
+    >
       {folders.map((f) => (
         <div
           className={"folder" + (selectedId === f.id ? " active" : "")}
@@ -99,6 +81,6 @@ export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, onScanAll,
           </button>
         </div>
       )}
-    </section>
+    </Collapsible>
   );
 }

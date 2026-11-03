@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
+import { api, playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
+import { Collapsible } from "./Collapsible";
 import { PlaylistPicker } from "./PlaylistPicker";
 
 type Props = {
@@ -7,12 +8,13 @@ type Props = {
   file: AudioFile | null;
   tags: Tag[];
   busy: boolean;
+  /** 既にあるタグを付ける（右の欄では新しいタグは作らない） */
   onAddTag: (name: string) => Promise<boolean>;
   onRemoveTag: (tagId: number) => void;
   onRemoveMissing: () => void;
   onRelink: () => void;
   onShowSameAudio: (hash: string) => void;
-  /** タグの下に出す欄（出典・ライセンス） */
+  /** プレイリストの下に出す欄（出典・ライセンス） */
   children?: ReactNode;
   playlists: PlaylistNode[];
   onAddToPlaylist: (playlistId: number) => Promise<boolean>;
@@ -37,7 +39,10 @@ export function SelectionPanel({
   const [name, setName] = useState("");
   // このファイルを直接入れているプレイリスト。プレイリストが変わったら（項目の数が変わる）求め直す
   const [usedIn, setUsedIn] = useState<{ fileId: number; ids: number[] } | null>(null);
+  // トラック名はデータベースに持たないので、出すときにファイルから読む
+  const [title, setTitle] = useState<{ path: string; title: string | null } | null>(null);
   const fileId = file?.id;
+  const filePath = file && !file.missing ? file.path : null;
   useEffect(() => {
     if (fileId === undefined) return;
     let alive = true;
@@ -49,32 +54,98 @@ export function SelectionPanel({
       alive = false;
     };
   }, [fileId, playlists]);
+  useEffect(() => {
+    if (filePath === null) return;
+    let alive = true;
+    api
+      .trackTitle(filePath)
+      .then((t) => alive && setTitle({ path: filePath, title: t }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [filePath]);
   const usedInIds = usedIn && usedIn.fileId === fileId ? usedIn.ids : [];
   // 左の欄と同じ並び
   const usedInPlaylists = playlists.filter((p) => usedInIds.includes(p.id));
+  const trackTitle = title && title.path === filePath ? title.title : null;
 
-  if (!file) {
-    return (
-      <section>
-        <h2>ファイルの詳細</h2>
-        <div className="sub">一覧のファイルをクリックすると、ここに詳細が出ます</div>
-      </section>
-    );
-  }
+  if (!file) return null;
 
+  // 付けられるのは、既にあって、まだ付いていないタグだけ
+  const attached = new Set(file.tags.map((t) => t.id));
+  const candidates = tags.filter((t) => !attached.has(t.id));
+  const match = candidates.find((t) => t.name.toLowerCase() === name.trim().toLowerCase());
   const add = async () => {
-    if (await onAddTag(name)) setName("");
+    if (match && (await onAddTag(match.name))) setName("");
   };
 
   return (
     <section data-testid="detail-panel">
-      <h2>ファイルの詳細</h2>
-      <div className="folder-path" data-testid="detail-path">
+      {trackTitle && (
+        <div className="track-title" data-testid="track-title">
+          {trackTitle}
+        </div>
+      )}
+      <div className="folder-path" data-testid="detail-path" title={file.path}>
         {file.relPath}
       </div>
-      <div className="folder-path sub">{file.path}</div>
+
+      <Collapsible id="detail-tags" title="タグ" count={file.tags.length}>
+        <div className="row">
+          <input
+            type="text"
+            list="tag-names"
+            placeholder="名前"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            aria-label="付けるタグ名"
+          />
+          <datalist id="tag-names">
+            {candidates.map((t) => (
+              <option key={t.id} value={t.name} />
+            ))}
+          </datalist>
+          <button className="icon" onClick={add} disabled={busy || !match} title="付ける" aria-label="付ける">
+            ＋
+          </button>
+        </div>
+        <ul className="selected-tags">
+          {file.tags.map((t) => (
+            <li key={t.id} data-testid="selected-tag">
+              <span>{t.name}</span>
+              <button
+                className="icon"
+                onClick={() => onRemoveTag(t.id)}
+                disabled={busy}
+                title="外す"
+                aria-label={`${t.name}を外す`}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Collapsible>
+
+      <Collapsible id="detail-playlists" title="プレイリスト" count={usedInPlaylists.length}>
+        {usedInPlaylists.length > 0 && (
+          <div className="used-in" data-testid="used-in">
+            {usedInPlaylists.map((p) => (
+              <button key={p.id} className="chip" onClick={() => onOpenPlaylist(p.id)} title="開く">
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} label="このファイルを加えるプレイリスト" />
+      </Collapsible>
+
+      {children}
+
       <h2>ハッシュ値</h2>
-      <div className="folder-path hash" data-testid="selected-hash">
+      <div className="folder-path" data-testid="selected-hash">
         {file.hash ?? (file.hashError ? `計算できませんでした（${file.hashError}）` : "未計算")}
       </div>
       <div className="row" style={{ marginTop: 4 }}>
@@ -82,60 +153,6 @@ export function SelectionPanel({
           同じ音声のファイルを探す
         </button>
       </div>
-
-      <h2>タグを付ける</h2>
-      <div className="row">
-        <input
-          type="text"
-          list="tag-names"
-          placeholder="タグ名（新しい名前なら作成）"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && name.trim() && add()}
-          aria-label="付けるタグ名"
-        />
-        <datalist id="tag-names">
-          {tags.map((t) => (
-            <option key={t.id} value={t.name} />
-          ))}
-        </datalist>
-        <button onClick={add} disabled={busy || !name.trim()}>
-          付ける
-        </button>
-      </div>
-
-      <h2>付いているタグ</h2>
-      {file.tags.length === 0 && <div className="sub">タグは付いていません</div>}
-      <ul className="selected-tags">
-        {file.tags.map((t) => (
-          <li key={t.id} data-testid="selected-tag">
-            <span>{t.name}</span>
-            <button
-              className="icon"
-              onClick={() => onRemoveTag(t.id)}
-              disabled={busy}
-              title="外す"
-              aria-label={`${t.name}を外す`}
-            >
-              ✕
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      {children}
-
-      <h2>プレイリスト</h2>
-      {usedInPlaylists.length > 0 && (
-        <div className="used-in" data-testid="used-in">
-          {usedInPlaylists.map((p) => (
-            <button key={p.id} className="chip" onClick={() => onOpenPlaylist(p.id)} title="開く">
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
-      <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} label="このファイルを加えるプレイリスト" />
 
       {file.missing && (
         <>

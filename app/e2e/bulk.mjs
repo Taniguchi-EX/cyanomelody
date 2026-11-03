@@ -13,7 +13,7 @@ const { page, step, shot, status, fileCount, row, tagItem, tagNames, waitIdle, a
 const detailPath = () => page.getByTestId("detail-path").innerText();
 const isChecked = (rel) => row(rel).getByTestId("file-check").isChecked();
 const filterText = async (text) => {
-  await page.getByLabel("ファイル名で絞り込む").fill(text);
+  await page.getByLabel("検索", { exact: true }).fill(text);
   await page.waitForTimeout(500);
 };
 const checkedOnly = () => page.getByLabel("チェックしたファイルだけ");

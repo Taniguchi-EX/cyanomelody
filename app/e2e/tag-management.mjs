@@ -75,7 +75,7 @@ await step("T05", "チェックした複数のファイルにまとめてタグ�
   await shot("T05_タグを付ける");
 });
 
-await step("T06", "大文字・小文字が違うだけのタグ名は同じタグになる", async () => {
+await step("T06", "右の欄では、大文字・小文字が違うだけのタグ名でも既にあるタグを付ける", async () => {
   await row("chime.wav").click();
   await addTag(" Short ");
   await row("chime.flac").click();
@@ -105,10 +105,10 @@ await step("T08", "タグなしのファイルだけに絞り込める", async (
 });
 
 await step("T09", "ファイル名の一部で絞り込める（大文字・小文字を区別しない）", async () => {
-  await page.getByLabel("ファイル名で絞り込む").fill("CHIME.");
+  await page.getByLabel("検索", { exact: true }).fill("CHIME.");
   await page.waitForTimeout(500);
   expect((await fileCount()) === 4, `CHIME.: ${await fileCount()}`);
-  await page.getByLabel("ファイル名で絞り込む").fill("サブ");
+  await page.getByLabel("検索", { exact: true }).fill("サブ");
   await page.waitForTimeout(500);
   expect((await fileCount()) === 1, `サブ: ${await fileCount()}`);
   await clearFilter();
@@ -191,7 +191,7 @@ await step("T16", "3万ファイルのフォルダを登録・表示・スクロ
   const scrollMs = Date.now() - t1;
   const rows = await page.getByTestId("file-row").count();
   expect(rows < 200, `描画している行が多すぎる: ${rows}`);
-  await page.getByLabel("ファイル名で絞り込む").fill("se_42_1");
+  await page.getByLabel("検索", { exact: true }).fill("se_42_1");
   const t2 = Date.now();
   await page.waitForFunction(() => parseInt(document.querySelector("[data-testid=file-count]").textContent, 10) === 100);
   const filterMs = Date.now() - t2;
@@ -223,10 +223,20 @@ await step("T18", "フォルダの登録を解除すると、ファイルとタ�
   expect(fs.existsSync(path.join(large, "d00", "se_00_000.wav")), "実際のファイルが消えた");
 });
 
-await step("T19", "空のタグ名では付けられない", async () => {
+await step("T19", "右の欄では、空のタグ名・まだないタグ名・付いているタグ名では付けられない（新しいタグは作れない）", async () => {
   await row("chime.wav").click();
-  await page.getByLabel("付けるタグ名", { exact: true }).fill("   ");
-  expect(await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).isDisabled(), "ボタンが押せる");
+  const field = page.getByLabel("付けるタグ名", { exact: true });
+  const button = page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true });
+  const attached = (await page.getByTestId("selected-tag").allInnerTexts())[0];
+  expect(attached, "タグが付いていない");
+  for (const name of ["   ", "まだないタグ", attached]) {
+    await field.fill(name);
+    expect(await button.isDisabled(), `「${name}」で押せる`);
+    await field.press("Enter");
+  }
+  await page.waitForTimeout(300);
+  expect((await tagItem("まだないタグ").count()) === 0, "作られた");
+  await field.fill("");
 });
 
 await step("T20", "聞き比べ：↑↓で右の欄のファイルを移し、試聴中なら移った先を続けて試聴する。スペースで試聴を始める・止める", async () => {
@@ -251,6 +261,90 @@ await step("T20", "聞き比べ：↑↓で右の欄のファイルを移し、�
   expect((await playing("chime.mp3")) === 1, "↑で移った先を試聴しない");
   await page.keyboard.press(" ");
   expect((await playing("chime.mp3")) === 0, "スペースで止まらない");
+});
+
+await step("T21", "右の欄は、トラック名・ファイル名・タグ・プレイリスト・出典・ライセンス・ハッシュ値の順に出る。何も選んでいないときは空", async () => {
+  await clearFilter();
+  expect((await page.getByTestId("detail-panel").count()) === 0, "選んでいないのに右の欄が出る");
+  expect(!(await page.locator(".detail").innerText()).includes("ファイルの詳細"), "見出しが残っている");
+  await row("chime.mp3").locator(".file-name").click();
+  await page.getByTestId("track-title").waitFor({ timeout: 3000 });
+  expect((await page.getByTestId("track-title").innerText()) === "チャイム", await page.getByTestId("track-title").innerText());
+  const p = page.getByTestId("detail-path");
+  expect((await p.innerText()) === "chime.mp3", await p.innerText());
+  expect((await p.getAttribute("title")) === path.join(formats, "chime.mp3"), `絶対パス ${await p.getAttribute("title")}`);
+  const order = await page.getByTestId("detail-panel").evaluate((panel) =>
+    [...panel.querySelectorAll("[data-testid]")]
+      .map((e) => e.dataset.testid)
+      .filter((id) =>
+        ["track-title", "detail-path", "section-detail-tags", "section-detail-playlists", "credit-field-source", "credit-field-license", "selected-hash"].includes(id),
+      ),
+  );
+  expect(order.join(",") === "track-title,detail-path,section-detail-tags,section-detail-playlists,credit-field-source,credit-field-license,selected-hash", order.join(","));
+  // ハッシュ値は欄の幅いっぱいに折り返して出る（縦に細長くならない）
+  const box = await page.getByTestId("selected-hash").boundingBox();
+  expect(box.width > 150 && box.height < 80, `ハッシュ値の大きさ ${box.width}x${box.height}`);
+  await shot("T21_右の欄");
+});
+
+await step("T22", "右の欄のタグ・プレイリストはたためて、たたんでも件数が出る。たたんだ状態は再読み込み後も残る", async () => {
+  const tagsSection = page.getByTestId("section-detail-tags");
+  const n = await page.getByTestId("selected-tag").count();
+  expect(n > 0, "タグが付いていない");
+  expect((await tagsSection.getByTestId("section-count").innerText()) === String(n), "件数");
+  await tagsSection.locator(".collapse-toggle").click();
+  expect((await page.getByTestId("selected-tag").count()) === 0, "たためない");
+  expect((await page.getByLabel("付けるタグ名", { exact: true }).count()) === 0, "入力欄が残る");
+  expect((await tagsSection.getByTestId("section-count").innerText()) === String(n), "たたむと件数が消える");
+  await ui.reload();
+  await row("chime.mp3").locator(".file-name").click();
+  expect((await page.getByTestId("section-detail-tags").getAttribute("data-collapsed")) === "true", "再読み込みで開いた");
+  expect((await page.getByTestId("section-detail-playlists").getAttribute("data-collapsed")) === "false", "プレイリストがたたまれた");
+  await page.getByTestId("section-detail-tags").locator(".collapse-toggle").click();
+  expect((await page.getByTestId("selected-tag").count()) === n, "開かない");
+});
+
+await step("T23", "欄の境界をドラッグして左・右の欄の幅を変えられる（最小の幅より狭くならない）。幅は再読み込み後も残る", async () => {
+  const width = (sel) => page.locator(sel).evaluate((e) => e.getBoundingClientRect().width);
+  const drag = async (label, dx) => {
+    const b = await page.getByRole("separator", { name: label }).boundingBox();
+    const x = b.x + b.width / 2;
+    const y = b.y + b.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y, { steps: 5 });
+    await page.mouse.up();
+  };
+  const side0 = await width(".side");
+  const detail0 = await width(".detail");
+  await drag("左の欄の幅", 100);
+  const side1 = await width(".side");
+  expect(Math.abs(side1 - side0 - 100) <= 2, `左 ${side0} → ${side1}`);
+  await drag("右の欄の幅", -60);
+  const detail1 = await width(".detail");
+  expect(Math.abs(detail1 - detail0 - 60) <= 2, `右 ${detail0} → ${detail1}`);
+  await shot("T23_欄の幅");
+  await ui.reload();
+  expect(Math.abs((await width(".side")) - side1) <= 2 && Math.abs((await width(".detail")) - detail1) <= 2, "再読み込みで戻った");
+  await drag("左の欄の幅", -1000);
+  expect((await width(".side")) === 180, `最小の幅 ${await width(".side")}`);
+  await drag("左の欄の幅", side0 - 180);
+  await drag("右の欄の幅", 60);
+});
+
+await step("T24", "左の欄はライブラリ・タグ・プレイリスト・出典・ライセンスの順。ライブラリの欄はたためて、たたんでも「追加」は押せる", async () => {
+  const sections = await page.locator(".side [data-testid^=section-]").evaluateAll((els) => els.map((e) => e.dataset.testid));
+  expect(sections.join(",") === "section-folders,section-tags,section-playlists,section-source,section-license", sections.join(","));
+  const heads = await page.locator(".side .collapsible-head h2").allInnerTexts();
+  expect(heads.join(",") === "ライブラリ,タグ,プレイリスト,出典,ライセンス", heads.join(","));
+  const section = page.getByTestId("section-folders");
+  expect((await section.locator("h2").innerText()) === "ライブラリ", await section.locator("h2").innerText());
+  expect((await page.getByLabel("フォルダのパス").count()) === 0, "パスの欄が残っている");
+  await section.locator(".collapse-toggle").click();
+  expect((await page.getByTestId("folder").count()) === 0, "たためない");
+  expect(await page.getByRole("button", { name: "フォルダを追加" }).isEnabled(), "追加が押せない");
+  await section.locator(".collapse-toggle").click();
+  expect((await page.getByTestId("folder").count()) === 1, "開かない");
 });
 
 await ui.finish();

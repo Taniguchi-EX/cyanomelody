@@ -113,6 +113,8 @@ export const api = {
   cancelHashing: () => invoke<void>("cancel_hashing"),
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
   hashFile: (path: string) => invoke<string>("hash_file", { path }),
+  /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
+  trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
   licenseTypes: () => invoke<LicenseType[]>("license_types"),
   listCredits: (kind: CreditKind) => invoke<Credit[]>("list_credits", { kind }),

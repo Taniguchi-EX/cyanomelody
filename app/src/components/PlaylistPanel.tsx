@@ -134,12 +134,10 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onPlay, onCreat
       </ul>
       {playlists.length > 0 && (
         <div
-          className={`tag-drop-root${drag.drop?.pos === "root" ? " active" : ""}`}
+          className={`tag-drop-root${drag.dragId !== null ? " dragging" : ""}${drag.drop?.pos === "root" ? " active" : ""}`}
           data-tree-root="playlists"
           data-testid="playlist-drop-root"
-        >
-          {drag.dragId !== null && "ここに落とすと最上位の最後へ"}
-        </div>
+        />
       )}
       {playlists.length === 0 && <div className="sub">プレイリストはまだありません</div>}
     </Collapsible>

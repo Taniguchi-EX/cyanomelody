@@ -82,25 +82,29 @@ await step("H05", "選んだファイルと同じ音声のファイルを探せ�
   expect((await fileCount()) === 5, `解除後 ${await fileCount()}`);
 });
 
-await step("H06", "ライブラリ外のファイルを指定して、同じ音声のファイルを探せる", async () => {
-  await page.getByRole("button", { name: "ファイルを指定して探す" }).click();
-  await page.getByLabel("探す音声ファイルのパス").fill(path.join(outside, "se2_outside.wav"));
-  await page.getByRole("button", { name: "探す", exact: true }).click();
+const searchOutside = async (file) => {
+  await ui.setDialogReply(file);
+  await page.getByRole("button", { name: "ライブラリの外のファイルと同じ音声を探す" }).click();
   await waitIdle();
+};
+
+await step("H06", "🔊でライブラリ外のファイルを選ぶと、そのまま同じ音声のファイルを探す", async () => {
+  await searchOutside(path.join(outside, "se2_outside.wav"));
   expect((await fileCount()) === 1, `件数 ${await fileCount()}`);
   expect((await row("se2.wav").count()) === 1, "se2.wavでない");
-  await shot("H06_ファイルを指定して探す");
+  expect((await page.getByTestId("hash-filter").count()) === 1, "同じ音声のチップが出ない");
+  await shot("H06_ファイルを選んで探す");
   await clearFilter();
 });
 
-await step("H07", "音声でないファイルを指定すると、エラーが出る", async () => {
-  await page.getByRole("button", { name: "ファイルを指定して探す" }).click();
-  await page.getByLabel("探す音声ファイルのパス").fill(path.join(outside, "text.mp3"));
-  await page.getByRole("button", { name: "探す", exact: true }).click();
-  await waitIdle();
+await step("H07", "音声でないファイルを選ぶとエラーが出る。キャンセルなら何もしない", async () => {
+  await searchOutside(path.join(outside, "text.mp3"));
   const s = await status();
   expect(s.includes("ハッシュ値を計算できませんでした"), s);
-  await page.getByRole("button", { name: "ファイルを指定して探す" }).click();
+  // ダイアログでキャンセルしたときは何もしない
+  const before = await fileCount();
+  await searchOutside(null);
+  expect((await fileCount()) === before && (await page.getByTestId("hash-filter").count()) === 0, "キャンセルで絞り込まれた");
 });
 
 await step("H08", "移動したファイルに、見つからないファイルのタグをひも付け直せる", async () => {
@@ -139,8 +143,8 @@ await step("H09", "同じ音声の候補が複数あるときは、ひも付け�
 
 await step("H10", "ハッシュ値の計算を中止でき、次のスキャンの後に続きから計算する", async () => {
   await hashingAfter(async () => {
-    await page.getByLabel("フォルダのパス").fill(large);
-    await page.getByRole("button", { name: "登録", exact: true }).click();
+    await ui.setDialogReply(large);
+    await page.getByRole("button", { name: "フォルダを追加" }).click();
     // 計算が始まったらすぐに中止する
     const cancel = page.getByTestId("hash-status").getByRole("button", { name: "中止" });
     await cancel.waitFor({ timeout: 60000 });

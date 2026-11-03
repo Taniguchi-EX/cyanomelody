@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickPath } from "./dialogs";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
@@ -46,6 +46,8 @@ import { TagManager } from "./components/TagManager";
 import { CreditPanel } from "./components/CreditPanel";
 import { CreditManager } from "./components/CreditManager";
 import { CreditField } from "./components/CreditField";
+import { Splitter } from "./components/Splitter";
+import { useStoredNumber } from "./storage";
 
 type Status = { text: string; error: boolean };
 
@@ -70,7 +72,13 @@ const FILTER_KEYS = {
   license: { ids: "licenseIds", none: "noLicense" },
 } as const;
 
+/** 左・右の欄の最小の幅と、中央の欄に残す最小の幅 */
+const SIDE_MIN = 180;
+const MAIN_MIN = 320;
+
 export default function App() {
+  const [sideWidth, setSideWidth, commitSideWidth] = useStoredNumber("cyanomelody.width.side", 280);
+  const [detailWidth, setDetailWidth, commitDetailWidth] = useStoredNumber("cyanomelody.width.detail", 300);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [files, setFiles] = useState<AudioFile[]>([]);
@@ -92,8 +100,6 @@ export default function App() {
   const [managingEffects, setManagingEffects] = useState(false);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [searchPath, setSearchPath] = useState("");
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
   /** 中央で開いているプレイリスト（null ならファイルの一覧を出す） */
   const [openPlaylistId, setOpenPlaylistId] = useState<number | null>(null);
@@ -326,23 +332,22 @@ export default function App() {
     setFilter({ ...EMPTY_FILTER, hash });
   };
 
-  const browseSearchFile = async () => {
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "音声ファイル", extensions: [...AUDIO_EXTENSIONS] }],
-    });
-    if (typeof selected === "string") setSearchPath(selected);
-  };
-
-  const searchByFile = () =>
+  /** ライブラリの外のファイルを選んで、同じ音声のファイルを探す（選んだらすぐ探す） */
+  const searchByFile = async () => {
+    const path = await pickPath({ filters: [{ name: "音声ファイル", extensions: [...AUDIO_EXTENSIONS] }] }).catch(showError);
+    if (typeof path !== "string") return;
     run(async () => {
-      const path = searchPath.trim();
       const hash = await api.hashFile(path);
       showSameAudio(hash);
-      setSearching(false);
-      setSearchPath("");
       showInfo(`同じ音声のファイルを探しました: ${path}`);
     });
+  };
+
+  /** フォルダを選んで、そのまま登録する */
+  const browseAndAddFolder = async () => {
+    const path = await pickPath({ directory: true }).catch(showError);
+    if (typeof path === "string") await addFolder(path);
+  };
 
   const toggleTag = (tagId: number) =>
     setFilter((f) => ({
@@ -718,10 +723,7 @@ export default function App() {
     }
   };
 
-  const browseFolder = async () => {
-    const dir = await open({ directory: true, multiple: false });
-    return typeof dir === "string" ? dir : null;
-  };
+  const browseFolder = () => pickPath({ directory: true });
 
   const setPlaylistItemChain = (item: PlaylistItem, chainId: number | null) =>
     run(async () => {
@@ -815,12 +817,18 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    // ウィンドウを狭くしたときは、左・右の欄が最小の幅まで縮んでから中央の欄が縮む
+    <div
+      className="app"
+      style={{
+        gridTemplateColumns: `minmax(${SIDE_MIN}px, ${sideWidth}px) auto minmax(${MAIN_MIN}px, 1fr) auto minmax(${SIDE_MIN}px, ${detailWidth}px)`,
+      }}
+    >
       <aside className="side">
         <FolderPanel
           folders={folders}
           busy={busy}
-          onAdd={addFolder}
+          onAdd={browseAndAddFolder}
           onRemove={removeFolder}
           onScan={(f) => scan([f])}
           onScanAll={() => scan(folders)}
@@ -837,6 +845,16 @@ export default function App() {
           busy={busy}
           onMove={moveTag}
         />
+        <PlaylistPanel
+          playlists={playlists}
+          openId={openPlaylistId}
+          busy={busy}
+          onOpen={openPlaylist}
+          onPlay={(id) => playPlaylist(id)}
+          onCreate={(name) => createPlaylist(name)}
+          onMove={movePlaylist}
+          onManageEffects={() => setManagingEffects(true)}
+        />
         {creditKinds.map((kind) => (
           <CreditPanel
             key={kind}
@@ -850,17 +868,16 @@ export default function App() {
             onManage={() => setManagingCredit(kind)}
           />
         ))}
-        <PlaylistPanel
-          playlists={playlists}
-          openId={openPlaylistId}
-          busy={busy}
-          onOpen={openPlaylist}
-          onPlay={(id) => playPlaylist(id)}
-          onCreate={(name) => createPlaylist(name)}
-          onMove={movePlaylist}
-          onManageEffects={() => setManagingEffects(true)}
-        />
       </aside>
+      <Splitter
+        label="左の欄の幅"
+        width={sideWidth}
+        direction={1}
+        min={SIDE_MIN}
+        max={() => window.innerWidth - detailWidth - MAIN_MIN}
+        onChange={setSideWidth}
+        onCommit={commitSideWidth}
+      />
 
       <main className="main">
         {playlistDetail ? (
@@ -893,10 +910,10 @@ export default function App() {
             <div className="toolbar">
               <input
                 type="text"
-                placeholder="ファイル名で絞り込む"
+                placeholder="検索"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                aria-label="ファイル名で絞り込む"
+                aria-label="検索"
               />
               {/* 見つからないファイルがないときは、絞り込んでも0件なので出さない */}
               {(missingTotal > 0 || filter.missingOnly) && (
@@ -919,7 +936,15 @@ export default function App() {
               >
                 ⧉
               </button>
-              <button onClick={() => setSearching((s) => !s)}>ファイルを指定して探す</button>
+              <button
+                className="icon"
+                onClick={searchByFile}
+                disabled={busy}
+                title="ライブラリの外のファイルと同じ音声を探す"
+                aria-label="ライブラリの外のファイルと同じ音声を探す"
+              >
+                🔊
+              </button>
               {anyActive && (
                 <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
                   ✕
@@ -945,25 +970,6 @@ export default function App() {
               )}
             </div>
             <FilterChips chips={filterChips} />
-            {searching && (
-              <div className="toolbar">
-                <span className="sub">このファイルと同じ音声のファイルを探す：</span>
-                <input
-                  type="text"
-                  placeholder="音声ファイルのパス"
-                  value={searchPath}
-                  onChange={(e) => setSearchPath(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && searchPath.trim() && searchByFile()}
-                  aria-label="探す音声ファイルのパス"
-                />
-                <button onClick={browseSearchFile} disabled={busy}>
-                  参照
-                </button>
-                <button onClick={searchByFile} disabled={busy || !searchPath.trim()}>
-                  探す
-                </button>
-              </div>
-            )}
             {checked.size > 0 && (
               <BulkBar
                 checkedCount={checked.size}
@@ -1000,6 +1006,15 @@ export default function App() {
           </>
         )}
       </main>
+      <Splitter
+        label="右の欄の幅"
+        width={detailWidth}
+        direction={-1}
+        min={SIDE_MIN}
+        max={() => window.innerWidth - sideWidth - MAIN_MIN}
+        onChange={setDetailWidth}
+        onCommit={commitDetailWidth}
+      />
 
       <aside className="detail">
         <SelectionPanel

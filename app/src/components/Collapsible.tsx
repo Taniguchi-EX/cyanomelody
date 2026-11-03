@@ -6,14 +6,16 @@ type Props = {
   id: string;
   title: string;
   /** 選んでいる絞り込みの条件の数。たたんでいても見出しに出す */
-  selectedCount: number;
+  selectedCount?: number;
+  /** 中の項目の数（右の欄の、付いているタグなど）。たたんでいても見出しに出す */
+  count?: number;
   /** 見出しの右に置くボタンなど */
   actions?: ReactNode;
   children: ReactNode;
 };
 
-/** 見出しを押すとたためる、左の欄の1つの欄 */
-export function Collapsible({ id, title, selectedCount, actions, children }: Props) {
+/** 見出しを押すとたためる1つの欄（左の欄の各欄、右の欄のタグ・プレイリスト） */
+export function Collapsible({ id, title, selectedCount = 0, count, actions, children }: Props) {
   const [collapsed, toggle] = useStoredFlag(`cyanomelody.collapsed.${id}`);
 
   return (
@@ -25,6 +27,11 @@ export function Collapsible({ id, title, selectedCount, actions, children }: Pro
           {selectedCount > 0 && (
             <span className="chip" data-testid="selected-count" title={`${selectedCount}件を選択中`}>
               {selectedCount}
+            </span>
+          )}
+          {count !== undefined && (
+            <span className="sub" data-testid="section-count">
+              {count}
             </span>
           )}
         </button>

@@ -54,3 +54,10 @@ export function useStoredString(key: string): [string, (value: string) => void] 
   };
   return [value, set];
 }
+
+/** 覚えておく数値（欄の幅など）。保存は確定したときだけ行う（ドラッグ中は覚えない） */
+export function useStoredNumber(key: string, fallback: number): [number, (value: number) => void, () => void] {
+  const [value, setValue] = useState(() => load(key, fallback));
+  const commit = () => save(key, value);
+  return [value, setValue, commit];
+}

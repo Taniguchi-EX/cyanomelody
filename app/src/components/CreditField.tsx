@@ -15,7 +15,8 @@ type Props = {
   onSet: (name: string) => Promise<boolean>;
   onClear: () => void;
   onError: (e: unknown) => void;
-  /** 一括操作の欄で使うとき true（入力欄の名前やテスト用の名前を分ける） */
+  /** 一括操作の欄で使うとき true（入力欄の名前やテスト用の名前を分ける）。
+   *  一括操作の欄では新しい名前で作れる。右の欄では既にあるものから選ぶだけ */
   bulk?: boolean;
 };
 
@@ -32,8 +33,11 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
   const prefix = bulk ? "bulk-" : "";
   const listId = `${prefix}${kind}-names`;
 
+  const match = credits.find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
+  const canSet = bulk ? name.trim() !== "" : match !== undefined;
   const set = async () => {
-    if (await onSet(name)) setName("");
+    if (!canSet) return;
+    if (await onSet(match?.name ?? name)) setName("");
   };
 
   return (
@@ -87,10 +91,10 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
         <input
           type="text"
           list={listId}
-          placeholder="名前（新しい名前なら作成）"
+          placeholder={bulk ? "名前（新しい名前なら作成）" : "名前"}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && name.trim() && set()}
+          onKeyDown={(e) => e.key === "Enter" && set()}
           aria-label={bulk ? `まとめて設定する${label}の名前` : `設定する${label}の名前`}
         />
         <datalist id={listId}>
@@ -98,7 +102,7 @@ export function CreditField({ kind, groups, credits, licenseTypes, busy, onSet, 
             <option key={c.id} value={c.name} />
           ))}
         </datalist>
-        <button onClick={set} disabled={busy || !name.trim()}>
+        <button onClick={set} disabled={busy || !canSet}>
           設定
         </button>
         <button onClick={onClear} disabled={busy || !anySet} className="icon"

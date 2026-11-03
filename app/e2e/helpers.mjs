@@ -35,6 +35,9 @@ export async function connect(shotDir) {
         window.__confirms.push(String(message));
         return Promise.resolve(window.__confirmReply);
       };
+      // フォルダ・ファイルを選ぶOSのダイアログも操作できない。アプリ（dialogs.ts）は、
+      // window.__dialogReply が決まっていればダイアログを開かずにそれを返すので、キャンセル（null）にしておく
+      window.__dialogReply = null;
     });
   const reload = async () => {
     await page.reload();
@@ -61,6 +64,8 @@ export async function connect(shotDir) {
     reload,
     /** 確認ダイアログに「OK」（true）と「キャンセル」（false）のどちらで答えるか */
     setConfirmReply: (reply) => page.evaluate((r) => (window.__confirmReply = r), reply),
+    /** フォルダ・ファイルを選ぶダイアログで選ぶパス（null ならキャンセル） */
+    setDialogReply: (p) => page.evaluate((r) => (window.__dialogReply = r), p),
     /** 最後に出た確認ダイアログのメッセージ */
     lastConfirm: () => page.evaluate(() => window.__confirms.at(-1) ?? ""),
     shot: (name) => page.screenshot({ path: path.join(shotDir, `${name}.png`) }),
@@ -86,9 +91,7 @@ export async function connect(shotDir) {
       await page.waitForTimeout(300);
     },
     async addFolder(p) {
-      await page.getByLabel("フォルダのパス").fill(p);
-      await page.getByRole("button", { name: "登録", exact: true }).click();
-      await ui.waitIdle();
+      await ui.addFolderOnly(p);
       // 登録したフォルダだけの表示になるので、ほかのテストのために外す
       const active = page.locator("[data-testid=folder].active .folder-name");
       if (await active.count()) {
@@ -98,8 +101,8 @@ export async function connect(shotDir) {
     },
     /** 登録だけして、絞り込みは外さない */
     async addFolderOnly(p) {
-      await page.getByLabel("フォルダのパス").fill(p);
-      await page.getByRole("button", { name: "登録", exact: true }).click();
+      await ui.setDialogReply(p);
+      await page.getByRole("button", { name: "フォルダを追加" }).click();
       await ui.waitIdle();
     },
     async clearFilter() {
@@ -166,7 +169,15 @@ export async function connect(shotDir) {
       }
       await page.getByRole("button", { name: "閉じる" }).click();
     },
+    /** 右の欄で、表示中のファイルにタグを付ける。右の欄では作れないので、まだないタグは管理画面で作っておく */
     async addTag(name) {
+      const key = name.trim().toLowerCase();
+      if (!(await ui.tagNames()).some((n) => n.toLowerCase() === key)) {
+        const focused = await page.getByTestId("detail-path").innerText();
+        await ui.createTags([name]);
+        // タグを作ると一覧を読み直すが、右の欄の表示は残る
+        expect((await page.getByTestId("detail-path").innerText()) === focused, "右の欄の表示が変わった");
+      }
       await page.getByLabel("付けるタグ名", { exact: true }).fill(name);
       await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).click();
       await ui.waitIdle();

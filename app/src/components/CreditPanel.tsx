@@ -17,7 +17,7 @@ type Props = {
   counts: CountItem[] | null;
 };
 
-/** 左の欄の「出典で絞り込む」「ライセンスで絞り込む」 */
+/** 左の欄の「出典」「ライセンス」 */
 export function CreditPanel({
   kind,
   credits,
@@ -37,7 +37,7 @@ export function CreditPanel({
   return (
     <Collapsible
       id={kind}
-      title={`${label}で絞り込む`}
+      title={label}
       selectedCount={selectedIds.length + (noneSelected ? 1 : 0)}
       actions={
         <button onClick={onManage} aria-label={`${label}を管理`}>

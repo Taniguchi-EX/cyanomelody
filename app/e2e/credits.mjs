@@ -222,7 +222,7 @@ await step("C13", "絞り込み：出典どうしはOR、「なし」とは同�
 });
 
 await step("C14", "たたんでも選んでいる条件の数が見出しに出る。たたんだ状態は再読み込み後も残る", async () => {
-  await page.getByRole("button", { name: "出典で絞り込む" }).click();
+  await section("source").locator(".collapse-toggle").click();
   expect((await section("source").getAttribute("data-collapsed")) === "true", "たたまれない");
   expect((await page.getByTestId("source").count()) === 0, "たたんでも一覧が出る");
   expect((await section("source").getByTestId("selected-count").innerText()) === "2", "選択数");
@@ -231,7 +231,7 @@ await step("C14", "たたんでも選んでいる条件の数が見出しに出�
   await ui.reload();
   expect((await section("source").getAttribute("data-collapsed")) === "true", "再読み込みで開いた");
   expect((await section("license").getAttribute("data-collapsed")) === "false", "ライセンスがたたまれた");
-  await page.getByRole("button", { name: "出典で絞り込む" }).click();
+  await section("source").locator(".collapse-toggle").click();
   expect((await section("source").getAttribute("data-collapsed")) === "false", "開かない");
 });
 
@@ -314,6 +314,25 @@ await step("C21", "左の欄のライセンスの行に、条項が色分けし�
   const title = await marks.getAttribute("title");
   expect(title === "商用不可 表記要 改変可 再配布可 継承？", title);
   await shot("C21_条項の記号");
+});
+
+await step("C22", "右の欄では新しい出典・ライセンスを作れない（まだない名前では「設定」が押せない）", async () => {
+  await row("chime.ogg").click();
+  const before = await current("source");
+  const field = page.getByLabel("設定する出典の名前");
+  await field.fill("まだない出典");
+  const button = page.getByTestId("credit-field-source").getByRole("button", { name: "設定" });
+  expect(await button.isDisabled(), "まだない名前で押せる");
+  await field.press("Enter");
+  await page.waitForTimeout(300);
+  expect((await current("source")) === before, "設定された");
+  expect((await leftItem("source", "まだない出典").count()) === 0, "作られた");
+  // 既にある名前（大文字・小文字の違いは問わない）なら設定できる
+  await field.fill("効果音サイトa");
+  expect(!(await button.isDisabled()), "既にある名前で押せない");
+  await button.click();
+  await waitIdle();
+  expect((await current("source")) === "効果音サイトA", await current("source"));
 });
 
 await ui.finish();

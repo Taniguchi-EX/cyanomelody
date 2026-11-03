@@ -10,6 +10,7 @@ mod facets;
 mod files;
 mod hashing;
 mod library;
+mod metadata;
 mod playlists;
 mod tags;
 mod tree;
@@ -167,6 +168,12 @@ async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
 async fn hash_file(path: String) -> Result<String> {
     audio_hash::audio_hash(Path::new(&path))
         .map_err(|e| Error::invalid(format!("ハッシュ値を計算できませんでした: {e}")))
+}
+
+/// 音声ファイルのトラック名（タグ情報のタイトル）。ないときは None
+#[tauri::command]
+async fn track_title(path: String) -> Result<Option<String>> {
+    Ok(metadata::track_title(Path::new(&path)))
 }
 
 #[tauri::command]
@@ -557,6 +564,7 @@ pub fn run() {
             cancel_hashing,
             hashing_progress,
             hash_file,
+            track_title,
             relink_files,
             license_types,
             list_credits,

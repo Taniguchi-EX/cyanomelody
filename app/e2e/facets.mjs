@@ -24,6 +24,14 @@ async function tagState() {
   return parts.join(" ");
 }
 async function setCredit(rel, name) {
+  // 右の欄では出典を作れないので、まだない出典は管理画面で作っておく
+  if (!(await sourceItem(name).count())) {
+    await page.getByRole("button", { name: "出典を管理" }).click();
+    await page.getByLabel("名前", { exact: true }).fill(name);
+    await page.getByTestId("credit-form").getByRole("button", { name: "作成", exact: true }).click();
+    await waitIdle();
+    await page.getByRole("button", { name: "閉じる" }).click();
+  }
   await row(rel).click();
   await page.getByLabel("設定する出典の名前").fill(name);
   await page.getByTestId("credit-field-source").getByRole("button", { name: "設定" }).click();
@@ -73,7 +81,7 @@ await step("F04", "条件を足していくと件数が変わる（タグはAND�
 
 await step("F05", "選んでいる項目は、0件になってもグレーアウトせず、押して選択を外せる", async () => {
   await tagItem("雨").click();
-  await page.getByLabel("ファイル名で絞り込む").fill("flac");
+  await page.getByLabel("検索", { exact: true }).fill("flac");
   await page.waitForTimeout(600);
   expect((await fileCount()) === 0, `件数 ${await fileCount()}`);
   expect((await countOf(tagItem("雨"))) === 0, "雨の件数");
@@ -107,7 +115,7 @@ await step("F07", "「チェックしたファイルだけ」やファイル名�
   expect(s === "環境音0g 雨0g 風0g 鳥0g 爆発0g なし1", `チェックしたファイルだけ ${s}`);
   await clearFilter();
   await ui.clearChecks();
-  await page.getByLabel("ファイル名で絞り込む").fill("chime.w");
+  await page.getByLabel("検索", { exact: true }).fill("chime.w");
   await page.waitForTimeout(600);
   s = await tagState();
   expect(s === "環境音1 雨1 風0g 鳥0g 爆発0g なし0g", `ファイル名 ${s}`);

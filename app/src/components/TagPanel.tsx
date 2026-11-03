@@ -18,7 +18,7 @@ type Props = {
   facets: Facets | null;
 };
 
-/** 左の欄の「タグで絞り込む」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト */
+/** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト */
 export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, onManage, onMove, facets }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.tagTree.collapsed");
 
@@ -48,7 +48,7 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
   return (
     <Collapsible
       id="tags"
-      title="タグで絞り込む"
+      title="タグ"
       selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
       actions={
         <button onClick={onManage} aria-label="タグを管理">
@@ -102,12 +102,10 @@ export function TagPanel({ tags, filter, busy, onToggleTag, onToggleUntagged, on
       </ul>
       {tags.length > 0 && (
         <div
-          className={`tag-drop-root${drag.drop?.pos === "root" ? " active" : ""}`}
+          className={`tag-drop-root${drag.dragId !== null ? " dragging" : ""}${drag.drop?.pos === "root" ? " active" : ""}`}
           data-tree-root="tags"
           data-testid="tag-drop-root"
-        >
-          {drag.dragId !== null && "ここに落とすと最上位の最後へ"}
-        </div>
+        />
       )}
       {tags.length === 0 && <div className="sub">タグはまだありません</div>}
     </Collapsible>
