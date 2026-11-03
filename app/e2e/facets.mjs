@@ -24,7 +24,7 @@ async function tagState() {
   return parts.join(" ");
 }
 async function setCredit(rel, name) {
-  // 右の欄では出典を作れないので、まだない出典は左の欄の「＋」で作っておく
+  // 出典を作るのは左の欄の「＋」で行う
   if (!(await sourceItem(name).count())) {
     await page.getByRole("button", { name: "出典を作る" }).click();
     await page.getByLabel("名前", { exact: true }).fill(name);
@@ -32,8 +32,7 @@ async function setCredit(rel, name) {
     await waitIdle();
   }
   await row(rel).click();
-  await page.getByLabel("設定する出典の名前").fill(name);
-  await page.getByTestId("credit-field-source").getByRole("button", { name: "設定" }).click();
+  await page.getByLabel("出典を選ぶ").selectOption({ label: name });
   await waitIdle();
 }
 

@@ -17,9 +17,7 @@ const openPlaylist = (name) => page.locator(`[data-testid=playlist][data-playlis
 async function addToPlaylist(rel, name) {
   await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click().catch(() => {});
   await row(rel).click();
-  await page.getByLabel("このファイルを加えるプレイリスト").selectOption({ label: name });
-  await page.getByTestId("detail-panel").getByRole("button", { name: "追加", exact: true }).click();
-  await waitIdle();
+  await ui.addToPlaylistHere(name);
 }
 /** 書き出し先の欄を開いて書き出し始める。始めると欄は閉じる */
 async function exportTo(dest) {
@@ -60,9 +58,10 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   await waitIdle();
   await page.getByRole("dialog").getByRole("button", { name: "閉じる" }).click();
   await openPlaylist("TRPG: 第1話");
-  await page.getByRole("button", { name: "chime.wavの別名を付ける" }).click();
-  await page.getByLabel("chime.wavの別名", { exact: true }).fill("激しめの雨");
-  await page.getByLabel("chime.wavの別名", { exact: true }).press("Enter");
+  // 項目の行を押すと、右の欄に「プレイリスト上での名前」が出る
+  await page.getByTestId("playlist-item").filter({ hasText: "chime.wav" }).locator(".item-content").click();
+  await page.getByLabel("プレイリスト上での名前").fill("激しめの雨");
+  await page.getByLabel("プレイリスト上での名前").press("Enter");
   await waitIdle();
   await page.getByLabel("シーン1のエフェクト").selectOption({ label: "小さく" });
   await waitIdle();

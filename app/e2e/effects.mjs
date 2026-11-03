@@ -97,7 +97,7 @@ await step("E06", "項目にまとまりを結び付けると、その項目だ�
   await waitIdle();
   // 項目の並びはファイルの一覧の順（mp3、wav）
   await page.getByRole("button", { name: "順に再生" }).click();
-  await page.getByTestId("player-bar").waitFor({ timeout: 5000 });
+  await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `エフェクトのない曲: ${await audioSrc()}`);
   await page.getByRole("button", { name: "次へ" }).click();
   await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });

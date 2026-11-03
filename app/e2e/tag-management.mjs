@@ -223,19 +223,37 @@ await step("T18", "フォルダの登録を解除すると、ファイルとタ�
   expect(fs.existsSync(path.join(large, "d00", "se_00_000.wav")), "実際のファイルが消えた");
 });
 
-await step("T19", "右の欄では、空のタグ名・まだないタグ名・付いているタグ名では付けられない（新しいタグは作れない）", async () => {
+await step("T19", "右の欄のタグ：候補から選ぶとすぐ付く。まだない名前でEnterなら最上位に作って付く。空・付いている名前では何もしない", async () => {
   await row("chime.wav").click();
   const field = page.getByLabel("付けるタグ名", { exact: true });
-  const button = page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true });
-  const attached = (await page.getByTestId("selected-tag").allInnerTexts())[0];
-  expect(attached, "タグが付いていない");
-  for (const name of ["   ", "まだないタグ", attached]) {
+  expect((await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).count()) === 0, "「＋」が残っている");
+  const tagTexts = () => page.getByTestId("selected-tag").locator("span").allInnerTexts();
+  const attached = await tagTexts();
+  const before = (await ui.tagNames()).length;
+  // 空、付いている名前（大文字・小文字の違いを含む）では何もしない
+  for (const name of ["   ", attached[0].toUpperCase()]) {
     await field.fill(name);
-    expect(await button.isDisabled(), `「${name}」で押せる`);
     await field.press("Enter");
+    await waitIdle();
   }
+  expect((await ui.tagNames()).length === before, "タグが増えた");
+  expect((await tagTexts()).join(",") === attached.join(","), "付いているタグが変わった");
+  // まだない名前でEnter：最上位に作って付ける
+  await field.fill("右で作ったタグ");
+  await field.press("Enter");
+  await waitIdle();
+  expect((await tagTexts()).includes("右で作ったタグ"), "付いていない");
+  expect((await tagItem("右で作ったタグ").getAttribute("data-depth")) === "0", "最上位でない");
+  expect((await field.inputValue()) === "", "入力欄が空にならない");
+  // 候補から選ぶと、Enterを押さなくてもすぐ付く
+  await row("chime.flac").click();
+  await ui.pickTag("右で作ったタグ");
+  expect((await tagTexts()).includes("右で作ったタグ"), "選んでも付かない");
+  // 打ち込んでいる途中で名前が一致しても、Enterを押すまでは付けない
+  await row("chime.mp3").click();
+  await field.fill("右で作ったタグ");
   await page.waitForTimeout(300);
-  expect((await tagItem("まだないタグ").count()) === 0, "作られた");
+  expect(!(await tagTexts()).includes("右で作ったタグ"), "打ち込みだけで付いた");
   await field.fill("");
 });
 
@@ -345,6 +363,38 @@ await step("T24", "左の欄はライブラリ・タグ・プレイリスト・�
   expect(await page.getByRole("button", { name: "フォルダを追加" }).isEnabled(), "追加が押せない");
   await section.locator(".collapse-toggle").click();
   expect((await page.getByTestId("folder").count()) === 1, "開かない");
+});
+
+await step("T25", "絞り込みの操作（検索・✕・⧉・🔊・条件のチップ）は左の欄の一番上にあり、左の欄をスクロールしても残る。中央には件数とチェックだけ", async () => {
+  const bar = page.getByTestId("filter-bar");
+  const side = page.locator("aside.side");
+  for (const name of ["重複しているファイルだけ", "ライブラリの外のファイルと同じ音声を探す"]) {
+    expect((await bar.getByRole("button", { name }).count()) === 1, `${name}が左の欄にない`);
+  }
+  expect((await bar.getByLabel("検索", { exact: true }).count()) === 1, "検索が左の欄にない");
+  expect((await page.locator("main").getByLabel("検索", { exact: true }).count()) === 0, "検索が中央に残っている");
+  expect((await page.locator("main").getByTestId("file-count").count()) === 1, "件数が中央にない");
+  // フォルダを選ぶと、条件のチップが出る
+  await page.getByTestId("folder").first().click();
+  await page.waitForTimeout(300);
+  expect((await bar.getByTestId("filter-chips").count()) === 1, "条件のチップが左の欄にない");
+  expect((await bar.getByRole("button", { name: "すべて解除" }).count()) === 1, "✕が左の欄にない");
+  // 左の欄を高くしてスクロールしても、絞り込みの部分は一番上に残る
+  await side.evaluate((el) => {
+    const spacer = document.createElement("div");
+    spacer.id = "t25-spacer";
+    spacer.style.height = "3000px";
+    el.appendChild(spacer);
+    el.scrollTop = el.scrollHeight;
+  });
+  await page.waitForTimeout(200);
+  const [b, a] = [await bar.boundingBox(), await side.boundingBox()];
+  await side.evaluate((el) => {
+    document.getElementById("t25-spacer").remove();
+    el.scrollTop = 0;
+  });
+  expect(Math.abs(b.y - a.y) < 2, `スクロールで動いた: ${b.y} / ${a.y}`);
+  await clearFilter();
 });
 
 await ui.finish();

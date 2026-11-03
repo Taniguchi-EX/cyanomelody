@@ -180,17 +180,34 @@ export async function connect(shotDir) {
       await page.getByLabel("タグの新しい名前").press("Enter");
       await ui.waitIdle();
     },
-    /** 右の欄で、表示中のファイルにタグを付ける。右の欄では作れないので、まだないタグは左の欄で作っておく */
+    /** 右の欄で、表示中のファイルにタグを付ける（名前を入れてEnter。まだないタグは作って付く） */
     async addTag(name) {
-      const key = name.trim().toLowerCase();
-      if (!(await ui.tagNames()).some((n) => n.toLowerCase() === key)) {
-        const focused = await page.getByTestId("detail-path").innerText();
-        await ui.createTags([name]);
-        // タグを作ると一覧を読み直すが、右の欄の表示は残る
-        expect((await page.getByTestId("detail-path").innerText()) === focused, "右の欄の表示が変わった");
-      }
       await page.getByLabel("付けるタグ名", { exact: true }).fill(name);
-      await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).click();
+      await page.getByLabel("付けるタグ名", { exact: true }).press("Enter");
+      await ui.waitIdle();
+    },
+    /** 右の欄のタグの入力欄で、候補の一覧からタグを選ぶ（ブラウザが候補で置き換えたときと同じ入力を起こす） */
+    async pickTag(name) {
+      await page.getByLabel("付けるタグ名", { exact: true }).evaluate((el, v) => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: v }));
+      }, name);
+      await ui.waitIdle();
+    },
+    /** 右の欄のプルダウンで、表示中のファイルをプレイリストに加える（選ぶとすぐ加わる） */
+    async addToPlaylistHere(name) {
+      await page.getByLabel("このファイルを加えるプレイリスト").selectOption({ label: name });
+      await ui.waitIdle();
+    },
+    /** 再生の欄が再生中になるのを待つ（再生の欄は何も再生していないときも出ている） */
+    waitPlaying: (timeout = 5000) => page.locator("[data-testid=player-bar][data-playing=true]").waitFor({ timeout }),
+    waitStopped: (timeout = 5000) => page.locator("[data-testid=player-bar][data-playing=false]").waitFor({ timeout }),
+    isPlaying: async () => (await page.getByTestId("player-bar").getAttribute("data-playing")) === "true",
+    /** 開いているプレイリストの名前を、上の行の「✎」で変える（Enterで決める） */
+    async renameOpenPlaylist(name) {
+      await page.getByRole("button", { name: "プレイリストの名前を変える" }).click();
+      await page.getByLabel("プレイリストの名前", { exact: true }).fill(name);
+      await page.getByLabel("プレイリストの名前", { exact: true }).press("Enter");
       await ui.waitIdle();
     },
     async finish() {

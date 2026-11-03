@@ -8,7 +8,7 @@ type Props = {
   file: AudioFile | null;
   tags: Tag[];
   busy: boolean;
-  /** 既にあるタグを付ける（右の欄では新しいタグは作らない） */
+  /** タグを付ける。まだない名前なら、最上位に新しいタグを作って付ける */
   onAddTag: (name: string) => Promise<boolean>;
   onRemoveTag: (tagId: number) => void;
   onRemoveMissing: () => void;
@@ -16,6 +16,8 @@ type Props = {
   onShowSameAudio: (hash: string) => void;
   /** プレイリストの下に出す欄（出典・ライセンス） */
   children?: ReactNode;
+  /** 一番上に出す欄（プレイリストの項目を押したときの「プレイリスト上での名前」） */
+  top?: ReactNode;
   playlists: PlaylistNode[];
   onAddToPlaylist: (playlistId: number) => Promise<boolean>;
   onOpenPlaylist: (playlistId: number) => void;
@@ -32,6 +34,7 @@ export function SelectionPanel({
   onRelink,
   onShowSameAudio,
   children,
+  top,
   playlists,
   onAddToPlaylist,
   onOpenPlaylist,
@@ -72,16 +75,25 @@ export function SelectionPanel({
 
   if (!file) return null;
 
-  // 付けられるのは、既にあって、まだ付いていないタグだけ
+  // 候補に出すのは、まだ付いていないタグ
   const attached = new Set(file.tags.map((t) => t.id));
   const candidates = tags.filter((t) => !attached.has(t.id));
-  const match = candidates.find((t) => t.name.toLowerCase() === name.trim().toLowerCase());
-  const add = async () => {
-    if (match && (await onAddTag(match.name))) setName("");
+  /** 付ける。既にあるタグ名（大文字・小文字は区別しない）ならそのタグを、なければ新しいタグを作って付ける */
+  const add = async (input: string) => {
+    const key = input.trim().toLowerCase();
+    if (!key || busy) return;
+    // 既に付いているタグなら何もしない
+    if (file.tags.some((t) => t.name.toLowerCase() === key)) {
+      setName("");
+      return;
+    }
+    const existing = tags.find((t) => t.name.toLowerCase() === key);
+    if (await onAddTag(existing?.name ?? input)) setName("");
   };
 
   return (
     <section data-testid="detail-panel">
+      {top}
       {trackTitle && (
         <div className="track-title" data-testid="track-title">
           {trackTitle}
@@ -96,10 +108,16 @@ export function SelectionPanel({
           <input
             type="text"
             list="tag-names"
-            placeholder="名前"
+            placeholder="名前（Enterで付ける）"
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && add()}
+            onChange={(e) => {
+              // 候補の一覧から選んだとき（打ち込みではなく置き換え）は、すぐに付ける
+              const picked = (e.nativeEvent as InputEvent).inputType === "insertReplacementText";
+              const tag = picked ? candidates.find((t) => t.name === e.target.value) : undefined;
+              if (tag) add(tag.name);
+              else setName(e.target.value);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && add(name)}
             aria-label="付けるタグ名"
           />
           <datalist id="tag-names">
@@ -107,9 +125,6 @@ export function SelectionPanel({
               <option key={t.id} value={t.name} />
             ))}
           </datalist>
-          <button className="icon" onClick={add} disabled={busy || !match} title="付ける" aria-label="付ける">
-            ＋
-          </button>
         </div>
         <ul className="selected-tags">
           {file.tags.map((t) => (
@@ -139,7 +154,13 @@ export function SelectionPanel({
             ))}
           </div>
         )}
-        <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} label="このファイルを加えるプレイリスト" />
+        <PlaylistPicker
+          playlists={playlists}
+          busy={busy}
+          onAdd={onAddToPlaylist}
+          label="このファイルを加えるプレイリスト"
+          immediate
+        />
       </Collapsible>
 
       {children}
@@ -158,7 +179,11 @@ export function SelectionPanel({
         <>
           <h2 className="warn">⚠ 見つからないファイル</h2>
           <div className="row">
-            <button onClick={onRelink} disabled={busy} title="ライブラリの中から同じ音声のファイルを探して、タグなどを移す">
+            <button
+              onClick={onRelink}
+              disabled={busy}
+              title="ライブラリの中から同じ音声のファイルを探して、タグなどを移す"
+            >
               ひも付け直す
             </button>
             <button onClick={onRemoveMissing} disabled={busy} title="ファイルの情報と、付けたタグなどの設定を消す">

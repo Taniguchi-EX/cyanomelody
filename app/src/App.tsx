@@ -42,6 +42,7 @@ import { useChecks } from "./hooks/useChecks";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
+import { AliasField, ItemDetail } from "./components/ItemDetail";
 import { CreditPanel } from "./components/CreditPanel";
 import { CreditForm } from "./components/CreditForm";
 import { CreditField } from "./components/CreditField";
@@ -102,6 +103,12 @@ export default function App() {
   /** 中央で開いているプレイリスト（null ならファイルの一覧を出す） */
   const [openPlaylistId, setOpenPlaylistId] = useState<number | null>(null);
   const [playlistDetail, setPlaylistDetail] = useState<PlaylistDetail | null>(null);
+  /** 詳細画面で押して、右の欄に出している項目 */
+  const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
+  /** 右の欄に出している項目のファイル（ファイルの一覧に出ていないこともあるので、別に読む） */
+  const [itemFile, setItemFile] = useState<AudioFile | null>(null);
+  /** データを読み直すたびに増える（右の欄の項目のファイルを読み直すのに使う） */
+  const [dataVersion, setDataVersion] = useState(0);
   // 開いているプレイリスト。データを読み直すとき（reloadAll）に参照する
   const openPlaylistRef = useRef<number | null>(null);
   useEffect(() => {
@@ -156,6 +163,7 @@ export default function App() {
     setPlaylists(ps);
     setChains(cs);
     await Promise.all([reloadFiles(), reloadPlaylistDetail()]);
+    setDataVersion((v) => v + 1);
   }, [reloadFiles]);
 
   useEffect(() => {
@@ -214,7 +222,26 @@ export default function App() {
     }
   };
 
-  const focusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
+  const listFocusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
+  const focusedItem = playlistDetail?.items.find((i) => i.id === focusedItemId) ?? null;
+  const itemFileId = focusedItem?.kind === "file" ? (focusedItem.file?.id ?? null) : null;
+  useEffect(() => {
+    if (itemFileId === null) return;
+    let alive = true;
+    api
+      .listFiles({ ...EMPTY_FILTER, fileIds: [itemFileId] })
+      .then((list) => alive && setItemFile(list[0] ?? null))
+      .catch(showError);
+    return () => {
+      alive = false;
+    };
+  }, [itemFileId, dataVersion]);
+  /** 右の欄に出しているファイル。プレイリストを開いているときは、押した項目のファイル */
+  const focusedFile = playlistDetail
+    ? itemFile && itemFile.id === itemFileId
+      ? itemFile
+      : null
+    : listFocusedFile;
   const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
   const addFolder = async (path: string) => {
     let ok = false;
@@ -556,11 +583,13 @@ export default function App() {
   // プレイリスト
   const openPlaylist = (id: number) => {
     setOpenPlaylistId(id);
+    setFocusedItemId(null);
     playlistApi.get(id).then(setPlaylistDetail).catch(showError);
   };
 
   const closePlaylist = () => {
     setOpenPlaylistId(null);
+    setFocusedItemId(null);
     setPlaylistDetail(null);
   };
 
@@ -732,7 +761,7 @@ export default function App() {
     let ok = false;
     await run(async () => {
       await playlistApi.setItemAlias(item.id, alias);
-      showInfo(alias.trim() ? `別名を「${alias.trim()}」にしました` : "別名を外しました");
+      showInfo(alias.trim() ? `プレイリスト上での名前を「${alias.trim()}」にしました` : "プレイリスト上での名前を外しました");
       ok = true;
     });
     return ok;
@@ -823,6 +852,50 @@ export default function App() {
       }}
     >
       <aside className="side">
+        {/* 絞り込みの操作。左の欄をスクロールしても一番上に残す */}
+        <div className="filter-bar" data-testid="filter-bar">
+          <div className="row">
+            <input type="text" placeholder="検索" value={text} onChange={(e) => setText(e.target.value)} aria-label="検索" />
+            {anyActive && (
+              <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
+                ✕
+              </button>
+            )}
+          </div>
+          <div className="row">
+            {/* 見つからないファイルがないときは、絞り込んでも0件なので出さない */}
+            {(missingTotal > 0 || filter.missingOnly) && (
+              <button
+                className={"icon toggle warn-toggle" + (filter.missingOnly ? " on" : "")}
+                aria-pressed={filter.missingOnly}
+                onClick={() => setFilter((f) => ({ ...f, missingOnly: !f.missingOnly }))}
+                title={`見つからないファイルだけ（${missingTotal}件）`}
+                aria-label="見つからないファイルだけ"
+              >
+                ⚠
+              </button>
+            )}
+            <button
+              className={"icon toggle" + (filter.duplicatesOnly ? " on" : "")}
+              aria-pressed={filter.duplicatesOnly}
+              onClick={() => setFilter((f) => ({ ...f, duplicatesOnly: !f.duplicatesOnly }))}
+              title="重複しているファイルだけ"
+              aria-label="重複しているファイルだけ"
+            >
+              ⧉
+            </button>
+            <button
+              className="icon"
+              onClick={searchByFile}
+              disabled={busy}
+              title="ライブラリの外のファイルと同じ音声を探す"
+              aria-label="ライブラリの外のファイルと同じ音声を探す"
+            >
+              🔊
+            </button>
+          </div>
+          <FilterChips chips={filterChips} />
+        </div>
         <FolderPanel
           folders={folders}
           busy={busy}
@@ -851,10 +924,7 @@ export default function App() {
           openId={openPlaylistId}
           busy={busy}
           onOpen={openPlaylist}
-          onPlay={(id) => playPlaylist(id)}
           onCreate={(name) => createPlaylist(name)}
-          onRename={renamePlaylist}
-          onDelete={deletePlaylist}
           onMove={movePlaylist}
           onManageEffects={() => setManagingEffects(true)}
         />
@@ -896,12 +966,12 @@ export default function App() {
             onClose={closePlaylist}
             onRename={(name) => renamePlaylist(playlistDetail.id, name)}
             onDelete={() => deletePlaylist(playlistDetail.id)}
-            onPlay={(mode) => playPlaylist(playlistDetail.id, mode)}
             onPlayItem={playPlaylistItem}
             onRemoveItem={removePlaylistItem}
             onMoveItem={movePlaylistItem}
             onSetMode={setPlaylistItemMode}
-            onSetAlias={setPlaylistItemAlias}
+            focusedItemId={focusedItemId}
+            onFocusItem={(item) => setFocusedItemId(item.id)}
             chains={chains}
             onSetChain={setPlaylistItemChain}
             onAddTags={addTagsToPlaylist}
@@ -913,48 +983,6 @@ export default function App() {
         ) : (
           <>
             <div className="toolbar">
-              <input
-                type="text"
-                placeholder="検索"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                aria-label="検索"
-              />
-              {/* 見つからないファイルがないときは、絞り込んでも0件なので出さない */}
-              {(missingTotal > 0 || filter.missingOnly) && (
-                <button
-                  className={"icon toggle warn-toggle" + (filter.missingOnly ? " on" : "")}
-                  aria-pressed={filter.missingOnly}
-                  onClick={() => setFilter((f) => ({ ...f, missingOnly: !f.missingOnly }))}
-                  title={`見つからないファイルだけ（${missingTotal}件）`}
-                  aria-label="見つからないファイルだけ"
-                >
-                  ⚠
-                </button>
-              )}
-              <button
-                className={"icon toggle" + (filter.duplicatesOnly ? " on" : "")}
-                aria-pressed={filter.duplicatesOnly}
-                onClick={() => setFilter((f) => ({ ...f, duplicatesOnly: !f.duplicatesOnly }))}
-                title="重複しているファイルだけ"
-                aria-label="重複しているファイルだけ"
-              >
-                ⧉
-              </button>
-              <button
-                className="icon"
-                onClick={searchByFile}
-                disabled={busy}
-                title="ライブラリの外のファイルと同じ音声を探す"
-                aria-label="ライブラリの外のファイルと同じ音声を探す"
-              >
-                🔊
-              </button>
-              {anyActive && (
-                <button className="icon clear-all" onClick={clearAll} title="絞り込み・チェック・選択をすべて解除" aria-label="すべて解除">
-                  ✕
-                </button>
-              )}
               <span className="sub" data-testid="file-count">
                 {files.length}件
               </span>
@@ -974,7 +1002,6 @@ export default function App() {
                 </>
               )}
             </div>
-            <FilterChips chips={filterChips} />
             {checked.size > 0 && (
               <BulkBar
                 checkedCount={checked.size}
@@ -1022,8 +1049,28 @@ export default function App() {
       />
 
       <aside className="detail">
+        {/* ファイルの項目は、ファイルを読み終えてから右の欄に出す（読む間に別の欄を出すと、入力が消えるため） */}
+        {focusedItem && itemFileId === null && (
+          <ItemDetail
+            key={focusedItem.id}
+            item={focusedItem}
+            busy={busy}
+            onSave={(alias) => setPlaylistItemAlias(focusedItem, alias)}
+          />
+        )}
         <SelectionPanel
           file={focusedFile}
+          top={
+            focusedItem &&
+            focusedFile && (
+              <AliasField
+                key={`${focusedItem.id}:${focusedItem.alias ?? ""}`}
+                item={focusedItem}
+                busy={busy}
+                onSave={(alias) => setPlaylistItemAlias(focusedItem, alias)}
+              />
+            )
+          }
           tags={tags}
           busy={busy}
           onAddTag={addTag}
@@ -1051,18 +1098,18 @@ export default function App() {
         </SelectionPanel>
       </aside>
 
+      <PlayerBar
+        player={audio.player}
+        time={audio.time}
+        canPlayOpen={playlistDetail !== null}
+        onPlayOpen={(mode) => playlistDetail && playPlaylist(playlistDetail.id, mode)}
+        onSeek={audio.seek}
+        onPrev={audio.prev}
+        onNext={audio.next}
+        onTogglePause={audio.togglePause}
+        onStop={audio.stop}
+      />
       <div className="status-bar">
-        {audio.player && (
-          <PlayerBar
-            player={audio.player}
-            time={audio.time}
-            onSeek={audio.seek}
-            onPrev={audio.prev}
-            onNext={audio.next}
-            onTogglePause={audio.togglePause}
-            onStop={audio.stop}
-          />
-        )}
         <div className={`status${status.error ? " error" : ""}`} data-testid="status">
           {busy ? "処理中…" : status.text || " "}
         </div>

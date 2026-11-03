@@ -5,7 +5,7 @@ import { useStoredIdSet } from "../storage";
 import { descendantsAndSelf, parentIds, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, NameInput, RowActions, Twisty } from "./TreeParts";
+import { DragHandle, NameInput, Twisty } from "./TreeParts";
 
 type Props = {
   playlists: PlaylistNode[];
@@ -13,31 +13,16 @@ type Props = {
   openId: number | null;
   busy: boolean;
   onOpen: (id: number) => void;
-  onPlay: (id: number) => void;
   onCreate: (name: string) => Promise<boolean>;
-  onRename: (id: number, name: string) => Promise<boolean>;
-  onDelete: (id: number) => void;
   onMove: (id: number, target: MoveTarget) => void;
   /** エフェクトのまとまりの管理画面を開く */
   onManageEffects: () => void;
 };
 
-/** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成・名前変更・削除、再生 */
-export function PlaylistPanel({
-  playlists,
-  openId,
-  busy,
-  onOpen,
-  onPlay,
-  onCreate,
-  onRename,
-  onDelete,
-  onMove,
-  onManageEffects,
-}: Props) {
+/** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成（再生・名前変更・削除は中央の詳細画面で行う） */
+export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMove, onManageEffects }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
 
   const parents = useMemo(() => parentIds(playlists), [playlists]);
   const byId = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists]);
@@ -75,7 +60,13 @@ export function PlaylistPanel({
           <button onClick={onManageEffects} aria-label="エフェクトのまとまりを管理">
             エフェクト
           </button>
-          <button className="icon" onClick={() => setCreating(true)} disabled={busy} title="プレイリストを作る" aria-label="プレイリストを作る">
+          <button
+            className="icon"
+            onClick={() => setCreating(true)}
+            disabled={busy}
+            title="プレイリストを作る"
+            aria-label="プレイリストを作る"
+          >
             ＋
           </button>
         </span>
@@ -112,37 +103,8 @@ export function PlaylistPanel({
               collapsed={collapsed.has(p.id)}
               onToggle={() => toggleCollapsed(p.id)}
             />
-            {editingId === p.id ? (
-              <NameInput
-                label="プレイリストの新しい名前"
-                initial={p.name}
-                onCommit={async (name) => {
-                  if (name.trim() === p.name || (await onRename(p.id, name))) setEditingId(null);
-                }}
-                onCancel={() => setEditingId(null)}
-              />
-            ) : (
-              <span className="tag-name">{p.name}</span>
-            )}
+            <span className="tag-name">{p.name}</span>
             <span className="sub">{p.itemCount}</span>
-            <button
-              className="mini-play"
-              title="再生"
-              aria-label={`${p.name}を再生`}
-              onClick={(e) => {
-                e.stopPropagation();
-                onPlay(p.id);
-              }}
-            >
-              ▶
-            </button>
-            <RowActions
-              name={p.name}
-              busy={busy}
-              editLabel="名前を変える"
-              onEdit={() => setEditingId(p.id)}
-              onDelete={() => onDelete(p.id)}
-            />
             <DragHandle name={p.name} handlers={drag.handleProps(p.id)} />
           </li>
         ))}

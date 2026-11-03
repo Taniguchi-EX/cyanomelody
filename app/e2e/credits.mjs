@@ -26,7 +26,11 @@ const termsEnabled = () =>
   page.getByTestId("terms-editor").locator("button").evaluateAll((bs) => bs.every((b) => !b.disabled));
 // 左の欄のライセンスの行の、条項の言葉（記号にマウスを乗せると出る言葉）
 const shortTerms = (name) => leftItem("license", name).getByTestId("term-marks").getAttribute("title");
-const current = (kind) => page.getByTestId(`current-${kind}`).innerText();
+// 右の欄のプルダウンで選んでいる名前（「（なし）」は「なし」にする）
+const current = async (kind) => {
+  const text = await page.getByTestId(`current-${kind}`).evaluate((s) => s.selectedOptions[0].text);
+  return text === "（なし）" ? "なし" : text;
+};
 const detail = (kind) => page.getByTestId(`detail-${kind}`).innerText();
 
 /** 見出しの「＋」で、作るフォームを開く */
@@ -49,8 +53,8 @@ async function typeOf(name) {
   return v;
 }
 async function setCredit(kind, name) {
-  await page.getByLabel(`設定する${LABEL[kind]}の名前`).fill(name);
-  await page.getByTestId(`credit-field-${kind}`).getByRole("button", { name: "設定" }).click();
+  // 右の欄では、プルダウンで選ぶとすぐ設定する
+  await page.getByLabel(`${LABEL[kind]}を選ぶ`).selectOption({ label: name });
   await waitIdle();
 }
 /** チェックをすべて外してから、指定したファイルをチェックする */
@@ -343,23 +347,19 @@ await step("C21", "左の欄のライセンスの行に、条項が色分けし�
   await shot("C21_条項の記号");
 });
 
-await step("C22", "右の欄では新しい出典・ライセンスを作れない（まだない名前では「設定」が押せない）", async () => {
+await step("C22", "右の欄の出典・ライセンスはプルダウン：（なし）と既にある名前が並び、選ぶとすぐ設定し、（なし）で外す", async () => {
   await row("chime.ogg").click();
-  const before = await current("source");
-  const field = page.getByLabel("設定する出典の名前");
-  await field.fill("まだない出典");
-  const button = page.getByTestId("credit-field-source").getByRole("button", { name: "設定" });
-  expect(await button.isDisabled(), "まだない名前で押せる");
-  await field.press("Enter");
-  await page.waitForTimeout(300);
-  expect((await current("source")) === before, "設定された");
-  expect((await leftItem("source", "まだない出典").count()) === 0, "作られた");
-  // 既にある名前（大文字・小文字の違いは問わない）なら設定できる
-  await field.fill("効果音サイトa");
-  expect(!(await button.isDisabled()), "既にある名前で押せない");
-  await button.click();
+  const select = page.getByLabel("出典を選ぶ");
+  const options = await select.locator("option").allInnerTexts();
+  expect(options.join(",") === "（なし）," + (await leftNames("source")).join(","), options.join(","));
+  expect((await page.getByTestId("credit-field-source").getByRole("button", { name: "設定" }).count()) === 0, "「設定」が残っている");
+  await select.selectOption({ label: "自分で録音" });
   await waitIdle();
-  expect((await current("source")) === "効果音サイトA", await current("source"));
+  expect((await current("source")) === "自分で録音", await current("source"));
+  await select.selectOption({ label: "（なし）" });
+  await waitIdle();
+  expect((await current("source")) === "なし", await current("source"));
+  await shot("C22_右の欄のプルダウン");
 });
 
 await ui.finish();

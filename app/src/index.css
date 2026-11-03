@@ -202,7 +202,7 @@ button.toggle.on {
 .app {
   display: grid;
   grid-template-columns: 280px auto minmax(0, 1fr) auto 300px;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   height: 100%;
 }
 
@@ -273,23 +273,81 @@ button.toggle.on {
   padding: 0 6px;
 }
 
-.player-bar {
+/* 再生の欄。左・中央・右の欄をまたぐ。左に曲の名前、中央にボタンとシークバー */
+.play-area {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 480px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sub);
+}
+
+.play-now {
+  min-width: 0;
+}
+
+.play-now .player-file {
+  font-weight: 600;
+  min-height: 1.4em;
+}
+
+.play-where {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.play-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.play-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.play-buttons button.icon {
+  border: none;
+  background: none;
+  font-size: 15px;
+}
+
+.play-buttons button.icon:disabled {
+  opacity: 0.35;
+}
+
+/* 中央の再生・一時停止。少し大きくし、丸で囲む */
+.play-main {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 15px;
+}
+
+.play-seek {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 8px;
-  border-right: 1px solid var(--border);
-  min-width: 0;
-  max-width: 55%;
+  width: 100%;
 }
 
-.player-name {
-  font-weight: 600;
-  white-space: nowrap;
+.play-seek input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
 }
 
-.player-bar button {
-  padding: 0 6px;
+.play-seek .sub {
+  font-variant-numeric: tabular-nums;
+  min-width: 3em;
+  text-align: center;
 }
 
 /* ===== 左の欄（たためる欄、木、絞り込みの一覧） ===== */
@@ -430,12 +488,6 @@ li:focus-within > .row-actions {
 
 li > .name-input {
   margin-bottom: 0;
-}
-
-.mini-play {
-  font-size: 10px;
-  padding: 0 5px;
-  line-height: 16px;
 }
 
 /* 木の最上位の最後に落とす場所。ドラッグ中だけ破線の枠で示す */
@@ -818,7 +870,7 @@ button.filter-chip:hover .chip-x {
   flex-direction: column;
   min-height: 0;
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .playlist-items {
@@ -845,9 +897,88 @@ button.filter-chip:hover .chip-x {
   flex: 1;
 }
 
-.item-alias {
-  font-weight: 600;
-  margin-right: 4px;
+/* 右の欄の「プレイリスト上での名前」 */
+.alias-field input {
+  width: 100%;
+}
+
+/* 詳細画面：上の行（戻る、名前、✎）、項目と追加の欄（ここだけスクロール）、下の行（書き出す、削除） */
+.editor-head {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.editor-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-head .name-input {
+  margin-bottom: 0;
+}
+
+/* 戻る：「＜」を丸で囲む */
+.back-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.editor-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.editor-foot {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+.export-row {
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+}
+
+/* 項目の行は押すと右の欄に出す。押した行は、ファイルの一覧で選んだ行と同じ色 */
+.playlist-item {
+  cursor: pointer;
+}
+
+.playlist-item.selected {
+  background: var(--selected);
+}
+
+/* 左の欄の一番上の絞り込み。左の欄をスクロールしても残す */
+.filter-bar {
+  position: sticky;
+  top: -8px;
+  z-index: 1;
+  margin: -8px -8px 8px;
+  padding: 8px;
+  background: var(--bg-sub);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-bar .filter-chips {
+  padding: 0;
+}
+
+.filter-bar input[type="text"] {
+  flex: 1;
+  min-width: 0;
 }
 
 .item-count {
@@ -1007,26 +1138,6 @@ button.item-kind:hover:not(:disabled) .kind-play {
   margin-left: 0;
   color: var(--accent);
   cursor: pointer;
-}
-
-.play-modes {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.player-progress {
-  flex: none;
-  width: 120px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--border);
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.player-progress > div {
-  height: 100%;
-  background: var(--accent);
 }
 
 /* 左の欄のライセンスの行：名前が長いときは名前を省く（条項と件数は残す） */
