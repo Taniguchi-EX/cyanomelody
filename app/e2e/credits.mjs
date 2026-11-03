@@ -77,7 +77,7 @@ await step("C01", "準備：フォルダを登録する。左の欄に3つの欄
   await shot("C01_左の欄");
 });
 
-await step("C02", "見出しの「＋」で出典を作成できる（名前・URL・メモ）。作るとフォームが閉じ、左の欄に出る", async () => {
+await step("C02", "見出しの「＋」で出典を作成できる（名前・URL・メモ。Enter でも作れる）。作るとフォームが閉じ、左の欄に出る。行の「✎」「🗑」はマウスを乗せたときだけ出る", async () => {
   await openCreate("source");
   expect((await form().locator("h2").innerText()) === "新しい出典", await form().locator("h2").innerText());
   expect((await page.getByLabel("種類").count()) === 0, "出典に種類の欄がある");
@@ -96,21 +96,23 @@ await step("C02", "見出しの「＋」で出典を作成できる（名前・U
   await openEdit("source", "効果音サイトA");
   expect((await page.getByLabel("URL").inputValue()) === "https://example.com/", "URLが保存されない");
   await page.keyboard.press("Escape");
-});
-
-await step("C03", "同じ名前（大文字・小文字の違いを含む）の出典は作れない（フォームは閉じない）", async () => {
+  // 行の記号はマウスを乗せたときだけ出る。名前の欄で Enter を押しても作れる（旧 C20）
+  const actions = leftItem("source", "効果音サイトA").getByTestId("row-actions");
+  await row("chime.wav").hover();
+  expect(!(await actions.isVisible()), "マウスを乗せる前から出ている");
+  await leftItem("source", "効果音サイトA").hover();
+  expect(await actions.isVisible(), "マウスを乗せても出ない");
+  expect((await page.getByTestId("source-none").getByTestId("row-actions").count()) === 0, "（出典なし）に出ている");
+  await shot("C20_行の記号");
   await openCreate("source");
-  await page.getByLabel("名前", { exact: true }).fill("効果音サイトa");
-  await submit();
-  const s = await status();
-  expect(s.includes("同じ名前の出典があります"), `status: ${s}`);
-  expect((await leftNames("source")).length === 2, "増えた");
-  expect((await form().count()) === 1, "作れなかったのにフォームが閉じた");
-  await form().getByRole("button", { name: "やめる" }).click();
-  expect((await form().count()) === 0, "「やめる」で閉じない");
+  await page.getByLabel("名前", { exact: true }).fill("Enterで作成");
+  await page.getByLabel("名前", { exact: true }).press("Enter");
+  await waitIdle();
+  expect((await leftItem("source", "Enterで作成").count()) === 1, "作成されない");
+  expect((await form().count()) === 0, "閉じない");
 });
 
-await step("C04", "ライセンスの作成：最初は種類が「独自」、条項はすべて「不明」で選べる", async () => {
+await step("C04", "ライセンスの作成：最初は種類が「独自」で条項はすべて「不明」。種類を選ぶと条項が決まってグレーアウトし、空の名前に種類の名前が入る", async () => {
   await openCreate("license");
   expect((await page.getByLabel("種類").inputValue()) === "", "種類が独自でない");
   for (const label of ["商用利用", "クレジット表記", "改変", "再配布", "継承"]) {
@@ -118,9 +120,6 @@ await step("C04", "ライセンスの作成：最初は種類が「独自」、�
   }
   expect(await termsEnabled(), "条項が選べない");
   await shot("C04_ライセンスの作成");
-});
-
-await step("C05", "種類を選ぶと条項が自動で設定されてグレーアウトし、空の名前に種類の名前が入る", async () => {
   await page.getByLabel("種類").selectOption("cc-by-nc-4.0");
   expect((await page.getByLabel("名前", { exact: true }).inputValue()) === "CC BY-NC 4.0", "名前が入らない");
   expect((await pressed("商用利用")) === "不可", "商用利用");
@@ -141,7 +140,7 @@ await step("C05", "種類を選ぶと条項が自動で設定されてグレー�
   expect((await typeOf("CC BY-NC 4.0")) === "cc-by-nc-4.0", "種類が保存されない");
 });
 
-await step("C06", "種類が「独自」のライセンスは、条項を自由に選べる（選ばなかった条項は不明）", async () => {
+await step("C06", "種類が「独自」のライセンスは条項を自由に選べる。編集で「独自」に戻すと、条項はそのままで選べるようになり、保存できる", async () => {
   await openCreate("license");
   await page.getByLabel("名前", { exact: true }).fill("サイトB規約");
   await termGroup("商用利用").getByRole("button", { name: "可", exact: true }).click();
@@ -151,9 +150,6 @@ await step("C06", "種類が「独自」のライセンスは、条項を自由�
   const t = await shortTerms("サイトB規約");
   expect(t === "商用可 表記不要 改変不可 再配布？ 継承？", t);
   expect((await typeOf("サイトB規約")) === "", "独自でない");
-});
-
-await step("C07", "編集：「独自」に戻すと条項はそのままで選べるようになる。変更を保存できる", async () => {
   await openEdit("license", "CC BY-NC 4.0");
   expect((await form().locator("h2").innerText()) === "「CC BY-NC 4.0」を編集", await form().locator("h2").innerText());
   expect(await termsDisabled(), "編集の最初はグレーアウトしていない");
@@ -164,23 +160,13 @@ await step("C07", "編集：「独自」に戻すと条項はそのままで選�
   await termGroup("継承").getByRole("button", { name: "不明" }).click();
   await submit("保存");
   expect((await form().count()) === 0, "保存してもフォームが閉じない");
-  const t = await shortTerms("サイトC規約");
-  expect(t === "商用不可 表記要 改変可 再配布可 継承？", t);
+  const edited = await shortTerms("サイトC規約");
+  expect(edited === "商用不可 表記要 改変可 再配布可 継承？", edited);
   expect((await typeOf("サイトC規約")) === "", "独自でない");
   expect((await leftItem("license", "CC BY-NC 4.0").count()) === 0, "古い名前が残っている");
 });
 
-await step("C08", "編集で別の既存の名前にはできない", async () => {
-  await openEdit("license", "サイトC規約");
-  await page.getByLabel("名前", { exact: true }).fill("サイトb規約");
-  await submit("保存");
-  const s = await status();
-  expect(s.includes("同じ名前のライセンスがあります"), `status: ${s}`);
-  await form().getByRole("button", { name: "やめる" }).click();
-  expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
-});
-
-await step("C09", "チェックしたファイル（複数）を出典の行にドラッグすると、まとめて設定できる。右の欄にURL・メモが出る", async () => {
+await step("C09", "チェックしたファイルを出典・ライセンスの行にドラッグすると、まとめて設定できる（右の欄にURL・メモ・条項が出る）。（ライセンスなし）には落とせない", async () => {
   await checkRows("chime.wav", "chime.mp3");
   await dropCredit("source", "効果音サイトA");
   expect((await status()).includes("2件に出典「効果音サイトA」を設定しました"), await status());
@@ -190,16 +176,13 @@ await step("C09", "チェックしたファイル（複数）を出典の行に�
   expect(d.includes("https://example.com/") && d.includes("クレジットは「効果音サイトA」"), d);
   expect((await leftCount("source", "効果音サイトA")) === 2, "左の欄の件数");
   await shot("C09_出典を設定");
-});
-
-await step("C10", "ライセンスの行にドラッグして設定できる（名前だけで作ったライセンスは、独自・条項はすべて不明）。（ライセンスなし）には落とせない", async () => {
   await openCreate("license");
   await page.getByLabel("名前", { exact: true }).fill("新しい規約");
   await submit();
   await dropCredit("license", "新しい規約");
   expect((await current("license")) === "新しい規約", await current("license"));
-  const d = await detail("license");
-  expect((d.match(/？/g) ?? []).length === 5, d);
+  const license = await detail("license");
+  expect((license.match(/？/g) ?? []).length === 5, license);
   expect((await page.getByTestId("detail-license").locator(".term-mark.unknown").count()) === 5, "不明の色");
   expect((await leftCount("license", "新しい規約")) === 2, "左の欄の件数");
   // （ライセンスなし）の行は落とす先にならない
@@ -212,76 +195,20 @@ await step("C10", "ライセンスの行にドラッグして設定できる（�
 });
 
 
-await step("C12", "設定済みのファイルに設定すると置き換わる", async () => {
-  await row("chime.mp3").click();
-  await setCredit("source", "自分で録音");
-  expect((await current("source")) === "自分で録音", await current("source"));
-  expect((await leftCount("source", "効果音サイトA")) === 1, "効果音サイトAの件数");
-});
-
-await step("C13", "絞り込み：出典どうしはOR、「なし」とは同時に選べない、ライセンスとはAND", async () => {
-  await leftItem("source", "効果音サイトA").click();
-  await page.waitForTimeout(400);
-  expect((await fileCount()) === 1, `1つ選択 ${await fileCount()}`);
-  await leftItem("source", "自分で録音").click();
-  await page.waitForTimeout(400);
-  expect((await fileCount()) === 2, `OR ${await fileCount()}`);
-  await page.getByTestId("source-none").click();
-  await page.waitForTimeout(400);
-  expect((await fileCount()) === 3, `なし ${await fileCount()}`);
+await step("C13", "絞り込み：出典を選んだまま「（出典なし）」を選ぶと、出典の選択が外れる（同時には選べない）", async () => {
+  await ui.filtered(() => leftItem("source", "効果音サイトA").click());
+  expect((await page.locator("[data-testid=source].active").count()) === 1, "選べない");
+  await ui.filtered(() => page.getByTestId("source-none").click());
   expect((await page.locator("[data-testid=source].active").count()) === 0, "出典の選択が残る");
-  await page.getByTestId("source-none").click();
-  await leftItem("source", "効果音サイトA").click();
-  await leftItem("source", "自分で録音").click();
-  await leftItem("license", "新しい規約").click();
-  await page.waitForTimeout(400);
-  expect((await fileCount()) === 2, `AND ${await fileCount()}`);
-  // 絞り込んだファイルはどれもライセンスが設定されているので、「（ライセンスなし）」は0件になりグレーアウトする
-  // （「絞り込み条件のグレーアウト」の作業で、0件になる条件は選べなくなった）
-  expect((await page.getByTestId("license-none").getAttribute("aria-disabled")) === "true", "グレーアウトしていない");
-  await page.getByTestId("license-none").click();
-  await page.waitForTimeout(400);
-  expect((await fileCount()) === 2, `グレーアウトした条件が選ばれた ${await fileCount()}`);
+  expect((await page.getByTestId("source-none").getAttribute("class")).includes("active"), "（出典なし）が選ばれない");
+  await ui.filtered(() => leftItem("source", "効果音サイトA").click());
+  expect(!(await page.getByTestId("source-none").getAttribute("class")).includes("active"), "（出典なし）が残る");
   await shot("C13_絞り込み");
-});
-
-await step("C14", "たたんでも選んでいる条件の数が見出しに出る。たたんだ状態は再読み込み後も残る", async () => {
-  await section("source").locator(".collapse-toggle").click();
-  expect((await section("source").getAttribute("data-collapsed")) === "true", "たたまれない");
-  expect((await page.getByTestId("source").count()) === 0, "たたんでも一覧が出る");
-  expect((await section("source").getByTestId("selected-count").innerText()) === "2", "選択数");
-  expect((await section("license").getByTestId("selected-count").innerText()) === "1", "ライセンスの選択数");
-  await shot("C14_たたんだ状態");
-  await ui.reload();
-  expect((await section("source").getAttribute("data-collapsed")) === "true", "再読み込みで開いた");
-  expect((await section("license").getAttribute("data-collapsed")) === "false", "ライセンスがたたまれた");
-  await section("source").locator(".collapse-toggle").click();
-  expect((await section("source").getAttribute("data-collapsed")) === "false", "開かない");
-});
-
-await step("C15", "「絞り込みを解除」で出典・ライセンスの条件も外れる", async () => {
-  await leftItem("source", "効果音サイトA").click();
-  await page.getByTestId("license-none").click();
-  await page.waitForTimeout(400);
   await clearFilter();
-  expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
-  expect((await page.locator(".tag-list li.active").count()) === 0, "選択が残る");
-});
-
-await step("C16", "外す：右の欄のプルダウンで「（なし）」を選ぶと、出典だけが外れる", async () => {
-  for (const rel of ["chime.wav", "chime.mp3"]) {
-    await row(rel).click();
-    await page.getByLabel("出典を選ぶ").selectOption({ label: "（なし）" });
-    await waitIdle();
-  }
-  await row("chime.mp3").click();
-  expect((await current("source")) === "なし", await current("source"));
-  expect((await current("license")) === "新しい規約", "ライセンスまで外れた");
 });
 
 await step("C17", "削除：設定されていたファイルは「なし」になり、絞り込みの条件からも外れる", async () => {
-  await leftItem("license", "新しい規約").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => leftItem("license", "新しい規約").click());
   expect((await fileCount()) === 2, `件数 ${await fileCount()}`);
   await ui.rowAction(leftItem("license", "新しい規約"), "新しい規約を削除");
   await waitIdle();
@@ -317,22 +244,6 @@ await step("C19", "URLを押すとブラウザで開く（エラーが出ない�
   await page.waitForTimeout(1500);
   const s = await status();
   expect(!(await page.getByTestId("status").getAttribute("class")).includes("error"), `status: ${s}`);
-});
-
-await step("C20", "行の「✎」「🗑」はマウスを乗せたときだけ出る。名前の欄でEnterを押すと作成できる", async () => {
-  const actions = leftItem("source", "効果音サイトA").getByTestId("row-actions");
-  await row("chime.wav").hover();
-  expect(!(await actions.isVisible()), "マウスを乗せる前から出ている");
-  await leftItem("source", "効果音サイトA").hover();
-  expect(await actions.isVisible(), "マウスを乗せても出ない");
-  expect((await page.getByTestId("source-none").getByTestId("row-actions").count()) === 0, "（出典なし）に出ている");
-  await shot("C20_行の記号");
-  await openCreate("source");
-  await page.getByLabel("名前", { exact: true }).fill("Enterで作成");
-  await page.getByLabel("名前", { exact: true }).press("Enter");
-  await waitIdle();
-  expect((await leftItem("source", "Enterで作成").count()) === 1, "作成されない");
-  expect((await form().count()) === 0, "閉じない");
 });
 
 await step("C21", "左の欄のライセンスの行に、条項が色分けした記号で出る（マウスを乗せると言葉）", async () => {

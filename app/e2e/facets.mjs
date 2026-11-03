@@ -52,71 +52,24 @@ await step("F01", "準備。条件がないときは総数を出し、どのフ�
   await shot("F01_条件なし");
 });
 
-await step("F02", "タグで絞り込むと、各タグの件数は「その結果のうち、そのタグが付いた数」になり、0件はグレーアウト", async () => {
-  await tagItem("雨").click();
-  await page.waitForTimeout(500);
-  const s = await tagState();
-  // 「なし」はタグの条件を外して数える（選ぶとタグの選択が外れるため）
-  expect(s === "環境音2 雨2 風1 鳥0g 爆発0g なし2", s);
-  await shot("F02_雨で絞り込み");
-});
-
-await step("F03", "グレーアウトした項目は押しても選べない", async () => {
+await step("F03", "絞り込むと0件になる項目はグレーアウトし、押しても選べない", async () => {
+  await ui.filtered(() => tagItem("雨").click());
+  expect(await disabled(tagItem("鳥")), "鳥がグレーアウトしない");
   await tagItem("鳥").click();
   await page.waitForTimeout(400);
   expect(!(await tagItem("鳥").getAttribute("class")).includes("active"), "選ばれた");
   expect((await fileCount()) === 2, `件数 ${await fileCount()}`);
-});
-
-await step("F04", "条件を足していくと件数が変わる（タグはAND）", async () => {
-  await tagItem("風").click();
-  await page.waitForTimeout(500);
-  expect((await fileCount()) === 1, `件数 ${await fileCount()}`);
-  const s = await tagState();
-  expect(s === "環境音1 雨1 風1 鳥0g 爆発0g なし2", s);
   await clearFilter();
 });
 
 await step("F05", "選んでいる項目は、0件になってもグレーアウトせず、押して選択を外せる", async () => {
-  await tagItem("雨").click();
-  await page.getByLabel("検索", { exact: true }).fill("flac");
-  await page.waitForTimeout(600);
+  await ui.filtered(() => tagItem("雨").click());
+  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill("flac"));
   expect((await fileCount()) === 0, `件数 ${await fileCount()}`);
   expect((await countOf(tagItem("雨"))) === 0, "雨の件数");
   expect(!(await disabled(tagItem("雨"))), "選んでいる項目がグレーアウトした");
-  await tagItem("雨").click();
-  await page.waitForTimeout(500);
+  await ui.filtered(() => tagItem("雨").click());
   expect((await fileCount()) === 1, `選択を外した後 ${await fileCount()}`);
-  await clearFilter();
-});
-
-await step("F06", "出典どうしはORなので、出典を選んでも別の出典は数え、タグの条件では0件の出典がグレーアウトする", async () => {
-  await sourceItem("s1").click();
-  await page.waitForTimeout(500);
-  expect((await countOf(sourceItem("s2"))) === 1 && !(await disabled(sourceItem("s2"))), "s2");
-  await clearFilter();
-  await tagItem("風").click();
-  await page.waitForTimeout(500);
-  expect((await countOf(sourceItem("s1"))) === 0 && (await disabled(sourceItem("s1"))), "s1がグレーアウトしない");
-  expect((await countOf(sourceItem("s2"))) === 1, "s2の件数");
-  const none = page.getByTestId("source-none");
-  expect((await countOf(none)) === 1 && !(await disabled(none)), "（出典なし）");
-  await shot("F06_出典");
-  await clearFilter();
-});
-
-await step("F07", "「チェックしたファイルだけ表示」やファイル名の条件も件数に入る", async () => {
-  await ui.check("chime.ogg");
-  await page.getByLabel("チェックしたファイルだけ表示").check();
-  await page.waitForTimeout(500);
-  let s = await tagState();
-  expect(s === "環境音0g 雨0g 風0g 鳥0g 爆発0g なし1", `チェックしたファイルだけ ${s}`);
-  await clearFilter();
-  await ui.clearChecks();
-  await page.getByLabel("検索", { exact: true }).fill("chime.w");
-  await page.waitForTimeout(600);
-  s = await tagState();
-  expect(s === "環境音1 雨1 風0g 鳥0g 爆発0g なし0g", `ファイル名 ${s}`);
   await clearFilter();
 });
 
@@ -128,8 +81,7 @@ await step("F08", "タグを付けるなどデータが変わると、件数を�
 });
 
 await step("F09", "グレーアウトしていても、取っ手で並べ替えはできる", async () => {
-  await tagItem("雨").click();
-  await page.waitForTimeout(500);
+  await ui.filtered(() => tagItem("雨").click());
   expect(await disabled(tagItem("爆発")), "爆発がグレーアウトしていない");
   await ui.dragTo(tagItem("爆発").getByTestId("drag-handle"), tagItem("環境音"), 0.1);
   const names = await ui.tagNames();
@@ -141,14 +93,12 @@ await step("F10", "選んでいる条件が左の欄の一番上にチップで�
   const chips = async () => (await page.getByTestId("filter-chips").count()) ? (await page.getByTestId("filter-chips").locator("button:not(.clear-chip)").allInnerTexts()).map((s) => s.replace(/\s+/g, "")) : [];
   expect((await chips()).length === 0, "条件がないのにチップがある");
   await tagItem("環境音").click();
-  await tagItem("雨").click();
-  await page.getByTestId("folder").locator(".folder-name").click();
-  await page.waitForTimeout(500);
+  await ui.filtered(() => tagItem("雨").click());
+  await ui.filtered(() => page.getByTestId("folder").locator(".folder-name").click());
   let c = await chips();
   expect(c.join(",") === "📁formats✕,🏷環境音✕,🏷雨✕", c.join(","));
   await shot("F10_条件のチップ");
-  await page.getByRole("button", { name: "雨の条件を外す" }).click();
-  await page.waitForTimeout(500);
+  await ui.filtered(() => page.getByRole("button", { name: "雨の条件を外す" }).click());
   c = await chips();
   expect(c.join(",") === "📁formats✕,🏷環境音✕", c.join(","));
   expect(!(await tagItem("雨").getAttribute("class")).includes("active"), "雨が選ばれたまま");

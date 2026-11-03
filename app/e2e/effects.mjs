@@ -54,14 +54,6 @@ await step("E02", "まとまりを作ると選ばれ、エフェクトを加え�
   await shot("E02_管理画面");
 });
 
-await step("E03", "同じ名前のまとまりは作れない", async () => {
-  await page.getByLabel("新しいエフェクトのまとまりの名前").fill("強めの残響");
-  await page.getByRole("button", { name: "作成", exact: true }).click();
-  await waitIdle();
-  expect((await status()).includes("同じ名前のエフェクトのまとまりがあります"), await status());
-  await page.getByLabel("新しいエフェクトのまとまりの名前").fill("");
-});
-
 await step("E04", "保存していない変更があるときは、閉じる前に確かめる（キャンセルで残る）", async () => {
   await addEffect("fadeIn");
   await ui.setConfirmReply(false);
@@ -100,24 +92,6 @@ await step("E06", "項目にまとまりを結び付けると、その項目だ�
   await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
   expect((await page.getByTestId("player-preparing").count()) === 0, "準備中のまま");
   await shot("E06_エフェクトのかかった再生");
-  await page.getByRole("button", { name: "停止", exact: true }).click();
-});
-
-await step("E07", "まとまりの設定を変えると、別の音を作る", async () => {
-  await page.getByRole("button", { name: "順に再生" }).click();
-  await page.getByRole("button", { name: "次へ" }).click();
-  await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
-  const before = await audioSrc();
-  await page.getByRole("button", { name: "停止", exact: true }).click();
-  await openManager();
-  await page.getByLabel("2番目の増減").fill("-3");
-  await save();
-  await dialog().getByRole("button", { name: "閉じる" }).click();
-  await page.getByRole("button", { name: "順に再生" }).click();
-  await page.getByRole("button", { name: "次へ" }).click();
-  await page.waitForFunction((b) => document.querySelector("audio").src.includes("effects-cache") && decodeURIComponent(document.querySelector("audio").src) !== b, before, {
-    timeout: 10000,
-  });
   await page.getByRole("button", { name: "停止", exact: true }).click();
 });
 

@@ -94,7 +94,11 @@ export default function App() {
   const [checkedOnly, setCheckedOnly] = useState(false);
   /** 左の欄の各項目を選んだときの件数 */
   const [facets, setFacets] = useState<Facets | null>(null);
+  /** 一覧を読み直した回数。画面テストが、絞り込みを変えた後の一覧を待つのに使う（data-list-version） */
+  const [listVersion, setListVersion] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** 終わった処理（run）の数。画面テストが、処理が終わったことを知るのに使う（data-run-count） */
+  const [runCount, setRunCount] = useState(0);
   const [status, setStatus] = useState<Status>({ text: "", error: false });
   const [sources, setSources] = useState<Credit[]>([]);
   const [licenses, setLicenses] = useState<Credit[]>([]);
@@ -146,6 +150,7 @@ export default function App() {
     const [list, counts] = await Promise.all([api.listFiles(request), api.facetCounts(request)]);
     setFiles(list);
     setFacets(counts);
+    setListVersion((v) => v + 1);
     // 絞り込みで消えたファイルは、右の欄からも消す
     setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
   }, [filter, checkedFilter]);
@@ -238,6 +243,7 @@ export default function App() {
     } finally {
       await reloadAll().catch(showError);
       setBusy(false);
+      setRunCount((n) => n + 1);
     }
   };
 
@@ -1080,11 +1086,11 @@ export default function App() {
         onVolumeCommit={audio.commitVolume}
       />
       <div className="status-bar">
-        <div className={`status${status.error ? " error" : ""}`} data-testid="status">
+        <div className={`status${status.error ? " error" : ""}`} data-testid="status" data-run-count={runCount}>
           {busy ? "処理中…" : status.text || " "}
         </div>
         {/* 一覧の件数と、チェックしている件数（0件のときも常に出す） */}
-        <div className="counts">
+        <div className="counts" data-testid="counts" data-list-version={listVersion}>
           <span data-testid="file-count">{files.length}件</span>
           <span className="checked-count" data-testid="checked-count">
             チェック {checked.size}件（表示中 {checks.shownChecked}件）

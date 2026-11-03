@@ -13,8 +13,7 @@ const { page, step, shot, status, fileCount, row, tagItem, waitIdle, addFolder, 
 const detailPath = () => page.getByTestId("detail-path").innerText();
 const isChecked = (rel) => row(rel).getByTestId("file-check").isChecked();
 const filterText = async (text) => {
-  await page.getByLabel("検索", { exact: true }).fill(text);
-  await page.waitForTimeout(500);
+  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill(text));
 };
 const checkedOnly = () => page.getByLabel("チェックしたファイルだけ表示");
 const checkToolbar = () => page.locator("main .toolbar");
@@ -59,25 +58,21 @@ await step("B03", "チェックボックスを押しても右の欄は変わら�
 });
 
 await step("B04", "チェックは絞り込みの条件を変えても外れない（別のタグで絞り込んでも持ち越す）", async () => {
-  await tagItem("雨").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => tagItem("雨").click());
   await ui.check("chime.wav");
-  await tagItem("雨").click();
-  await tagItem("風").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => tagItem("雨").click());
+  await ui.filtered(() => tagItem("風").click());
   await ui.check("chime.flac");
   let c = await ui.checkedCount();
   expect(c === "チェック 3件（表示中 1件）", `風で絞り込み中 ${c}`);
-  await tagItem("風").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => tagItem("風").click());
   c = await ui.checkedCount();
   expect(c === "チェック 3件（表示中 3件）", `解除後 ${c}`);
   expect((await isChecked("chime.wav")) && (await isChecked("chime.flac")) && (await isChecked("chime.mp3")), "外れた");
 });
 
 await step("B05", "「チェックしたファイルだけ表示」はほかの条件とANDで、「✕」（すべて解除）で絞り込みもチェックも右の欄の表示も外れる", async () => {
-  await checkedOnly().check();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => checkedOnly().check());
   expect((await fileCount()) === 3, `チェックしたファイルだけ ${await fileCount()}`);
   await filterText("wav");
   expect((await fileCount()) === 1, `ファイル名とAND ${await fileCount()}`);
@@ -91,7 +86,7 @@ await step("B05", "「チェックしたファイルだけ表示」はほかの�
   expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "解除するものがないのにボタンが出ている");
 });
 
-await step("B06", "「全てチェック」で、表示中のファイルをすべてチェックする（表示中がすべてチェック済みなら押せない）", async () => {
+await step("B06", "「全てチェック」で表示中のファイルをすべてチェックする（すべてチェック済みなら押せない）。Ctrl+A でも同じ。「チェックをすべて外す」で外れる", async () => {
   await ui.check("chime.wav");
   await ui.check("chime.mp3");
   await ui.check("chime.flac");
@@ -104,9 +99,6 @@ await step("B06", "「全てチェック」で、表示中のファイルをす�
   await ui.clearChecks();
   expect((await ui.checkedCount()) === "チェック 0件（表示中 0件）", await ui.checkedCount());
   await clearFilter();
-});
-
-await step("B07", "Ctrl+Aで表示中をすべてチェックし、「チェックをすべて外す」で外れる", async () => {
   await page.getByTestId("file-list").click();
   await page.keyboard.press("Control+a");
   expect((await ui.checkedCount()) === "チェック 5件（表示中 5件）", await ui.checkedCount());
@@ -115,27 +107,22 @@ await step("B07", "Ctrl+Aで表示中をすべてチェックし、「チェッ�
   expect((await checkToolbar().count()) === 0, "チェックの操作の行が残る");
 });
 
-await step("B08", "表示していないファイルも含めて、チェックしたファイルすべてにドラッグで設定する（確認は出さない）", async () => {
+await step("B08", "表示していないファイルも含めて、チェックしたファイルすべてにドラッグで設定する（確認は出さない）。操作の後もチェックは残る", async () => {
   await page.getByRole("button", { name: "ライセンスを作る" }).click();
   await page.getByLabel("名前", { exact: true }).fill("規約A");
   await page.getByTestId("credit-form").getByRole("button", { name: "作成", exact: true }).click();
   await waitIdle();
   await ui.check("chime.wav");
   await ui.check("chime.flac");
-  await tagItem("雨").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => tagItem("雨").click());
   expect((await fileCount()) === 1, "絞り込めていない");
   await ui.dragChecked(page.locator("[data-testid=license][data-credit-name=規約A]"));
   expect((await status()).includes("2件にライセンス「規約A」を設定しました"), await status());
   // 絞り込みだけを外す（「すべて解除」だとチェックも外れる）
-  await tagItem("雨").click();
-  await page.waitForTimeout(400);
+  await ui.filtered(() => tagItem("雨").click());
   const n = await page.getByTestId("license").filter({ hasText: "規約A" }).locator(".sub").innerText();
   expect(n === "2", `規約Aの件数 ${n}`);
   await shot("B08_ドラッグでライセンスを設定");
-});
-
-await step("B09", "操作の後もチェックは残る", async () => {
   expect((await ui.checkedCount()).startsWith("チェック 2件"), await ui.checkedCount());
 });
 

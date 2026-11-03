@@ -39,7 +39,10 @@ export async function connect(shotDir) {
       // window.__dialogReply が決まっていればダイアログを開かずにそれを返すので、キャンセル（null）にしておく
       window.__dialogReply = null;
     });
+  // 画面テストが最後に見た、終わった処理の数（アプリの data-run-count。読み込み直すと0に戻る）
+  let seenRuns = 0;
   const reload = async () => {
+    seenRuns = 0;
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(500);
@@ -50,13 +53,15 @@ export async function connect(shotDir) {
   const results = [];
   const ui = {
     page,
+    /** テストを1件行う。かかった時間（ms）も results.json に残す（テストの時間を見直すため） */
     async step(id, name, fn) {
+      const t0 = Date.now();
       try {
         const note = await fn();
-        results.push({ id, name, ok: true, note: note ?? "" });
+        results.push({ id, name, ok: true, note: note ?? "", ms: Date.now() - t0 });
         console.log(`OK   ${id} ${name}${note ? `（${note}）` : ""}`);
       } catch (e) {
-        results.push({ id, name, ok: false, note: String(e.message ?? e).split("\n")[0] });
+        results.push({ id, name, ok: false, note: String(e.message ?? e).split("\n")[0], ms: Date.now() - t0 });
         console.log(`FAIL ${id} ${name}: ${e.message ?? e}`);
       }
     },
@@ -76,19 +81,40 @@ export async function connect(shotDir) {
     tagItem: (name) => page.locator(`[data-testid=tag][data-tag-name="${name}"]`),
     // 左のタグの一覧の名前（表示している順）
     tagNames: () => page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => r.dataset.tagName)),
-    async waitIdle() {
-      // 処理中の表示が出るのを少し待ってから（出ないほど速い処理もある）、消えるのを待つ
+    /**
+     * 絞り込みの条件を変える操作 action を行い、一覧が読み直されるのを待つ。
+     * アプリは一覧を読み直すたびに data-list-version を増やすので、操作の前より増えるのを待つ（検索の欄は入力を少し待ってから読み直す）
+     */
+    async filtered(action) {
+      const version = () => page.getByTestId("counts").getAttribute("data-list-version").then(Number);
+      const before = await version();
+      await action();
       await page
-        .waitForFunction(() => document.querySelector("[data-testid=status]")?.textContent === "処理中…", null, {
-          timeout: 1000,
+        .waitForFunction((b) => Number(document.querySelector("[data-testid=counts]")?.dataset.listVersion) > b, before, {
+          timeout: 3000,
         })
         .catch(() => {});
+      await page.waitForTimeout(50);
+    },
+    /**
+     * 操作で始まった処理が終わるのを待つ。アプリは処理（run）が終わるたびに data-run-count を増やすので、
+     * 前に見たときより増えて、処理中でなくなるのを待つ。処理を伴わない操作では、1秒待って戻る
+     */
+    async waitIdle() {
+      const done = (seen) => {
+        const el = document.querySelector("[data-testid=status]");
+        return el && el.textContent !== "処理中…" && Number(el.dataset.runCount) > seen;
+      };
+      await page.waitForFunction(done, seenRuns, { timeout: 1000 }).catch(() => {});
+      // 1秒より長い処理（スキャンなど）は、処理中が終わるまで待つ
       await page.waitForFunction(
         () => document.querySelector("[data-testid=status]")?.textContent !== "処理中…",
         null,
         { timeout: 120000 },
       );
-      await page.waitForTimeout(300);
+      seenRuns = Number(await page.getByTestId("status").getAttribute("data-run-count"));
+      // 読み直した一覧などが描かれるのを待つ
+      await page.waitForTimeout(50);
     },
     async addFolder(p) {
       await ui.addFolderOnly(p);

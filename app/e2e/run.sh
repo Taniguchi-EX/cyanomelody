@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 画面テストをまとめて実行する。テストごとに空のデータでアプリ（リリースビルド）を起動し直す。
+# 画面テストをまとめて実行する。テストごとに空のデータでアプリを起動し直す。
 #   bash e2e/run.sh <テストデータ> <作業用フォルダ> [テストのスクリプト名...]
-# 事前に make-testdata.sh でテストデータを作り、npx tauri build --no-bundle でビルドしておく。
+# 普段は app/check.sh から呼ぶ（テストデータの作成とビルドもそちらで行う）。
+# スクリプト名を省くと、性能のテスト（perf.mjs）を除くすべてを実行する。
 # スクリーンショットと結果は <作業用フォルダ>/<スクリプト名>/ に保存する。
 # 普段使っているアプリ（cyanomelody.exe）は止めない。テストのアプリは、別の名前の実行ファイルにして、
 # 別のデータ・別のWebView2の保存領域で動かし、終わったらそれだけを止める。
@@ -11,7 +12,7 @@ data="${1:?テストデータのフォルダを指定してください}"
 work="${2:?作業用フォルダを指定してください}"
 shift 2
 scripts=("$@")
-[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tag-admin.mjs hash-features.mjs credits.mjs tag-tree.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs)
+[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tags.mjs hash-features.mjs credits.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs)
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$work"

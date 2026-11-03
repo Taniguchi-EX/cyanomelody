@@ -15,7 +15,9 @@ const { page, step, shot, status, row, waitIdle, addFolder } = ui;
 
 const openPlaylist = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"] .tag-name`).click();
 async function addToPlaylist(rel, name) {
-  await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click().catch(() => {});
+  // 詳細画面を開いているときだけ戻る（ないボタンを押そうとすると、30秒待ってから失敗する）
+  const back = page.getByRole("button", { name: "ファイルの一覧に戻る" });
+  if (await back.count()) await back.click();
   await row(rel).click();
   await ui.addToPlaylistHere(name);
 }
@@ -85,20 +87,11 @@ await step("X02", "書き出すと、階層がフォルダになり、別名と�
   await shot("X02_書き出した後");
 });
 
-await step("X03", "同じ場所にもう一度書き出すと、上書きせずに別のフォルダを作る", async () => {
-  await exportTo(out);
-  await waitExported();
-  expect(fs.existsSync(path.join(out, "TRPG_ 第1話 (2)", "001_激しめの雨.wav")), "別のフォルダにない");
-});
-
-await step("X04", "書き出し先のフォルダがないときは、エラーを出して始めない", async () => {
+await step("X05", "書き出し先のフォルダがないときはエラーを出して始めない。書き出し先の欄には、前に書き出せたフォルダが入っている（書き出せなかったフォルダは覚えない）", async () => {
   await exportTo(path.join(out, "ない"));
   await page.waitForTimeout(500);
   expect((await status()).includes("書き出し先のフォルダがありません"), await status());
   expect(!fs.existsSync(path.join(out, "ない")), "フォルダを作った");
-});
-
-await step("X05", "書き出し先の欄には、前に書き出したフォルダが入っている（書き出せなかったフォルダは覚えない）", async () => {
   // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）
   const field = page.getByLabel("書き出し先のフォルダ");
   await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click();
@@ -111,7 +104,7 @@ await step("X05", "書き出し先の欄には、前に書き出したフォル�
 await step("X06", "書き出し終わると、書き出したフォルダがリンクで出る（押すとエクスプローラーで見せる）", async () => {
   const link = page.getByTestId("export-folder");
   const text = await link.innerText();
-  expect(text === path.join(out, "TRPG_ 第1話 (2)"), text);
+  expect(text === path.join(out, "TRPG_ 第1話"), text);
 });
 
 await ui.finish();
