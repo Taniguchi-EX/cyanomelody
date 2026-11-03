@@ -3,7 +3,7 @@
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
-use crate::db::now;
+use crate::db::{ids_json, now};
 use crate::error::{Error, Result};
 use crate::names::{ensure_unique_name, find_by_name, normalize_name, not_found};
 
@@ -276,12 +276,10 @@ pub fn set_file_credit(
             })
         }
     };
-    {
-        let mut stmt = tx.prepare(&format!("UPDATE audio_files SET {} = ?2 WHERE id = ?1", kind.column()))?;
-        for file_id in file_ids {
-            stmt.execute(params![file_id, id])?;
-        }
-    }
+    tx.execute(
+        &format!("UPDATE audio_files SET {} = ?2 WHERE id IN (SELECT value FROM json_each(?1))", kind.column()),
+        params![ids_json(file_ids), id],
+    )?;
     tx.commit()?;
     Ok(id)
 }

@@ -13,12 +13,9 @@ use crate::tree::NamedRef;
 #[serde(rename_all = "camelCase")]
 pub struct AudioFile {
     pub id: i64,
-    pub folder_id: i64,
     pub rel_path: String,
     /// 絶対パス（再生に使う）
     pub path: String,
-    pub size: i64,
-    pub modified_at: i64,
     pub missing: bool,
     /// 付いているタグ（タグの一覧の順）
     pub tags: Vec<NamedRef>,
@@ -163,7 +160,7 @@ pub const FILE_ORDER: &str = "f.path, a.rel_path";
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
     let (conditions, args) = filter_conditions(conn, filter)?;
     let mut sql = format!(
-        "SELECT a.id, a.folder_id, a.rel_path, f.path, a.size, a.modified_at, a.missing,
+        "SELECT a.id, a.rel_path, f.path, a.missing,
                 (SELECT group_concat(t.id || char(30) || t.name, char(31)) FROM file_tags ft
                    JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
                 a.hash, a.hash_error, a.source_id, a.license_id
@@ -184,10 +181,10 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     let rank = tag_rank(conn)?;
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_from_iter(args), |r| {
-        let folder_path: String = r.get(3)?;
-        let rel_path: String = r.get(2)?;
+        let rel_path: String = r.get(1)?;
+        let folder_path: String = r.get(2)?;
         // 「id、区切り（char(30)）、名前」をタグの区切り（char(31)）でつないだもの
-        let tags: Option<String> = r.get(7)?;
+        let tags: Option<String> = r.get(4)?;
         let mut tags: Vec<NamedRef> = tags
             .map(|s| {
                 s.split(TAG_SEPARATOR)
@@ -201,17 +198,14 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         tags.sort_by_key(|t| rank.get(&t.id).copied().unwrap_or(usize::MAX));
         Ok(AudioFile {
             id: r.get(0)?,
-            folder_id: r.get(1)?,
             path: absolute_path(&folder_path, &rel_path).to_string_lossy().into_owned(),
             rel_path,
-            size: r.get(4)?,
-            modified_at: r.get(5)?,
-            missing: r.get(6)?,
+            missing: r.get(3)?,
             tags,
-            hash: r.get(8)?,
-            hash_error: r.get(9)?,
-            source_id: r.get(10)?,
-            license_id: r.get(11)?,
+            hash: r.get(5)?,
+            hash_error: r.get(6)?,
+            source_id: r.get(7)?,
+            license_id: r.get(8)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -231,44 +225,30 @@ fn escape_like(s: &str) -> String {
 pub fn add_tag(conn: &mut Connection, file_ids: &[i64], tag_name: &str) -> Result<i64> {
     let tx = conn.transaction()?;
     let tag_id = get_or_create_tag(&tx, tag_name)?;
-    {
-        let mut stmt = tx.prepare(
-            "INSERT OR IGNORE INTO file_tags (file_id, tag_id)
-             SELECT id, ?2 FROM audio_files WHERE id = ?1",
-        )?;
-        for id in file_ids {
-            stmt.execute(params![id, tag_id])?;
-        }
-    }
+    tx.execute(
+        "INSERT OR IGNORE INTO file_tags (file_id, tag_id)
+         SELECT id, ?2 FROM audio_files WHERE id IN (SELECT value FROM json_each(?1))",
+        params![ids_json(file_ids), tag_id],
+    )?;
     tx.commit()?;
     Ok(tag_id)
 }
 
-pub fn remove_tag(conn: &mut Connection, file_ids: &[i64], tag_id: i64) -> Result<()> {
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare("DELETE FROM file_tags WHERE file_id = ?1 AND tag_id = ?2")?;
-        for id in file_ids {
-            stmt.execute(params![id, tag_id])?;
-        }
-    }
-    tx.commit()?;
+pub fn remove_tag(conn: &Connection, file_ids: &[i64], tag_id: i64) -> Result<()> {
+    conn.execute(
+        "DELETE FROM file_tags WHERE tag_id = ?2 AND file_id IN (SELECT value FROM json_each(?1))",
+        params![ids_json(file_ids), tag_id],
+    )?;
     Ok(())
 }
 
 /// ひも付けが切れたファイルをライブラリから外す。印が付いていないファイルは外さない。
 /// 外したファイルの数を返す。
-pub fn remove_missing_files(conn: &mut Connection, file_ids: &[i64]) -> Result<usize> {
-    let tx = conn.transaction()?;
-    let mut removed = 0;
-    {
-        let mut stmt = tx.prepare("DELETE FROM audio_files WHERE id = ?1 AND missing = 1")?;
-        for id in file_ids {
-            removed += stmt.execute([id])?;
-        }
-    }
-    tx.commit()?;
-    Ok(removed)
+pub fn remove_missing_files(conn: &Connection, file_ids: &[i64]) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM audio_files WHERE missing = 1 AND id IN (SELECT value FROM json_each(?1))",
+        [ids_json(file_ids)],
+    )?)
 }
 
 #[cfg(test)]
@@ -469,3 +449,4 @@ mod tests {
         assert_eq!(list_tags(&conn).unwrap()[0].file_count, 0);
     }
 }
+

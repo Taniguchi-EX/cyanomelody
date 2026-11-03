@@ -17,11 +17,9 @@ export type ScanResult = {
 
 export type AudioFile = {
   id: number;
-  folderId: number;
   relPath: string;
+  /** 絶対パス（再生に使う） */
   path: string;
-  size: number;
-  modifiedAt: number;
   missing: boolean;
   /** 付いているタグ（タグの一覧の順） */
   tags: { id: number; name: string }[];
