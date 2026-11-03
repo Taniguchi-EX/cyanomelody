@@ -259,8 +259,8 @@ export type PlayEntry = {
   path: string;
   /** ファイルの項目の別名 */
   alias: string | null;
-  /** かけるエフェクトのまとまり（内側から外側の順）。空ならエフェクトなし */
-  effects: number[];
+  /** かけるエフェクトセットの id（内側から外側の順）。空ならエフェクトなし */
+  chains: number[];
   /** この曲を出した、再生したプレイリストの（いちばん外側の）項目。ファイルの一覧の再生では null */
   itemId: number | null;
 };

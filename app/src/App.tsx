@@ -103,9 +103,8 @@ export default function App() {
   const [effectDialog, setEffectDialog] = useState<{
     target: PreviewTarget | null;
     itemIds: number[];
+    /** 選んだ状態で開くエフェクトセット。null なら「新しいfxを作る」から開いた（保存していない新しいエフェクトセットを出す） */
     chainId: number | null;
-    /** 「新しいfxを作る」から開いた（保存していない新しいエフェクトセットを出す） */
-    startNew: boolean;
   } | null>(null);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
@@ -704,7 +703,7 @@ export default function App() {
   const openEffects = async (item: PlaylistItem, chainId: number | null, itemIds: number[]) => {
     const first = (await playlistApi.itemFiles(item.id).catch(() => []))[0];
     const target = first ? { id: first.fileId, relPath: first.relPath, path: first.path } : null;
-    setEffectDialog({ target, itemIds, chainId, startNew: chainId === null });
+    setEffectDialog({ target, itemIds, chainId });
   };
 
   /** 管理画面で作ったエフェクトセットを、開いた元の項目に付ける */
@@ -747,7 +746,7 @@ export default function App() {
   const playList = (mode: PlayMode, start?: AudioFile) => {
     let queue: PlayEntry[] = files
       .filter((f) => !f.missing)
-      .map((f) => ({ fileId: f.id, relPath: f.relPath, path: f.path, alias: null, effects: [], itemId: null }));
+      .map((f) => ({ fileId: f.id, relPath: f.relPath, path: f.path, alias: null, chains: [], itemId: null }));
     if (queue.length === 0) {
       showInfo("再生するファイルがありません");
       return;
@@ -1026,7 +1025,7 @@ export default function App() {
           chains={chains}
           busy={busy}
           initialChainId={effectDialog.chainId}
-          startNew={effectDialog.startNew}
+          startNew={effectDialog.chainId === null}
           onCreated={attachCreatedChain}
           previewFileName={effectDialog.target?.relPath ?? null}
           onCreate={createChain}

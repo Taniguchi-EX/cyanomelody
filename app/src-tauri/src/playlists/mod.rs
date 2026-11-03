@@ -133,7 +133,7 @@ pub struct PlayEntry {
     /// ファイルの項目の別名。タグの組み合わせから選ばれた曲や、別名のない項目は None
     pub alias: Option<String>,
     /// かけるエフェクトのまとまり（内側の項目のものから外側へ、かける順）。空ならエフェクトなし
-    pub effects: Vec<i64>,
+    pub chains: Vec<i64>,
     /// この曲を出した、再生したプレイリストの（いちばん外側の）項目。詳細画面で再生中の項目を示すのに使う
     pub item_id: Option<i64>,
 }
@@ -1068,12 +1068,12 @@ mod tests {
         crate::chains::set_item_chain(&conn, child_item, Some(outer)).unwrap();
         crate::chains::set_item_chain(&conn, tag_item, Some(tagc)).unwrap();
         let entries = expand_with(&conn, a, PlayMode::Order, &mut Rng(1)).unwrap();
-        let effects: Vec<Vec<i64>> = entries.iter().map(|e| e.effects.clone()).collect();
-        assert_eq!(effects, vec![vec![inner, outer], vec![outer], vec![tagc]]);
+        let chains: Vec<Vec<i64>> = entries.iter().map(|e| e.chains.clone()).collect();
+        assert_eq!(chains, vec![vec![inner, outer], vec![outer], vec![tagc]]);
         // B を直接再生すると、A の中の項目のまとまりはかからない
         let entries = expand_with(&conn, b, PlayMode::Order, &mut Rng(1)).unwrap();
-        assert_eq!(entries[0].effects, vec![inner]);
-        assert!(entries[1].effects.is_empty());
+        assert_eq!(entries[0].chains, vec![inner]);
+        assert!(entries[1].chains.is_empty());
     }
 
     #[test]
@@ -1096,10 +1096,10 @@ mod tests {
 
         let (name, nodes) = plan_export_with(&conn, top, &mut Rng(1)).unwrap();
         assert_eq!(name, "戦闘");
-        let file = |id: i64, alias: Option<&str>, effects: Vec<i64>| ExportNode::File {
+        let file = |id: i64, alias: Option<&str>, chains: Vec<i64>| ExportNode::File {
             file_id: id,
             alias: alias.map(str::to_owned),
-            effects,
+            chains,
         };
         assert_eq!(
             nodes,

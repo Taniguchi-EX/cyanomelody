@@ -277,22 +277,22 @@ fn expand_item(cat: &mut Catalog, item: &ItemRow, rng: &mut Rng, path: &mut Vec<
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExportNode {
     /// 書き出すファイル。名前は、別名があれば別名、なければファイル名から決める
-    File { file_id: i64, alias: Option<String>, effects: Vec<i64> },
+    File { file_id: i64, alias: Option<String>, chains: Vec<i64> },
     /// プレイリストの項目のフォルダ。名前は、別名があれば別名、なければプレイリスト名
     Folder { name: String, children: Vec<ExportNode> },
 }
 
 impl ExportNode {
     fn from_track(t: Track) -> ExportNode {
-        ExportNode::File { file_id: t.file_id, alias: t.alias, effects: t.chains }
+        ExportNode::File { file_id: t.file_id, alias: t.alias, chains: t.chains }
     }
 
     /// 中のファイルすべてに、外側の項目のまとまりを足す
     fn with_chain(self, chain: Option<i64>) -> ExportNode {
         match self {
-            ExportNode::File { file_id, alias, mut effects } => {
-                effects.extend(chain);
-                ExportNode::File { file_id, alias, effects }
+            ExportNode::File { file_id, alias, mut chains } => {
+                chains.extend(chain);
+                ExportNode::File { file_id, alias, chains }
             }
             ExportNode::Folder { name, children } => {
                 ExportNode::Folder { name, children: children.into_iter().map(|c| c.with_chain(chain)).collect() }
@@ -318,7 +318,7 @@ fn plan_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec
                     out.push(ExportNode::File {
                         file_id,
                         alias: item.alias.clone(),
-                        effects: Vec::from_iter(item.effect_chain_id),
+                        chains: Vec::from_iter(item.effect_chain_id),
                     });
                 }
             }
@@ -397,7 +397,7 @@ fn to_entries(conn: &Connection, tracks: Vec<Track>) -> Result<Vec<PlayEntry>> {
                 rel_path: rel_path.clone(),
                 path,
                 alias: t.alias,
-                effects: t.chains,
+                chains: t.chains,
                 item_id: t.item,
             })
         })

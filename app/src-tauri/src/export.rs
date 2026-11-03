@@ -94,12 +94,12 @@ fn build(
     for (i, node) in nodes.iter().enumerate() {
         let number = prefix(i, nodes.len());
         match node {
-            ExportNode::File { file_id, alias, effects } => {
+            ExportNode::File { file_id, alias, chains: chain_ids } => {
                 let Some((folder, rel)) = files.get(file_id) else { continue };
                 let source = absolute_path(folder, rel);
                 let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 let mut list = Vec::new();
-                for c in effects {
+                for c in chain_ids {
                     if !chains.contains_key(c) {
                         chains.insert(*c, chain_effects(conn, *c)?);
                     }

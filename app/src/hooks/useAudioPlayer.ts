@@ -84,7 +84,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     }
     const entry = p.queue[index];
     onPlayed(entry.fileId);
-    const next = { ...p, index, paused: false, preparing: entry.effects.length > 0 };
+    const next = { ...p, index, paused: false, preparing: entry.chains.length > 0 };
     setPlayer(next);
     setPreviewFile(null);
     if (!next.preparing) {
@@ -95,7 +95,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     // エフェクトをかけた音を用意してから鳴らす。用意している間に別の曲へ移ったら鳴らさない
     audio.pause();
     chainApi
-      .render(entry.fileId, entry.effects)
+      .render(entry.fileId, entry.chains)
       .then((path) => {
         if (playerRef.current !== next) return;
         const ready = { ...next, preparing: false };
