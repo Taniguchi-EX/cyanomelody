@@ -90,11 +90,18 @@ await step("T10", "右の欄の付いているタグは、条件のチップと�
   expect((await tagItem("ドラッグ先").locator(".sub").innerText()) === "1", await tagItem("ドラッグ先").innerText());
 });
 
-await step("T11", "Shiftを押しながらチェックすると、範囲をまとめてチェックできる", async () => {
+await step("T11", "Shiftを押しながらチェックすると、範囲をまとめてチェックできる。チェックした行は、詳細を出している行より薄い色が付く", async () => {
   await ui.check("chime.flac");
   await ui.check("chime.wav", { modifiers: ["Shift"] });
   const t = await ui.checkedCount();
   expect(t.includes("チェック 4件"), t);
+  // チェックしている行は、詳細を出している行より薄い色が付く
+  await row("サブフォルダ/チャイム.m4a").locator(".file-name").click();
+  const bg = (rel) => row(rel).evaluate((r) => getComputedStyle(r).backgroundColor);
+  const checkedBg = await bg("chime.mp3");
+  const selectedBg = await bg("サブフォルダ/チャイム.m4a");
+  expect(checkedBg !== "rgba(0, 0, 0, 0)" && checkedBg !== selectedBg, `チェック ${checkedBg} / 詳細 ${selectedBg}`);
+  await shot("T11_チェックした行");
   await ui.clearChecks();
 });
 
@@ -197,6 +204,10 @@ await step("T20", "聞き比べ：↑↓で右の欄のファイルを移し、�
   expect(await selected("chime.wav"), "↓で移らない");
   expect((await playing("chime.wav")) === 1 && (await playing("chime.mp3")) === 0, `移った先を試聴しない wav:${await playing("chime.wav")} mp3:${await playing("chime.mp3")} src:${await page.evaluate(() => decodeURIComponent(document.querySelector("audio").src))}`);
   await row("chime.wav").getByTestId("row-progress").waitFor({ timeout: 3000 });
+  // 鳴らしている行は、進み具合に合わせて行全体を染めていく（行の高さいっぱいに出る。音は1秒なので、すぐに測る）
+  const fill = await row("chime.wav").evaluate((r) => [r.querySelector("[data-testid=row-progress]").getBoundingClientRect().height, r.getBoundingClientRect().height]);
+  expect(Math.abs(fill[0] - fill[1]) <= 2, `行の高さいっぱいでない: ${fill.join(" / ")}`);
+  await shot("T20_鳴らしている行");
   await page.keyboard.press("ArrowUp");
   expect((await playing("chime.mp3")) === 1, "↑で移った先を試聴しない");
   await page.keyboard.press(" ");

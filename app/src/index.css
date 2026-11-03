@@ -8,6 +8,8 @@
   --border: #d0d7de;
   --accent: #0969da;
   --selected: #ddeeff;
+  /* チェックしている行（詳細を出している行より薄い） */
+  --checked: #f0f7ff;
   --warn: #bf5700;
   --error: #cf222e;
   font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
@@ -25,6 +27,7 @@
     --border: #30363d;
     --accent: #4493f8;
     --selected: #1f3a5f;
+    --checked: #182838;
     --warn: #db8a3a;
     --error: #f85149;
   }
@@ -639,17 +642,24 @@ button.filter-chip:hover .chip-x {
 }
 
 /* 試聴中の行の下端の進み具合 */
+/* 鳴らしている行の進み具合。行全体を、左から薄い青で染めていく（文字は透けて読める） */
 .row-progress {
   position: absolute;
   left: 0;
+  top: 0;
   bottom: 0;
-  height: 2px;
-  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
   pointer-events: none;
 }
 
 .file-row.selected {
   background: var(--selected);
+}
+
+/* チェックしている行は、詳細を出している行より薄い色にする（両方なら詳細の色） */
+.file-row.checked:not(.selected),
+.playlist-item.checked:not(.selected) {
+  background: var(--checked);
 }
 
 .file-name {

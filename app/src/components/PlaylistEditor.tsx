@@ -233,6 +233,7 @@ export function PlaylistEditor({
               className={
                 "playlist-item" +
                 (focusedItemId === item.id ? " selected" : "") +
+                (checked.has(item.id) ? " checked" : "") +
                 (playingItemId === item.id ? " playing" : "") +
                 (dragIndex === index ? " drag-source" : "") +
                 (dropAt?.index === index ? ` drop-${dropAt.pos}` : "") +
