@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
 import { stem } from "../paths";
 import { Collapsible } from "./Collapsible";
+import { Chip } from "./FilterChips";
 import { PlaylistPicker } from "./PlaylistPicker";
 
 type Props = {
@@ -157,20 +158,17 @@ export function SelectionPanel({
         {file.tags.length > 0 && (
           <div className="filter-chips detail-chips">
             {file.tags.map((t) => (
-              <button
+              <Chip
                 key={t.id}
-                className="chip filter-chip"
+                icon="🏷"
+                label={t.name}
                 onClick={() => onRemoveTag(t.id)}
                 disabled={busy}
                 title="押すと外す"
-                aria-label={`${t.name}を外す`}
-                data-testid="selected-tag"
-                data-tag-name={t.name}
-              >
-                <span className="chip-icon">🏷</span>
-                {t.name}
-                <span className="chip-x">✕</span>
-              </button>
+                ariaLabel={`${t.name}を外す`}
+                testId="selected-tag"
+                tagName={t.name}
+              />
             ))}
           </div>
         )}

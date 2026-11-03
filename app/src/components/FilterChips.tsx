@@ -8,6 +8,41 @@ export type FilterChip = {
   testId?: string;
 };
 
+type ChipProps = {
+  /** 種類を表す記号（🏷 など） */
+  icon: string;
+  label: string;
+  /** 名前の後ろに、色を変えて出す数 */
+  count?: number;
+  title: string;
+  ariaLabel: string;
+  onClick: () => void;
+  disabled?: boolean;
+  testId?: string;
+  /** タグのチップのとき、タグの名前（data-tag-name。画面テストが使う） */
+  tagName?: string;
+};
+
+/** 「記号 名前（数） ✕」のチップ。押すと外す（絞り込みの条件、付いているタグなど） */
+export function Chip({ icon, label, count, title, ariaLabel, onClick, disabled, testId, tagName }: ChipProps) {
+  return (
+    <button
+      className="chip filter-chip"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={ariaLabel}
+      data-testid={testId}
+      data-tag-name={tagName}
+    >
+      <span className="chip-icon">{icon}</span>
+      {label}
+      {count !== undefined && <span className="chip-count">{count}</span>}
+      <span className="chip-x">✕</span>
+    </button>
+  );
+}
+
 /** 選んでいる絞り込みの条件を並べる。押すとその条件だけ外れる */
 type Props = {
   chips: FilterChip[];
@@ -20,18 +55,15 @@ export function FilterChips({ chips, onClearAll }: Props) {
   return (
     <div className="filter-chips" data-testid="filter-chips">
       {chips.map((c) => (
-        <button
+        <Chip
           key={c.key}
-          className="chip filter-chip"
+          icon={c.icon}
+          label={c.label}
           onClick={c.onRemove}
           title={c.title ? `${c.title}（押すと外す）` : "押すと外す"}
-          aria-label={`${c.label}の条件を外す`}
-          data-testid={c.testId}
-        >
-          <span className="chip-icon">{c.icon}</span>
-          {c.label}
-          <span className="chip-x">✕</span>
-        </button>
+          ariaLabel={`${c.label}の条件を外す`}
+          testId={c.testId}
+        />
       ))}
       {onClearAll && chips.length >= 2 && (
         <button

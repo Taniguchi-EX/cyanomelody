@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type TagCount } from "../api";
+import { Chip } from "./FilterChips";
 
 type Props = {
   checked: Set<number>;
@@ -64,21 +65,18 @@ export function CheckBar({
       {checked.size > 0 && tags.length > 0 && (
         <div className="filter-chips checked-tags" data-testid="checked-tags">
           {tags.map((t) => (
-            <button
+            <Chip
               key={t.id}
-              className="chip filter-chip"
+              icon="🏷"
+              label={t.name}
+              count={t.count}
               onClick={() => onRemoveTag(t)}
               disabled={busy}
               title="押すと、チェックしたファイルすべてから外す"
-              aria-label={`${t.name}をチェックしたファイルから外す`}
-              data-testid="checked-tag"
-              data-tag-name={t.name}
-            >
-              <span className="chip-icon">🏷</span>
-              {t.name}
-              <span className="chip-count">{t.count}</span>
-              <span className="chip-x">✕</span>
-            </button>
+              ariaLabel={`${t.name}をチェックしたファイルから外す`}
+              testId="checked-tag"
+              tagName={t.name}
+            />
           ))}
         </div>
       )}
