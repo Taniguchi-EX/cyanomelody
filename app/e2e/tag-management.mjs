@@ -62,12 +62,11 @@ for (const rel of ["chime.flac", "chime.mp3", "chime.ogg", "chime.wav", "サブ�
   });
 }
 
-await step("T05", "チェックした複数のファイルにまとめてタグを付けられる（新しいタグを作る）", async () => {
+await step("T05", "チェックした複数のファイルに、タグの行へのドラッグでまとめてタグを付けられる", async () => {
   await ui.check("chime.wav");
   await ui.check("chime.mp3");
   await ui.bulkAddTag("チャイム");
-  const confirm = await ui.lastConfirm();
-  expect(confirm.includes("チェックした2件にタグ「チャイム」を付けますか"), confirm);
+  expect((await status()).includes("2件にタグ「チャイム」を付けました"), await status());
   await ui.clearChecks();
   const t = await tagItem("チャイム").innerText();
   expect(t.includes("2"), `タグ一覧: ${t}`);
@@ -114,15 +113,15 @@ await step("T09", "ファイル名の一部で絞り込める（大文字・小�
   await clearFilter();
 });
 
-await step("T10", "チェックしたファイルからまとめてタグを外せる", async () => {
-  await ui.check("chime.wav");
-  await ui.check("chime.mp3");
-  await ui.bulkMode("タグを外す");
-  const t = await page.locator("[data-testid=bulk-tag][data-tag-name=チャイム]").innerText();
-  expect(t.includes("2/2"), `件数の表示 ${t}`);
-  await page.getByRole("button", { name: "チャイムをまとめて外す" }).click();
-  await waitIdle();
-  await ui.clearChecks();
+await step("T10", "右の欄の付いているタグは、条件のチップと同じ形で出て、押すとそのタグを外せる", async () => {
+  for (const rel of ["chime.wav", "chime.mp3"]) {
+    await row(rel).click();
+    const chip = page.locator("[data-testid=selected-tag][data-tag-name=チャイム]");
+    expect((await chip.innerText()).replace(/\s+/g, "") === "🏷チャイム✕", await chip.innerText());
+    expect((await chip.getAttribute("class")).includes("filter-chip"), "条件のチップと同じ形でない");
+    await chip.click();
+    await waitIdle();
+  }
   expect((await tagItem("チャイム").innerText()).includes("0"), await tagItem("チャイム").innerText());
 });
 
@@ -230,7 +229,7 @@ await step("T19", "右の欄のタグ：候補から選ぶとすぐ付く。ま�
   await row("chime.wav").click();
   const field = page.getByLabel("付けるタグ名", { exact: true });
   expect((await page.getByTestId("detail-panel").getByRole("button", { name: "付ける", exact: true }).count()) === 0, "「＋」が残っている");
-  const tagTexts = () => page.getByTestId("selected-tag").locator("span").allInnerTexts();
+  const tagTexts = () => page.getByTestId("selected-tag").evaluateAll((els) => els.map((e) => e.dataset.tagName));
   const attached = await tagTexts();
   const before = (await ui.tagNames()).length;
   // 空、付いている名前（大文字・小文字の違いを含む）では何もしない
@@ -369,10 +368,11 @@ await step("T24", "左の欄はライブラリ・タグ・プレイリスト・�
   expect((await page.getByTestId("folder").count()) === 1, "開かない");
 });
 
-await step("T25", "絞り込みの操作（検索・✕・⧉・🔊・条件のチップ）は左の欄の一番上にあり、左の欄をスクロールしても残る。中央には件数とチェックだけ", async () => {
+await step("T25", "絞り込みの操作（検索・✕・⧉・条件のチップ）は左の欄の一番上にあり、左の欄をスクロールしても残る。中央には件数とチェックだけ", async () => {
   const bar = page.getByTestId("filter-bar");
   const side = page.locator("aside.side");
-  for (const name of ["重複しているファイルだけ", "ライブラリの外のファイルと同じ音声を探す"]) {
+  expect((await page.getByRole("button", { name: "ライブラリの外のファイルと同じ音声を探す" }).count()) === 0, "🔊が残っている");
+  for (const name of ["重複しているファイルだけ"]) {
     expect((await bar.getByRole("button", { name }).count()) === 1, `${name}が左の欄にない`);
   }
   expect((await bar.getByLabel("検索", { exact: true }).count()) === 1, "検索が左の欄にない");
@@ -384,7 +384,7 @@ await step("T25", "絞り込みの操作（検索・✕・⧉・🔊・条件の
   expect((await page.locator(".status-bar").getByTestId("checked-count").innerText()).startsWith("チェック 0件"), "チェックの件数が下の行にない");
   // チェックしていないときは、中央のツールバー（チェックの操作）を出さない。一覧の見出しに「ファイル」の文字は出さない
   expect((await page.locator("main .toolbar").count()) === 0, "中央のツールバーが出ている");
-  expect((await page.locator(".list-head").innerText()).trim() === "", `見出しに文字がある: ${await page.locator(".list-head").innerText()}`);
+  expect((await page.locator(".list-head").count()) === 0, "一覧の見出しの行が残っている");
   // フォルダを選ぶと、条件のチップが出る
   await page.getByTestId("folder").first().click();
   await page.waitForTimeout(300);
@@ -431,6 +431,28 @@ await step("T26", "ファイルの行をタグの行にドラッグするとタ�
   await page.mouse.up();
   await page.waitForTimeout(300);
   expect((await status()) === before, `何かが起きた: ${await status()}`);
+});
+
+await step("T27", "絞り込みの条件のチップが2つ以上になると、名前のない「✕」のチップが出て、押すと条件だけがすべて外れる（チェックと右の欄はそのまま）", async () => {
+  const clearChip = page.getByRole("button", { name: "絞り込みの条件をすべて外す" });
+  await page.getByTestId("folder").first().click();
+  await page.waitForTimeout(300);
+  expect((await clearChip.count()) === 0, "条件が1つなのに出ている");
+  await tagItem("ドラッグ先").locator(".tag-name").click();
+  await page.getByLabel("検索", { exact: true }).fill("chime");
+  await page.waitForTimeout(500);
+  expect((await clearChip.count()) === 1, "条件が2つなのに出ない");
+  expect((await clearChip.innerText()).trim() === "✕", `名前がある: ${await clearChip.innerText()}`);
+  await row("chime.wav").click();
+  await ui.check("chime.wav");
+  await shot("T27_すべての条件を外す");
+  await clearChip.click();
+  await page.waitForTimeout(500);
+  expect((await page.getByTestId("filter-chips").count()) === 0, "条件が残っている");
+  expect((await page.getByLabel("検索", { exact: true }).inputValue()) === "", "検索の文字が残っている");
+  expect((await ui.checkedCount()).startsWith("チェック 1件"), "チェックが外れた");
+  expect((await page.getByTestId("detail-path").innerText()) === "chime.wav", "右の欄が変わった");
+  await clearFilter();
 });
 
 await ui.finish();

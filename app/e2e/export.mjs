@@ -41,10 +41,13 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
   await addToPlaylist("chime.wav", "TRPG: 第1話");
-  await openPlaylist("TRPG: 第1話");
-  await page.getByLabel("子のプレイリストの名前").fill("シーン1");
-  await page.getByLabel("子のプレイリストの名前").press("Enter");
+  // 子のプレイリストは、左の欄で作ってから取っ手で親の中に落とす
+  await page.getByRole("button", { name: "プレイリストを作る" }).click();
+  await page.getByLabel("新しいプレイリストの名前").fill("シーン1");
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
+  const node = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`);
+  await ui.dragTo(node("シーン1").getByTestId("drag-handle"), node("TRPG: 第1話"), 0.5);
   await addToPlaylist("chime.mp3", "シーン1");
   // エフェクトのまとまりを作って、子のプレイリストの項目に結び付ける
   await page.getByRole("button", { name: "エフェクトのまとまりを管理" }).click();

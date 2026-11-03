@@ -27,13 +27,11 @@ import {
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
 import { confirmDialog } from "./confirm";
-import { AUDIO_EXTENSIONS } from "./audio";
 import { FolderPanel } from "./components/FolderPanel";
 import { baseName } from "./paths";
 import { FilterChips, type FilterChip } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
 import { FileList } from "./components/FileList";
-import { BulkBar } from "./components/BulkBar";
 import { PlaylistPanel } from "./components/PlaylistPanel";
 import { PlaylistEditor } from "./components/PlaylistEditor";
 import { PlayerBar } from "./components/PlayerBar";
@@ -124,7 +122,7 @@ export default function App() {
   /** 試聴とプレイリストの再生 */
   const audio = useAudioPlayer({ onInfo: showInfo, onError: showError });
 
-  // 「チェックしたファイルだけ」のときだけ、チェックが変わったら読み直す
+  // 「チェックしたファイルだけ表示」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
   const reloadFiles = useCallback(async () => {
     const request = { ...filter, fileIds: checkedFilter ? [...checkedFilter] : null };
@@ -357,17 +355,6 @@ export default function App() {
     setFilter({ ...EMPTY_FILTER, hash });
   };
 
-  /** ライブラリの外のファイルを選んで、同じ音声のファイルを探す（選んだらすぐ探す） */
-  const searchByFile = async () => {
-    const path = await pickPath({ filters: [{ name: "音声ファイル", extensions: [...AUDIO_EXTENSIONS] }] }).catch(showError);
-    if (typeof path !== "string") return;
-    run(async () => {
-      const hash = await api.hashFile(path);
-      showSameAudio(hash);
-      showInfo(`同じ音声のファイルを探しました: ${path}`);
-    });
-  };
-
   /** フォルダを選んで、そのまま登録する */
   const browseAndAddFolder = async () => {
     const path = await pickPath({ directory: true }).catch(showError);
@@ -521,53 +508,6 @@ export default function App() {
       showInfo(`${CREDIT_LABEL[kind]}を外しました`);
     });
 
-  // 一括操作。対象はチェックしたファイルすべて（表示していないものも含む）なので、毎回件数を出して確認する
-
-  /** 確認してから実行する。実行したら true */
-  const bulk = async (message: string, task: () => Promise<void>) => {
-    if (!(await confirmDialog(message))) return false;
-    let ok = false;
-    await run(async () => {
-      await task();
-      ok = true;
-    });
-    return ok;
-  };
-
-  const bulkAddTag = (name: string) =>
-    bulk(`チェックした${checked.size}件にタグ「${name.trim()}」を付けますか？`, async () => {
-      await api.addTag(checks.ids(), name);
-      showInfo(`チェックした${checked.size}件にタグ「${name.trim()}」を付けました`);
-    });
-
-  const bulkRemoveTag = (tag: Tag) =>
-    bulk(`チェックした${checked.size}件からタグ「${tag.name}」を外しますか？`, async () => {
-      await api.removeTag(checks.ids(), tag.id);
-      showInfo(`チェックした${checked.size}件からタグ「${tag.name}」を外しました`);
-    });
-
-  const bulkSetCredit = (kind: CreditKind, name: string) => {
-    const label = CREDIT_LABEL[kind];
-    return bulk(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しますか？`, async () => {
-      await api.setFileCredit(kind, checks.ids(), name);
-      showInfo(`チェックした${checked.size}件に${label}「${name.trim()}」を設定しました`);
-    });
-  };
-
-  const bulkClearCredit = (kind: CreditKind) => {
-    const label = CREDIT_LABEL[kind];
-    return bulk(`チェックした${checked.size}件の${label}を外しますか？`, async () => {
-      await api.setFileCredit(kind, checks.ids(), null);
-      showInfo(`チェックした${checked.size}件の${label}を外しました`);
-    });
-  };
-
-  const bulkRelink = async () => {
-    const message = `チェックしたうち、見つからないファイル${checks.summary?.missing ?? 0}件をひも付け直しますか？`;
-    if (!(await confirmDialog(message))) return;
-    relink(checks.ids());
-  };
-
   const creditKinds: CreditKind[] = ["source", "license"];
 
   // プレイリスト
@@ -638,6 +578,30 @@ export default function App() {
     return ok;
   };
 
+  /** ファイルの行を出典・ライセンスに落としたとき。設定済みなら置き換わる。確認はしない */
+  const setCreditByDrop = (kind: CreditKind, creditId: number, fileIds: number[]) => {
+    const credit = creditsOf(kind).find((c) => c.id === creditId);
+    if (!credit) return;
+    run(async () => {
+      await api.setFileCredit(kind, fileIds, credit.name);
+      showInfo(`${fileIds.length}件に${CREDIT_LABEL[kind]}「${credit.name}」を設定しました`);
+    });
+  };
+
+  /** 右の欄のプレイリストのチップの「✕」：そのプレイリストから、このファイルの項目をすべて外す */
+  const removeFromPlaylist = (playlistId: number) =>
+    focusedFile &&
+    run(async () => {
+      await playlistApi.removeFile(playlistId, focusedFile.id);
+      showInfo(`プレイリスト「${playlistName(playlistId)}」から外しました`);
+    });
+
+  /** 絞り込みの条件だけをすべて外す（チェックと右の欄の表示はそのまま） */
+  const clearConditions = () => {
+    setText("");
+    setFilter(EMPTY_FILTER);
+  };
+
   /** ファイルの行をタグに落としたとき。外しやすいので、プレイリストへの追加と同じく確認しない */
   const addTagByDrop = (tagId: number, fileIds: number[]) => {
     const tag = tags.find((t) => t.id === tagId);
@@ -647,9 +611,6 @@ export default function App() {
       showInfo(`${fileIds.length}件にタグ「${tag.name}」を付けました`);
     });
   };
-
-  // 加えるのは元に戻しやすい（編集画面で外せる）ので、確認しない
-  const bulkAddToPlaylist = (playlistId: number) => addToPlaylist(playlistId, checks.ids());
 
   const addTagsToPlaylist = async (tagIds: number[]) => {
     if (!playlistDetail) return false;
@@ -884,17 +845,8 @@ export default function App() {
             >
               ⧉
             </button>
-            <button
-              className="icon"
-              onClick={searchByFile}
-              disabled={busy}
-              title="ライブラリの外のファイルと同じ音声を探す"
-              aria-label="ライブラリの外のファイルと同じ音声を探す"
-            >
-              🔊
-            </button>
           </div>
-          <FilterChips chips={filterChips} />
+          <FilterChips chips={filterChips} onClearAll={clearConditions} />
         </div>
         <FolderPanel
           folders={folders}
@@ -974,7 +926,6 @@ export default function App() {
             onSetChain={setPlaylistItemChain}
             onAddTags={addTagsToPlaylist}
             onAddRef={addRefToPlaylist}
-            onCreateChild={(name) => createPlaylist(name, playlistDetail.id)}
             onExport={(dest) => exportPlaylist(playlistDetail.id, dest)}
             onBrowseFolder={browseFolder}
           />
@@ -983,34 +934,17 @@ export default function App() {
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (
               <div className="toolbar">
+                <button onClick={() => checks.checkShown(true)} disabled={checks.shownChecked === files.length}>
+                  全てチェック
+                </button>
                 <button onClick={checks.clear} disabled={checked.size === 0}>
                   チェックをすべて外す
                 </button>
                 <label>
                   <input type="checkbox" checked={checkedOnly} onChange={(e) => setCheckedOnly(e.target.checked)} />
-                  チェックしたファイルだけ
+                  チェックしたファイルだけ表示
                 </label>
               </div>
-            )}
-            {checked.size > 0 && (
-              <BulkBar
-                checkedCount={checked.size}
-                summary={checks.summary}
-                tags={tags}
-                sources={sources}
-                licenses={licenses}
-                licenseTypes={licenseTypes}
-                busy={busy}
-                onAddTag={bulkAddTag}
-                onRemoveTag={bulkRemoveTag}
-                onSetCredit={bulkSetCredit}
-                onClearCredit={bulkClearCredit}
-                onRelink={bulkRelink}
-                onRemoveMissing={() => removeMissing(checks.ids(), checks.summary?.missing ?? 0)}
-                onError={showError}
-                playlists={playlists}
-                onAddToPlaylist={bulkAddToPlaylist}
-              />
             )}
             <FileList
               files={files}
@@ -1023,9 +957,11 @@ export default function App() {
               onCheckShown={checks.checkShown}
               onPlay={audio.preview}
               showHash={filter.duplicatesOnly || filter.hash !== null}
-              onDrop={(ids, target) =>
-                target.kind === "playlists" ? addToPlaylist(target.id, ids) : addTagByDrop(target.id, ids)
-              }
+              onDrop={(ids, target) => {
+                if (target.kind === "playlists") addToPlaylist(target.id, ids);
+                else if (target.kind === "tags") addTagByDrop(target.id, ids);
+                else setCreditByDrop(target.kind, target.id, ids);
+              }}
             />
           </>
         )}
@@ -1073,12 +1009,13 @@ export default function App() {
           playlists={playlists}
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
           onOpenPlaylist={openPlaylist}
+          onRemoveFromPlaylist={removeFromPlaylist}
         >
           {creditKinds.map((kind) => (
             <CreditField
               key={kind}
               kind={kind}
-              groups={focusedFile ? [{ id: kind === "source" ? focusedFile.sourceId : focusedFile.licenseId, count: 1 }] : []}
+              currentId={focusedFile ? (kind === "source" ? focusedFile.sourceId : focusedFile.licenseId) : null}
               credits={creditsOf(kind)}
               licenseTypes={licenseTypes}
               busy={busy}

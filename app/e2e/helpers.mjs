@@ -123,16 +123,15 @@ export async function connect(shotDir) {
       if ((await b.count()) && (await b.isEnabled())) await b.click();
       await page.waitForTimeout(200);
     },
-    /** 一括操作の欄のボタン（タグを付ける・タグを外す・出典・ライセンス）で、その操作の欄を開く */
-    async bulkMode(label) {
-      const b = page.getByTestId("bulk-bar").getByRole("button", { name: label, exact: true });
-      if ((await b.getAttribute("aria-pressed")) !== "true") await b.click();
-    },
-    async bulkAddTag(name) {
-      await ui.bulkMode("タグを付ける");
-      await page.getByLabel("まとめて付けるタグ名").fill(name);
-      await page.getByTestId("bulk-bar").getByRole("button", { name: "付ける", exact: true }).click();
+    /** チェックしている行（表示中の最初の1行）をつかんで target に落とす。チェックしたファイルすべてが対象になる */
+    async dragChecked(target) {
+      await ui.dragTo(page.locator("[data-testid=file-row].checked").first().locator(".file-name"), target, 0.5);
       await ui.waitIdle();
+    },
+    /** チェックしたファイルすべてに、ドラッグでタグを付ける（まだないタグは左の欄の「＋」で作っておく） */
+    async bulkAddTag(name) {
+      if (!(await ui.tagNames()).includes(name)) await ui.createTags([name]);
+      await ui.dragChecked(ui.tagItem(name));
     },
     /** 取っ手 handle をつかんで、target の行の高さの ratio の位置まで動かして離す。
      *  release が false なら離さない（落とす前の表示を確かめるとき。後で page.mouse.up() する） */

@@ -6,7 +6,6 @@ import { connect, expect, parseArgs } from "./helpers.mjs";
 
 const { dataDir, shotDir } = parseArgs("hash-features.mjs");
 const hashDir = path.join(dataDir, "hash");
-const outside = path.join(dataDir, "outside");
 const large = path.join(dataDir, "large");
 
 const ui = await connect(shotDir);
@@ -80,31 +79,6 @@ await step("H05", "選んだファイルと同じ音声のファイルを探せ�
   await clearFilter();
   expect((await page.getByTestId("hash-filter").count()) === 0, "解除されない");
   expect((await fileCount()) === 5, `解除後 ${await fileCount()}`);
-});
-
-const searchOutside = async (file) => {
-  await ui.setDialogReply(file);
-  await page.getByRole("button", { name: "ライブラリの外のファイルと同じ音声を探す" }).click();
-  await waitIdle();
-};
-
-await step("H06", "🔊でライブラリ外のファイルを選ぶと、そのまま同じ音声のファイルを探す", async () => {
-  await searchOutside(path.join(outside, "se2_outside.wav"));
-  expect((await fileCount()) === 1, `件数 ${await fileCount()}`);
-  expect((await row("se2.wav").count()) === 1, "se2.wavでない");
-  expect((await page.getByTestId("hash-filter").count()) === 1, "同じ音声のチップが出ない");
-  await shot("H06_ファイルを選んで探す");
-  await clearFilter();
-});
-
-await step("H07", "音声でないファイルを選ぶとエラーが出る。キャンセルなら何もしない", async () => {
-  await searchOutside(path.join(outside, "text.mp3"));
-  const s = await status();
-  expect(s.includes("ハッシュ値を計算できませんでした"), s);
-  // ダイアログでキャンセルしたときは何もしない
-  const before = await fileCount();
-  await searchOutside(null);
-  expect((await fileCount()) === before && (await page.getByTestId("hash-filter").count()) === 0, "キャンセルで絞り込まれた");
 });
 
 await step("H08", "移動したファイルに、見つからないファイルのタグをひも付け直せる", async () => {

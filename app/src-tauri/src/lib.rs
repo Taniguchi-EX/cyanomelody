@@ -29,7 +29,7 @@ use effects::Effect;
 use error::Result;
 use error::Error;
 use facets::Facets;
-use files::{AudioFile, FileFilter, FileSummary};
+use files::{AudioFile, FileFilter};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
 use playlists::{PlayEntry, PlayMode, PlaylistDetail, PlaylistNode};
@@ -163,13 +163,6 @@ async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
     Ok(state.hashing.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
 }
 
-/// 任意のファイル（ライブラリ外でもよい）のハッシュ値を計算する
-#[tauri::command]
-async fn hash_file(path: String) -> Result<String> {
-    audio_hash::audio_hash(Path::new(&path))
-        .map_err(|e| Error::invalid(format!("ハッシュ値を計算できませんでした: {e}")))
-}
-
 /// 音声ファイルのトラック名（タグ情報のタイトル）。ないときは None
 #[tauri::command]
 async fn track_title(path: String) -> Result<Option<String>> {
@@ -217,11 +210,6 @@ async fn facet_counts(state: State<'_, AppState>, filter: FileFilter) -> Result<
 }
 
 #[tauri::command]
-async fn summarize_files(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<FileSummary> {
-    files::summarize_files(&state.conn(), &file_ids)
-}
-
-#[tauri::command]
 async fn list_tags(state: State<'_, AppState>) -> Result<Vec<Tag>> {
     tags::list_tags(&state.conn())
 }
@@ -249,6 +237,11 @@ async fn delete_tag(state: State<'_, AppState>, tag_id: i64) -> Result<()> {
 #[tauri::command]
 async fn move_tag(state: State<'_, AppState>, tag_id: i64, target: MoveTarget) -> Result<()> {
     tags::move_tag(&mut state.conn(), tag_id, target)
+}
+
+#[tauri::command]
+async fn existing_file_ids(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Vec<i64>> {
+    files::existing_file_ids(&state.conn(), &file_ids)
 }
 
 #[tauri::command]
@@ -383,6 +376,11 @@ async fn expand_playlist_item(state: State<'_, AppState>, item_id: i64) -> Resul
 #[tauri::command]
 async fn playlists_with_file(state: State<'_, AppState>, file_id: i64) -> Result<Vec<i64>> {
     playlists::playlists_with_file(&state.conn(), file_id)
+}
+
+#[tauri::command]
+async fn remove_file_from_playlist(state: State<'_, AppState>, id: i64, file_id: i64) -> Result<usize> {
+    playlists::remove_file_from_playlist(&state.conn(), id, file_id)
 }
 
 #[tauri::command]
@@ -544,7 +542,6 @@ pub fn run() {
             remove_folder,
             scan_folder,
             list_files,
-            summarize_files,
             facet_counts,
             list_tags,
             create_tag,
@@ -557,7 +554,6 @@ pub fn run() {
             start_hashing,
             cancel_hashing,
             hashing_progress,
-            hash_file,
             track_title,
             relink_files,
             license_types,
@@ -592,6 +588,8 @@ pub fn run() {
             expand_playlist,
             expand_playlist_item,
             playlists_with_file,
+            existing_file_ids,
+            remove_file_from_playlist,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

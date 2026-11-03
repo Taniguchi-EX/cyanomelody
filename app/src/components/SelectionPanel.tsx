@@ -19,8 +19,10 @@ type Props = {
   /** 一番上に出す欄（プレイリストの項目を押したときの「プレイリスト上での名前」） */
   top?: ReactNode;
   playlists: PlaylistNode[];
-  onAddToPlaylist: (playlistId: number) => Promise<boolean>;
+  onAddToPlaylist: (playlistId: number) => void;
   onOpenPlaylist: (playlistId: number) => void;
+  /** そのプレイリストから、このファイルの項目を外す */
+  onRemoveFromPlaylist: (playlistId: number) => void;
 };
 
 /** 右の欄。一覧でクリックした1件のファイルの詳細と操作 */
@@ -38,6 +40,7 @@ export function SelectionPanel({
   playlists,
   onAddToPlaylist,
   onOpenPlaylist,
+  onRemoveFromPlaylist,
 }: Props) {
   const [name, setName] = useState("");
   // このファイルを直接入れているプレイリスト。プレイリストが変わったら（項目の数が変わる）求め直す
@@ -126,41 +129,53 @@ export function SelectionPanel({
             ))}
           </datalist>
         </div>
-        <ul className="selected-tags">
-          {file.tags.map((t) => (
-            <li key={t.id} data-testid="selected-tag">
-              <span>{t.name}</span>
+        {/* 付いているタグ。左の欄の絞り込みの条件と同じ形のチップで、押すと外す */}
+        {file.tags.length > 0 && (
+          <div className="filter-chips detail-chips">
+            {file.tags.map((t) => (
               <button
-                className="icon"
+                key={t.id}
+                className="chip filter-chip"
                 onClick={() => onRemoveTag(t.id)}
                 disabled={busy}
-                title="外す"
+                title="押すと外す"
                 aria-label={`${t.name}を外す`}
+                data-testid="selected-tag"
+                data-tag-name={t.name}
               >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Collapsible>
-
-      <Collapsible id="detail-playlists" title="プレイリスト" count={usedInPlaylists.length}>
-        {usedInPlaylists.length > 0 && (
-          <div className="used-in" data-testid="used-in">
-            {usedInPlaylists.map((p) => (
-              <button key={p.id} className="chip" onClick={() => onOpenPlaylist(p.id)} title="開く">
-                {p.name}
+                <span className="chip-icon">🏷</span>
+                {t.name}
+                <span className="chip-x">✕</span>
               </button>
             ))}
           </div>
         )}
-        <PlaylistPicker
-          playlists={playlists}
-          busy={busy}
-          onAdd={onAddToPlaylist}
-          label="このファイルを加えるプレイリスト"
-          immediate
-        />
+      </Collapsible>
+
+      <Collapsible id="detail-playlists" title="プレイリスト" count={usedInPlaylists.length}>
+        {/* 入っているプレイリスト。名前を押すと開き、「✕」でそのプレイリストから外す */}
+        {usedInPlaylists.length > 0 && (
+          <div className="filter-chips detail-chips" data-testid="used-in">
+            {usedInPlaylists.map((p) => (
+              <span key={p.id} className="chip filter-chip" data-playlist-name={p.name}>
+                <button className="chip-part" onClick={() => onOpenPlaylist(p.id)} title="開く" aria-label={`${p.name}を開く`}>
+                  <span className="chip-icon">📃</span>
+                  {p.name}
+                </button>
+                <button
+                  className="chip-part chip-x"
+                  onClick={() => onRemoveFromPlaylist(p.id)}
+                  disabled={busy}
+                  title="このプレイリストから外す"
+                  aria-label={`${p.name}から外す`}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <PlaylistPicker playlists={playlists} busy={busy} onAdd={onAddToPlaylist} />
       </Collapsible>
 
       {children}

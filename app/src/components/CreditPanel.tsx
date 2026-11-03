@@ -73,6 +73,9 @@ export function CreditPanel({
               onClick={() => !disabled && onToggle(c.id)}
               data-testid={kind}
               data-credit-name={c.name}
+              // ファイルの行を落とす先（useFileDrag）
+              data-tree={kind}
+              data-node-id={c.id}
             >
               <span className="credit-name">{c.name}</span>
               {kind === "license" && <TermMarks terms={c.terms} />}

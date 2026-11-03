@@ -1,16 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type AudioFile, type FileSummary } from "../api";
+import { api, type AudioFile } from "../api";
 
 /**
- * ファイルのチェック（一括操作の対象）。チェックは絞り込みを変えても外れない。
- * files は表示中のファイル。データが変わると読み直されるので、そのたびにチェックしたファイルの内訳も求め直す。
+ * ファイルのチェック（ドラッグでまとめて操作する対象）。チェックは絞り込みを変えても外れない。
+ * files は表示中のファイル。データが変わると読み直されるので、そのたびにライブラリから消えたファイルをチェックから外す。
  */
 export function useChecks(files: AudioFile[], onError: (e: unknown) => void) {
   const [checked, setChecked] = useState<Set<number>>(new Set());
   /** Shift+クリックでの範囲のチェックの起点（ファイルのid。絞り込みを変えても同じファイルを指す） */
   const [anchor, setAnchor] = useState<number | null>(null);
-  const [summary, setSummary] = useState<FileSummary | null>(null);
-  // onError は描画のたびに作られる関数なので、内訳を求め直すきっかけにしないよう ref で持つ
+  // onError は描画のたびに作られる関数なので、確かめ直すきっかけにしないよう ref で持つ
   const onErrorRef = useRef(onError);
   useEffect(() => {
     onErrorRef.current = onError;
@@ -20,15 +19,12 @@ export function useChecks(files: AudioFile[], onError: (e: unknown) => void) {
 
   // ライブラリから消えたファイル（登録解除など）は、チェックから外す
   useEffect(() => {
-    // チェックがないときは一括操作の欄を出さないので、内訳は求めない（前の内訳は使われない）
     if (checked.size === 0) return;
     let cancelled = false;
     api
-      .summarizeFiles([...checked])
-      .then((s) => {
-        if (cancelled) return;
-        setSummary(s);
-        if (s.ids.length !== checked.size) setChecked(new Set(s.ids));
+      .existingFileIds([...checked])
+      .then((ids) => {
+        if (!cancelled && ids.length !== checked.size) setChecked(new Set(ids));
       })
       .catch((e) => onErrorRef.current(e));
     return () => {
@@ -72,5 +68,5 @@ export function useChecks(files: AudioFile[], onError: (e: unknown) => void) {
     setAnchor(null);
   };
 
-  return { checked, ids: () => [...checked], shownChecked, summary, checkRow, checkShown, clear };
+  return { checked, ids: () => [...checked], shownChecked, checkRow, checkShown, clear };
 }

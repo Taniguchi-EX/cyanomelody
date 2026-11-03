@@ -62,12 +62,9 @@ async function checkRows(...rels) {
   await ui.clearChecks();
   for (const r of rels) await ui.check(r);
 }
-/** 一括操作の欄で、チェックしたファイルに出典・ライセンスを設定する */
-async function bulkSetCredit(kind, name) {
-  await ui.bulkMode(LABEL[kind]);
-  await page.getByLabel(`まとめて設定する${LABEL[kind]}の名前`).fill(name);
-  await page.getByTestId(`bulk-credit-field-${kind}`).getByRole("button", { name: "設定" }).click();
-  await waitIdle();
+/** チェックしたファイルを、左の欄の出典・ライセンスの行へドラッグして設定する */
+async function dropCredit(kind, name) {
+  await ui.dragChecked(leftItem(kind, name));
 }
 
 await step("C01", "準備：フォルダを登録する。左の欄に3つの欄が開いた状態で並ぶ", async () => {
@@ -183,9 +180,10 @@ await step("C08", "編集で別の既存の名前にはできない", async () =
   expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
 });
 
-await step("C09", "チェックしたファイル（複数）にまとめて出典を設定できる。右の欄にURL・メモが出る", async () => {
+await step("C09", "チェックしたファイル（複数）を出典の行にドラッグすると、まとめて設定できる。右の欄にURL・メモが出る", async () => {
   await checkRows("chime.wav", "chime.mp3");
-  await bulkSetCredit("source", "効果音サイトa");
+  await dropCredit("source", "効果音サイトA");
+  expect((await status()).includes("2件に出典「効果音サイトA」を設定しました"), await status());
   await row("chime.wav").click();
   expect((await current("source")) === "効果音サイトA", await current("source"));
   const d = await detail("source");
@@ -194,24 +192,25 @@ await step("C09", "チェックしたファイル（複数）にまとめて出�
   await shot("C09_出典を設定");
 });
 
-await step("C10", "まだない名前のライセンスを設定すると、独自・条項はすべて不明で作られる", async () => {
-  await bulkSetCredit("license", "新しい規約");
+await step("C10", "ライセンスの行にドラッグして設定できる（名前だけで作ったライセンスは、独自・条項はすべて不明）。（ライセンスなし）には落とせない", async () => {
+  await openCreate("license");
+  await page.getByLabel("名前", { exact: true }).fill("新しい規約");
+  await submit();
+  await dropCredit("license", "新しい規約");
   expect((await current("license")) === "新しい規約", await current("license"));
   const d = await detail("license");
   expect((d.match(/？/g) ?? []).length === 5, d);
   expect((await page.getByTestId("detail-license").locator(".term-mark.unknown").count()) === 5, "不明の色");
   expect((await leftCount("license", "新しい規約")) === 2, "左の欄の件数");
-});
-
-await step("C11", "設定が違うファイルをチェックすると、一括操作の欄に「（ばらばら）」と件数が出る", async () => {
-  await checkRows("chime.wav", "chime.mp3", "chime.flac");
-  await ui.bulkMode("出典");
-  const c = await page.getByTestId("bulk-current-source").innerText();
-  expect(c.includes("（ばらばら）") && c.includes("効果音サイトA：2件") && c.includes("なし：1件"), c);
-  expect((await page.getByTestId("bulk-detail-source").count()) === 0, "ばらばらなのに詳細が出る");
-  await shot("C11_ばらばら");
+  // （ライセンスなし）の行は落とす先にならない
+  await ui.dragTo(row("chime.wav").locator(".file-name"), page.getByTestId("license-none"), 0.5, false);
+  expect(!(await page.getByTestId("license-none").getAttribute("class")).includes("drop-target"), "（ライセンスなし）に枠が出る");
+  await page.mouse.up();
+  await waitIdle();
+  expect((await leftCount("license", "新しい規約")) === 2, "（ライセンスなし）に落として変わった");
   await ui.clearChecks();
 });
+
 
 await step("C12", "設定済みのファイルに設定すると置き換わる", async () => {
   await row("chime.mp3").click();
@@ -269,17 +268,15 @@ await step("C15", "「絞り込みを解除」で出典・ライセンスの条�
   expect((await page.locator(".tag-list li.active").count()) === 0, "選択が残る");
 });
 
-await step("C16", "外す：チェックしたファイルの設定がまとめて外れる", async () => {
-  await checkRows("chime.wav", "chime.mp3");
-  await ui.bulkMode("出典");
-  await page.getByRole("button", { name: "まとめて出典を外す" }).click();
-  await waitIdle();
-  expect((await page.getByTestId("bulk-current-source").innerText()) === "なし", "一括操作の欄");
-  expect(await page.getByRole("button", { name: "まとめて出典を外す" }).isDisabled(), "外すが押せる");
+await step("C16", "外す：右の欄のプルダウンで「（なし）」を選ぶと、出典だけが外れる", async () => {
+  for (const rel of ["chime.wav", "chime.mp3"]) {
+    await row(rel).click();
+    await page.getByLabel("出典を選ぶ").selectOption({ label: "（なし）" });
+    await waitIdle();
+  }
   await row("chime.mp3").click();
   expect((await current("source")) === "なし", await current("source"));
   expect((await current("license")) === "新しい規約", "ライセンスまで外れた");
-  await ui.clearChecks();
 });
 
 await step("C17", "削除：設定されていたファイルは「なし」になり、絞り込みの条件からも外れる", async () => {

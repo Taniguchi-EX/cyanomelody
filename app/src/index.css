@@ -168,16 +168,13 @@ button.toggle.on {
 }
 
 /* 印を付けずに並べるリスト */
-.tag-list,
-.selected-tags,
-.credit-groups {
+.tag-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-/* 押すと選んだ状態になるボタン（一括操作の欄、条項の選択） */
-.bulk button.on,
+/* 押すと選んだ状態になるボタン（条項の選択） */
 .segmented button.on {
   background: var(--selected);
   border-color: var(--accent);
@@ -556,16 +553,6 @@ li > .name-input {
 
 /* ===== ファイルの一覧 ===== */
 
-/* 一覧の見出しの行。右端の「表示中のファイルをすべてチェック」だけを置く */
-.list-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-sub);
-}
-
 .list {
   flex: 1;
   overflow-y: auto;
@@ -593,11 +580,45 @@ li > .name-input {
   padding: 0 8px 6px;
 }
 
-button.filter-chip {
+button.filter-chip,
+span.filter-chip {
   margin-left: 0;
   cursor: pointer;
   background: var(--selected);
   border-color: var(--accent);
+}
+
+/* すべての条件を外す「✕」だけのチップ */
+.clear-chip .chip-x {
+  margin-left: 0;
+}
+
+/* 右の欄の、付いているタグ・入っているプレイリスト（左の欄の条件のチップと同じ形） */
+.detail-chips {
+  padding: 4px 0;
+}
+
+/* プレイリストのチップは、名前（開く）と「✕」（外す）の2つのボタンでできている */
+span.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+}
+
+.chip-part {
+  border: none;
+  background: none;
+  padding: 0 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip-part.chip-x {
+  padding-left: 2px;
+}
+
+.chip-part.chip-x:hover {
+  color: var(--error);
 }
 
 .filter-chip .chip-icon {
@@ -677,45 +698,6 @@ button.filter-chip:hover .chip-x {
   color: var(--fg);
 }
 
-/* ===== 一括操作の欄 ===== */
-
-.bulk {
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-sub);
-}
-
-.bulk .toolbar {
-  border-bottom: none;
-  padding: 6px 8px;
-  gap: 8px;
-}
-
-.bulk-detail {
-  border-top: 1px dashed var(--border);
-}
-
-.bulk-credit {
-  padding: 0 8px 8px;
-  max-width: 420px;
-}
-
-.bulk-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 2px 1px 8px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-  font-size: 12px;
-}
-
-.bulk-tag button {
-  font-size: 11px;
-  padding: 0 6px;
-  border-radius: 10px;
-}
-
 /* ===== 右の欄（ファイルの詳細、出典・ライセンス） ===== */
 
 /* 右の欄の一番上。トラック名（音声ファイルのタイトル） */
@@ -724,13 +706,6 @@ button.filter-chip:hover .chip-x {
   font-weight: 600;
   word-break: break-all;
   margin-bottom: 2px;
-}
-
-.selected-tags li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 2px 0;
 }
 
 .credit-field h2:first-child {
@@ -748,10 +723,6 @@ button.filter-chip:hover .chip-x {
 
 .credit-detail .note {
   white-space: pre-wrap;
-}
-
-.credit-groups {
-  margin-top: 2px;
 }
 
 /* 条項の色分け（緑は使いやすい側、橙は制約、灰は不明） */
@@ -1109,7 +1080,9 @@ button.primary {
 }
 
 [data-tree="playlists"].drop-target,
-[data-tree="tags"].drop-target {
+[data-tree="tags"].drop-target,
+[data-tree="source"].drop-target,
+[data-tree="license"].drop-target {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -1153,19 +1126,6 @@ button.item-kind:hover:not(:disabled) .kind-play {
 }
 
 /* 右の欄の、ファイルが入っているプレイリスト */
-.used-in {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 4px;
-}
-
-.used-in button.chip {
-  margin-left: 0;
-  color: var(--accent);
-  cursor: pointer;
-}
-
 /* 左の欄のライセンスの行：名前が長いときは名前を省く（条項と件数は残す） */
 .credit-name {
   flex: 1;

@@ -9,7 +9,7 @@ const formats = path.join(dataDir, "formats");
 const large = path.join(dataDir, "large");
 
 const ui = await connect(shotDir);
-const { page, step, shot, status, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
+const { page, step, shot, status, row, tagItem, waitIdle, addFolder, addTag } = ui;
 
 const playlistItem = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`);
 /** 左の欄のプレイリストを「名前:深さ」で表示順に */
@@ -61,13 +61,10 @@ await step("P01", "準備：フォルダを登録し、タグを付け、左の�
   expect((await page.getByLabel("新しいプレイリストの名前").count()) === 0, "Escで閉じない");
 });
 
-await step("P02", "一括操作の欄から、チェックしたファイルをプレイリストに追加できる（加えるだけなので確認しない）", async () => {
+await step("P02", "チェックしたファイルを、左の欄のプレイリストにドラッグしてまとめて追加できる（加えるだけなので確認しない）", async () => {
   await ui.check("chime.wav");
   await ui.check("chime.ogg");
-  await ui.bulkMode("プレイリストに追加");
-  await page.getByLabel("チェックしたファイルを加えるプレイリスト").selectOption({ label: "戦闘" });
-  await page.getByTestId("bulk-bar").getByRole("button", { name: "追加", exact: true }).click();
-  await waitIdle();
+  await ui.dragChecked(playlistItem("戦闘"));
   expect((await status()).includes("2件をプレイリスト「戦闘」に追加しました"), await status());
   await ui.clearChecks();
 });
@@ -117,13 +114,14 @@ await step("P06", "別の階層のプレイリストを参照として加えら�
   await shot("P06_ループの候補");
 });
 
-await step("P07", "子のプレイリストを作ると、左の欄に子として出て、親の項目にも入る", async () => {
-  await open("戦闘");
-  await page.getByLabel("子のプレイリストの名前").fill("剣");
-  await page.getByRole("button", { name: "作る", exact: true }).click();
-  await waitIdle();
+await step("P07", "左の欄で作ったプレイリストを、取っ手で別のプレイリストの中に落とすと子になり、親の項目にも入る", async () => {
+  await createPlaylist("剣");
+  await ui.dragTo(playlistItem("剣").getByTestId("drag-handle"), playlistItem("戦闘"), 0.5);
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:0", await tree());
+  await open("戦闘");
   expect((await items()).at(-1) === "子のプレイリスト:剣", (await items()).join(" / "));
+  // 詳細画面に「子のプレイリストを作る」の欄はない
+  expect((await page.getByLabel("子のプレイリストの名前").count()) === 0, "子のプレイリストを作る欄が残っている");
 });
 
 await step("P08", "項目を取っ手で並べ替えられる", async () => {
@@ -287,14 +285,10 @@ await step("P17", "3万件が対象のタグの組み合わせを再生し始め
   return `${ms}ms`;
 });
 
-await step("P18", "編集画面：名前や子のプレイリストの名前の欄でEnterを押すと、変更・作成できる", async () => {
+await step("P18", "詳細画面：名前の欄でEnterを押すと変更できる", async () => {
   await open("戦闘");
   await ui.renameOpenPlaylist("戦闘（Enter）");
   expect((await tree()).startsWith("戦闘（Enter）:0"), await tree());
-  await page.getByLabel("子のプレイリストの名前").fill("Enterの子");
-  await page.getByLabel("子のプレイリストの名前").press("Enter");
-  await waitIdle();
-  expect((await tree()).includes("Enterの子:1"), await tree());
 });
 
 await step("P19", "項目の行を押すと右の欄に出て、「プレイリスト上での名前」を付けられる。一覧と再生の欄はその名前で出る。Escで戻し、空にすると外れる", async () => {
@@ -376,17 +370,33 @@ await step("P22", "編集画面で項目の種類の記号を押すと、その�
   await page.getByRole("button", { name: "停止", exact: true }).click();
 });
 
-await step("P23", "右の欄に、そのファイルを入れているプレイリストが出て、押すと開く", async () => {
+await step("P23", "右の欄に、そのファイルを入れているプレイリストが条件のチップと同じ形で出る。名前を押すと開き、「✕」でそのプレイリストから外れる", async () => {
   await back();
   await row("chime.flac").click();
   await page.waitForTimeout(300);
-  const names = await page.getByTestId("used-in").getByRole("button").allInnerTexts();
+  const usedIn = page.getByTestId("used-in");
+  const names = await usedIn.locator("[data-playlist-name]").evaluateAll((els) => els.map((e) => e.dataset.playlistName));
   expect(names.includes("ドラッグ"), names.join(","));
   await shot("P23_入っているプレイリスト");
-  await page.getByTestId("used-in").getByRole("button", { name: "ドラッグ", exact: true }).click();
+  await usedIn.getByRole("button", { name: "ドラッグを開く" }).click();
   await page.waitForTimeout(300);
   const name = await page.getByTestId("playlist-title").innerText();
   expect(name === "ドラッグ", name);
+  const before = (await items()).length;
+  await back();
+  await row("chime.flac").click();
+  await page.waitForTimeout(300);
+  await page.getByTestId("used-in").getByRole("button", { name: "ドラッグから外す" }).click();
+  await waitIdle();
+  expect((await status()).includes("プレイリスト「ドラッグ」から外しました"), await status());
+  expect((await page.locator("[data-testid=used-in] [data-playlist-name=ドラッグ]").count()) === 0, "チップが残っている");
+  await open("ドラッグ");
+  expect((await items()).length === before - 1, (await items()).join(" / "));
+  expect(!(await items()).includes("ファイル:chime.flac"), (await items()).join(" / "));
+  // 後のテストのために戻す
+  await back();
+  await row("chime.flac").click();
+  await ui.addToPlaylistHere("ドラッグ");
   await back();
 });
 

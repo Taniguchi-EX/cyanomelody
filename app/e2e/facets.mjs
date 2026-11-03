@@ -105,9 +105,9 @@ await step("F06", "出典どうしはORなので、出典を選んでも別の�
   await clearFilter();
 });
 
-await step("F07", "「チェックしたファイルだけ」やファイル名の条件も件数に入る", async () => {
+await step("F07", "「チェックしたファイルだけ表示」やファイル名の条件も件数に入る", async () => {
   await ui.check("chime.ogg");
-  await page.getByLabel("チェックしたファイルだけ").check();
+  await page.getByLabel("チェックしたファイルだけ表示").check();
   await page.waitForTimeout(500);
   let s = await tagState();
   expect(s === "環境音0g 雨0g 風0g 鳥0g 爆発0g なし1", `チェックしたファイルだけ ${s}`);
@@ -137,8 +137,8 @@ await step("F09", "グレーアウトしていても、取っ手で並べ替え�
   await clearFilter();
 });
 
-await step("F10", "選んでいる条件が一覧の上にチップで並び、押すとその条件だけ外れる", async () => {
-  const chips = async () => (await page.getByTestId("filter-chips").count()) ? (await page.getByTestId("filter-chips").getByRole("button").allInnerTexts()).map((s) => s.replace(/\s+/g, "")) : [];
+await step("F10", "選んでいる条件が左の欄の一番上にチップで並び、押すとその条件だけ外れる", async () => {
+  const chips = async () => (await page.getByTestId("filter-chips").count()) ? (await page.getByTestId("filter-chips").locator("button:not(.clear-chip)").allInnerTexts()).map((s) => s.replace(/\s+/g, "")) : [];
   expect((await chips()).length === 0, "条件がないのにチップがある");
   await tagItem("環境音").click();
   await tagItem("雨").click();

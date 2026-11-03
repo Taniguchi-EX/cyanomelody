@@ -442,6 +442,14 @@ pub fn remove_item(conn: &mut Connection, item_id: i64) -> Result<()> {
     Ok(())
 }
 
+/// プレイリストから、そのファイルの項目をすべて外し、外した数を返す（右の欄のプレイリストのチップの「✕」）
+pub fn remove_file_from_playlist(conn: &Connection, playlist_id: i64, file_id: i64) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM playlist_items WHERE playlist_id = ?1 AND kind = 'file' AND file_id = ?2",
+        [playlist_id, file_id],
+    )?)
+}
+
 /// 項目を、同じプレイリストの中の index の位置（0から）に移す
 pub fn move_item(conn: &mut Connection, item_id: i64, index: usize) -> Result<()> {
     let tx = conn.transaction()?;
@@ -1107,6 +1115,24 @@ mod tests {
         remove_item(&mut conn, items[0].id).unwrap();
         assert_eq!(tree(&conn), "A:0 C:0 B:0");
         assert!(remove_item(&mut conn, 999).is_err());
+    }
+
+    #[test]
+    fn remove_file_removes_only_that_file_in_that_playlist() {
+        let mut conn = setup();
+        let a = create_playlist(&mut conn, "A", None).unwrap();
+        let b = create_playlist(&mut conn, "B", None).unwrap();
+        // 同じファイルを2回入れる（1回の追加では重ならないので、分けて入れる）
+        add_files(&mut conn, a, &[1, 2]).unwrap();
+        add_files(&mut conn, a, &[1]).unwrap();
+        add_files(&mut conn, b, &[1]).unwrap();
+        assert_eq!(remove_file_from_playlist(&conn, a, 1).unwrap(), 2);
+        let files = |p: i64| -> Vec<i64> {
+            get_playlist(&conn, p).unwrap().items.iter().map(|i| i.file.as_ref().unwrap().id).collect()
+        };
+        assert_eq!(files(a), vec![2]);
+        assert_eq!(files(b), vec![1]);
+        assert_eq!(playlists_with_file(&conn, 1).unwrap(), vec![b]);
     }
 
     #[test]

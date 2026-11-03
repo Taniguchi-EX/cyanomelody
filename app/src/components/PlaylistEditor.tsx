@@ -29,7 +29,6 @@ type Props = {
   onSetChain: (item: PlaylistItem, chainId: number | null) => void;
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
-  onCreateChild: (name: string) => Promise<boolean>;
   /** dest の中に書き出し始める。始められたら true */
   onExport: (dest: string) => Promise<boolean>;
   /** フォルダを選ぶダイアログを出し、選んだパスを返す */
@@ -72,7 +71,6 @@ export function PlaylistEditor({
   onSetChain,
   onAddTags,
   onAddRef,
-  onCreateChild,
   onExport,
   onBrowseFolder,
 }: Props) {
@@ -80,7 +78,6 @@ export function PlaylistEditor({
   const [tagInput, setTagInput] = useState("");
   const [pickedTags, setPickedTags] = useState<Tag[]>([]);
   const [refId, setRefId] = useState("");
-  const [childName, setChildName] = useState("");
   const [exporting, setExporting] = useState(false);
   // 前に書き出したフォルダを入れておく（調整して何度も書き出すとき、選び直さなくてよい）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
@@ -108,10 +105,6 @@ export function PlaylistEditor({
   // ループになるプレイリスト（自分自身と、自分を含むもの）は、候補に出すが選べないようにする
   const loops = new Set(playlists.filter((p) => makesLoop(playlists, detail.id, p.id)).map((p) => p.id));
   const filterTags = tags.filter((t) => filterTagIds.includes(t.id));
-
-  const createChild = async () => {
-    if (await onCreateChild(childName)) setChildName("");
-  };
 
   const targetAt = (x: number, y: number) => {
     const row = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-item-index]");
@@ -373,21 +366,6 @@ export function PlaylistEditor({
               disabled={busy || refId === ""}
             >
               加える
-            </button>
-          </div>
-
-          <h2>子のプレイリストを作る</h2>
-          <div className="row">
-            <input
-              type="text"
-              placeholder="子のプレイリストの名前"
-              value={childName}
-              onChange={(e) => setChildName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !busy && childName.trim() && createChild()}
-              aria-label="子のプレイリストの名前"
-            />
-            <button onClick={createChild} disabled={busy || !childName.trim()}>
-              作る
             </button>
           </div>
         </div>

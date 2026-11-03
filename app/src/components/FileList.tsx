@@ -20,7 +20,7 @@ type Props = {
   onFocus: (file: AudioFile) => void;
   /** 行のチェックボックス。range が true なら前に押した行との間をまとめて同じ状態にする */
   onCheck: (index: number, range: boolean) => void;
-  /** 表示中のファイルをすべてチェックする（false なら外す） */
+  /** 表示中のファイルをすべてチェックする（false なら外す）。Ctrl+A で使う */
   onCheckShown: (check: boolean) => void;
   onPlay: (file: AudioFile) => void;
   /** 行にハッシュ値の色の印を出す（重複を見るとき） */
@@ -52,25 +52,8 @@ export function FileList({
     overscan: 20,
   });
 
-  const shownChecked = files.reduce((n, f) => n + (checked.has(f.id) ? 1 : 0), 0);
-  const allChecked = files.length > 0 && shownChecked === files.length;
-
   return (
     <>
-      <div className="list-head">
-        <label className="check-cell" title="表示中のファイルをすべてチェック">
-          <input
-            type="checkbox"
-            checked={allChecked}
-            ref={(el) => {
-              if (el) el.indeterminate = shownChecked > 0 && !allChecked;
-            }}
-            disabled={files.length === 0}
-            onChange={() => onCheckShown(!allChecked)}
-            aria-label="表示中のファイルをすべてチェック"
-          />
-        </label>
-      </div>
       {files.length === 0 ? (
         <div className="empty">該当するファイルはありません</div>
       ) : (

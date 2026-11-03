@@ -62,17 +62,6 @@ export type Facets = {
 /** 件数の内訳の1項目。id が null は「なし」 */
 export type CountItem = { id: number | null; count: number };
 
-/** まとめて操作するファイル（チェックしたファイル）の内訳 */
-export type FileSummary = {
-  /** 指定したidのうち、ライブラリにあるもの */
-  ids: number[];
-  missing: number;
-  /** 付いているタグ（タグの一覧の順）と、そのタグが付いたファイルの数 */
-  tags: CountItem[];
-  sources: CountItem[];
-  licenses: CountItem[];
-};
-
 export type Tag = {
   id: number;
   name: string;
@@ -98,7 +87,8 @@ export const api = {
   scanFolder: (folderId: number) => invoke<ScanResult>("scan_folder", { folderId }),
   listFiles: (filter: FileFilter) => invoke<AudioFile[]>("list_files", { filter }),
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
-  summarizeFiles: (fileIds: number[]) => invoke<FileSummary>("summarize_files", { fileIds }),
+  /** 指定したidのうち、ライブラリにあるもの */
+  existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),
@@ -111,7 +101,6 @@ export const api = {
   startHashing: () => invoke<void>("start_hashing"),
   cancelHashing: () => invoke<void>("cancel_hashing"),
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
-  hashFile: (path: string) => invoke<string>("hash_file", { path }),
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
@@ -276,6 +265,8 @@ export const playlistApi = {
   expandItem: (itemId: number) => invoke<PlayEntry[]>("expand_playlist_item", { itemId }),
   /** ファイルを項目として直接入れているプレイリストのid */
   withFile: (fileId: number) => invoke<number[]>("playlists_with_file", { fileId }),
+  /** プレイリストから、そのファイルの項目をすべて外す */
+  removeFile: (id: number, fileId: number) => invoke<number>("remove_file_from_playlist", { id, fileId }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   startExport: (id: number, dest: string) => invoke<string>("start_export", { id, dest }),
   cancelExport: () => invoke<void>("cancel_export"),

@@ -31,10 +31,7 @@ await step("E01", "準備：フォルダを登録し、プレイリストにフ�
   await waitIdle();
   await ui.check("chime.wav");
   await ui.check("chime.mp3");
-  await ui.bulkMode("プレイリストに追加");
-  await page.getByLabel("チェックしたファイルを加えるプレイリスト").selectOption({ label: "シナリオ" });
-  await page.getByTestId("bulk-bar").getByRole("button", { name: "追加", exact: true }).click();
-  await waitIdle();
+  await ui.dragChecked(page.locator('[data-testid=playlist][data-playlist-name="シナリオ"]'));
   await ui.clearChecks();
 });
 
