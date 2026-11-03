@@ -158,7 +158,9 @@ await step("P11", "再生：再生の欄に名前・何曲目か・ファイル�
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying();
   expect((await position()) === "1/5", await position());
-  expect((await page.getByTestId("player-file").innerText()) === "chime.ogg", await page.getByTestId("player-file").innerText());
+  // 曲の名前は音声ファイルの中の曲名（タグ情報のタイトル）、2行目にファイル名
+  expect((await page.getByTestId("player-file").innerText()) === "チャイム", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-file-name").innerText()) === "chime.ogg", await page.getByTestId("player-file-name").innerText());
   await page.getByRole("button", { name: "次へ" }).click();
   expect((await position()) === "2/5", await position());
   await page.getByRole("button", { name: "前へ" }).click();
@@ -366,7 +368,7 @@ await step("P22", "編集画面で項目の種類の記号を押すと、その�
   await page.getByRole("button", { name: "chime.mp3を再生" }).click();
   await ui.waitPlaying();
   expect((await position()) === "1/1", await position());
-  expect((await page.getByTestId("player-file").innerText()) === "chime.mp3", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-file-name").innerText()) === "chime.mp3", await page.getByTestId("player-file-name").innerText());
   await page.getByRole("button", { name: "停止", exact: true }).click();
 });
 
@@ -440,6 +442,9 @@ await step("P26", "再生の欄：何も再生していないときは、開い�
   for (const name of ["順に再生", "シャッフル再生", "ランダムセレクト再生", "前へ", "次へ", "停止"]) {
     expect(await page.getByRole("button", { name, exact: true }).isDisabled(), `${name}が押せる`);
   }
+  // ボタンの並びは「⏮ ▶ ⏭ 🔀 🎲 ■」（シャッフル再生は右に寄せる）
+  const order = await page.locator(".play-buttons button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label")).join(","));
+  expect(order === "前へ,順に再生,次へ,シャッフル再生,ランダムセレクト再生,停止", order);
   await open("ドラッグ");
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying();
@@ -462,18 +467,19 @@ await step("P26", "再生の欄：何も再生していないときは、開い�
   await back();
 });
 
-await step("P27", "再生の欄：試聴中はファイル名と「試聴」を出す。プレイリスト上での名前がない曲は、ファイル名を2行目に重ねて出さない", async () => {
+await step("P27", "再生の欄：試聴中も曲名を出し、2行目にファイル名と「試聴」。プレイリストの再生中は、2行目にいつもファイル名を出す", async () => {
   await back();
   await row("chime.mp3").getByRole("button", { name: "再生", exact: true }).click();
   await page.waitForTimeout(300);
-  expect((await page.getByTestId("player-file").innerText()) === "chime.mp3", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-file").innerText()) === "チャイム", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-file-name").innerText()) === "chime.mp3", "ファイル名が出ない");
   expect((await page.getByTestId("player-preview").innerText()) === "試聴", "試聴と出ない");
   await shot("P27_試聴中");
   await row("chime.mp3").getByRole("button", { name: "停止", exact: true }).click();
   await open("ドラッグ");
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying();
-  expect((await page.getByTestId("player-file-name").count()) === 0, "ファイル名が重ねて出ている");
+  expect((await page.getByTestId("player-file-name").count()) === 1, "ファイル名が出ない");
   await page.getByRole("button", { name: "停止", exact: true }).click();
   await back();
 });
@@ -493,6 +499,28 @@ await step("P28", "再生の欄の音量のバーで音量を変えられる（�
   const pv = await page.evaluate(() => document.querySelector("audio").volume);
   expect(Math.abs(pv - 0.6) < 0.001, `試聴の音量: ${pv}`);
   await row("chime.wav").getByRole("button", { name: "停止", exact: true }).click();
+});
+
+await step("P29", "「その他」の「直近で再生したもの」：試聴とプレイリストの再生を数え、新しく再生した順に並ぶ", async () => {
+  await back();
+  for (const rel of ["chime.ogg", "chime.flac"]) {
+    await row(rel).getByRole("button", { name: "再生", exact: true }).click();
+    await page.waitForTimeout(300);
+    await row(rel).getByRole("button", { name: "停止", exact: true }).click();
+  }
+  await waitIdle();
+  const item = ui.otherItem("recentOnly");
+  await item.click();
+  await page.waitForTimeout(500);
+  const rels = await page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
+  expect(rels[0] === "chime.flac" && rels[1] === "chime.ogg", rels.join(","));
+  // それまでに試聴・プレイリストで再生した chime.wav・chime.mp3 も入る
+  expect(rels.includes("chime.wav") && rels.includes("chime.mp3"), rels.join(","));
+  expect((await item.locator(".sub").innerText()) === String(rels.length), "件数が一覧と合わない");
+  expect((await page.getByTestId("filter-chips").innerText()).includes("直近で再生"), "チップが出ない");
+  await shot("P29_直近で再生したもの");
+  await item.click();
+  await page.waitForTimeout(300);
 });
 
 await ui.finish();

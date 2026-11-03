@@ -9,14 +9,17 @@ type Props = {
   selectedCount?: number;
   /** 中の項目の数（右の欄の、付いているタグなど）。たたんでいても見出しに出す */
   count?: number;
-  /** 見出しの右に置くボタンなど */
-  actions?: ReactNode;
+  /** 見出しの右に置くボタンなど。関数なら、欄を開く関数を受け取る（たたんでいるときに「＋」を押したら開くなど） */
+  actions?: ReactNode | ((expand: () => void) => ReactNode);
   children: ReactNode;
 };
 
 /** 見出しを押すとたためる1つの欄（左の欄の各欄、右の欄のタグ・プレイリスト） */
 export function Collapsible({ id, title, selectedCount = 0, count, actions, children }: Props) {
   const [collapsed, toggle] = useStoredFlag(`cyanomelody.collapsed.${id}`);
+  const expand = () => {
+    if (collapsed) toggle();
+  };
 
   return (
     <section className="collapsible" data-testid={`section-${id}`} data-collapsed={collapsed}>
@@ -35,7 +38,7 @@ export function Collapsible({ id, title, selectedCount = 0, count, actions, chil
             </span>
           )}
         </button>
-        {actions}
+        {typeof actions === "function" ? actions(expand) : actions}
       </div>
       {!collapsed && children}
     </section>

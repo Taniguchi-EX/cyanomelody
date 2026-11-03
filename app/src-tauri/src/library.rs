@@ -117,7 +117,7 @@ pub fn remove_folder(conn: &Connection, folder_id: i64) -> Result<()> {
 }
 
 /// Windowsのパスは大文字・小文字を区別しないので、比べるときは小文字にそろえる
-fn comparable(path: &Path) -> PathBuf {
+pub(crate) fn comparable(path: &Path) -> PathBuf {
     PathBuf::from(path.to_string_lossy().to_lowercase())
 }
 
@@ -126,6 +126,17 @@ pub fn is_audio_file(path: &Path) -> bool {
         .and_then(|e| e.to_str())
         .map(|e| AUDIO_EXTENSIONS.iter().any(|a| a.eq_ignore_ascii_case(e)))
         .unwrap_or(false)
+}
+
+/// root の中（サブフォルダを含む）の音声ファイルのパス。シンボリックリンクはたどらず、読めないフォルダは飛ばす
+pub fn audio_files_under(root: &Path) -> Vec<PathBuf> {
+    WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file() && is_audio_file(e.path()))
+        .map(|e| e.into_path())
+        .collect()
 }
 
 struct FoundFile {

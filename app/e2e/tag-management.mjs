@@ -146,10 +146,13 @@ await step("T12", "見つからなくなったファイルに印が付き、タ�
   await shot("T12_見つからないファイル");
 });
 
-await step("T13", "見つからないファイルだけに絞り込める（見つからないファイルがあるときだけ、ボタンが出る）", async () => {
-  await page.getByRole("button", { name: "見つからないファイルだけ" }).click();
+await step("T13", "左の欄の「その他」の「リンク切れしているもの」で、見つからないファイルだけに絞り込める", async () => {
+  const item = ui.otherItem("missingOnly");
+  expect((await item.locator(".sub").innerText()) === "1", `件数 ${await item.locator(".sub").innerText()}`);
+  await item.click();
   await page.waitForTimeout(300);
   expect((await fileCount()) === 1, `件数 ${await fileCount()}`);
+  expect((await page.getByTestId("filter-chips").innerText()).includes("リンク切れ"), "チップが出ない");
   await clearFilter();
 });
 
@@ -157,7 +160,8 @@ await step("T14", "同じ場所に戻すと印が外れる", async () => {
   fs.renameSync(path.join(dataDir, "chime.flac.moved"), path.join(formats, "chime.flac"));
   await page.getByRole("button", { name: "スキャン", exact: true }).click();
   await waitIdle();
-  expect((await page.getByRole("button", { name: "見つからないファイルだけ" }).count()) === 0, "ボタンが残っている");
+  // 見つからないファイルがなくなると、「リンク切れしているもの」は0件でグレーアウトする
+  expect((await ui.otherItem("missingOnly").getAttribute("class")).includes("disabled"), "グレーアウトしない");
   const s = await status();
   expect(s.includes("戻った 1件"), `status: ${s}`);
   expect((await row("chime.flac").locator(".warn").count()) === 0, "印が残っている");
@@ -354,9 +358,9 @@ await step("T23", "欄の境界をドラッグして左・右の欄の幅を変�
 
 await step("T24", "左の欄はライブラリ・タグ・プレイリスト・出典・ライセンスの順。ライブラリの欄はたためて、たたんでも「追加」は押せる", async () => {
   const sections = await page.locator(".side [data-testid^=section-]").evaluateAll((els) => els.map((e) => e.dataset.testid));
-  expect(sections.join(",") === "section-folders,section-tags,section-playlists,section-source,section-license", sections.join(","));
+  expect(sections.join(",") === "section-folders,section-tags,section-playlists,section-source,section-license,section-other", sections.join(","));
   const heads = await page.locator(".side .collapsible-head h2").allInnerTexts();
-  expect(heads.join(",") === "ライブラリ,タグ,プレイリスト,出典,ライセンス", heads.join(","));
+  expect(heads.join(",") === "ライブラリ,タグ,プレイリスト,出典,ライセンス,その他", heads.join(","));
   const section = page.getByTestId("section-folders");
   expect((await section.locator("h2").innerText()) === "ライブラリ", await section.locator("h2").innerText());
   expect((await page.getByLabel("フォルダのパス").count()) === 0, "パスの欄が残っている");
@@ -368,12 +372,12 @@ await step("T24", "左の欄はライブラリ・タグ・プレイリスト・�
   expect((await page.getByTestId("folder").count()) === 1, "開かない");
 });
 
-await step("T25", "絞り込みの操作（検索・✕・⧉・条件のチップ）は左の欄の一番上にあり、左の欄をスクロールしても残る。中央には件数とチェックだけ", async () => {
+await step("T25", "絞り込みの操作（検索・✕・条件のチップ）は左の欄の一番上にあり、左の欄をスクロールしても残る。中央には件数とチェックだけ", async () => {
   const bar = page.getByTestId("filter-bar");
   const side = page.locator("aside.side");
-  expect((await page.getByRole("button", { name: "ライブラリの外のファイルと同じ音声を探す" }).count()) === 0, "🔊が残っている");
-  for (const name of ["重複しているファイルだけ"]) {
-    expect((await bar.getByRole("button", { name }).count()) === 1, `${name}が左の欄にない`);
+  // 一番上は検索の行と条件のチップだけ（「⚠」「⧉」は「その他」の欄に移した）
+  for (const name of ["ライブラリの外のファイルと同じ音声を探す", "重複しているファイルだけ", "見つからないファイルだけ"]) {
+    expect((await page.getByRole("button", { name }).count()) === 0, `${name}が残っている`);
   }
   expect((await bar.getByLabel("検索", { exact: true }).count()) === 1, "検索が左の欄にない");
   expect((await page.locator("main").getByLabel("検索", { exact: true }).count()) === 0, "検索が中央に残っている");
@@ -453,6 +457,21 @@ await step("T27", "絞り込みの条件のチップが2つ以上になると、
   expect((await ui.checkedCount()).startsWith("チェック 1件"), "チェックが外れた");
   expect((await page.getByTestId("detail-path").innerText()) === "chime.wav", "右の欄が変わった");
   await clearFilter();
+});
+
+await step("T28", "タグ・プレイリストの欄をたたんでいるときに「＋」を押すと、欄を開いてから名前の入力欄が出る", async () => {
+  for (const [id, label, input] of [
+    ["tags", "タグを作る", "新しいタグの名前"],
+    ["playlists", "プレイリストを作る", "新しいプレイリストの名前"],
+  ]) {
+    const section = page.getByTestId(`section-${id}`);
+    await section.locator(".collapse-toggle").click();
+    expect((await section.getAttribute("data-collapsed")) === "true", `${id} がたためない`);
+    await section.getByRole("button", { name: label }).click();
+    expect((await section.getAttribute("data-collapsed")) === "false", `${id} が開かない`);
+    expect(await page.getByLabel(input).isVisible(), `${id} の入力欄が出ない`);
+    await page.getByLabel(input).press("Escape");
+  }
 });
 
 await ui.finish();

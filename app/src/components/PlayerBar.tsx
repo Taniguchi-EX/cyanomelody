@@ -1,4 +1,6 @@
-import { PLAY_MODES, type AudioFile, type PlayMode } from "../api";
+import { useEffect, useState } from "react";
+import { api, PLAY_MODES, type AudioFile, type PlayMode } from "../api";
+import { baseName } from "../paths";
 import type { Player } from "../hooks/useAudioPlayer";
 
 type Props = {
@@ -27,6 +29,8 @@ type Props = {
 const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 const SEEK_STEPS = 1000;
+/** 拡張子を除いたファイル名（パスは含めない） */
+const stem = (relPath: string) => baseName(relPath).replace(/\.[^.]+$/, "");
 const modeOf = (mode: PlayMode) => PLAY_MODES.find((m) => m.mode === mode)!;
 
 /** ウィンドウの下の、プレイリストの再生の欄。何も再生していないときも出しておく */
@@ -46,6 +50,24 @@ export function PlayerBar({
   onVolumeCommit,
 }: Props) {
   const entry = player?.queue[player.index];
+  // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
+  const playing = entry ?? previewFile;
+  const playingPath = playing?.path ?? null;
+  const [title, setTitle] = useState<{ path: string; title: string | null } | null>(null);
+  useEffect(() => {
+    if (playingPath === null) return;
+    let alive = true;
+    api
+      .trackTitle(playingPath)
+      .then((t) => alive && setTitle({ path: playingPath, title: t }))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [playingPath]);
+  const trackTitle = title && title.path === playingPath ? title.title : null;
+  /** 曲の名前：プレイリスト上での名前 → 曲名 → 拡張子を除いたファイル名 */
+  const name = playing ? (entry?.alias ?? trackTitle ?? stem(playing.relPath)) : "";
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
   const shuffle = modeOf("shuffle");
   const random = modeOf("random");
@@ -69,12 +91,13 @@ export function PlayerBar({
     <div className="play-area" data-testid="player-bar" data-playing={player !== null}>
       {/* 1行目に曲の名前、2行目にファイル名（1行目と同じなら出さない）・プレイリスト名・何曲目。試聴中はファイル名と「試聴」 */}
       <div className="play-now">
-        <div className="player-file" title={entry?.path ?? previewFile?.path} data-testid="player-file">
-          {entry ? (entry.alias ?? entry.relPath) : (previewFile?.relPath ?? "")}
+        <div className="player-file" title={playingPath ?? undefined} data-testid="player-file">
+          {name}
         </div>
+        {/* 2行目：ファイル名（相対パス）と、プレイリスト名・何曲目（試聴なら「試聴」） */}
         {player && (
           <div className="sub play-where">
-            {entry?.alias && <span data-testid="player-file-name">{entry.relPath}</span>}
+            {entry && <span data-testid="player-file-name">{entry.relPath}</span>}
             <span className="player-name">{player.name}</span>
             <span data-testid="player-position">
               {player.index + 1}/{player.queue.length}
@@ -87,23 +110,15 @@ export function PlayerBar({
           </div>
         )}
         {!player && previewFile && (
-          <div className="sub play-where" data-testid="player-preview">
-            試聴
+          <div className="sub play-where">
+            <span data-testid="player-file-name">{previewFile.relPath}</span>
+            <span data-testid="player-preview">試聴</span>
           </div>
         )}
       </div>
 
       <div className="play-center">
         <div className="play-buttons">
-          <button
-            className="icon"
-            onClick={() => onPlayOpen("shuffle")}
-            disabled={!canPlayOpen}
-            title={shuffle.label}
-            aria-label={shuffle.label}
-          >
-            {shuffle.icon}
-          </button>
           <button
             className="icon"
             onClick={onPrev}
@@ -124,6 +139,15 @@ export function PlayerBar({
           </button>
           <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
             ⏭
+          </button>
+          <button
+            className="icon"
+            onClick={() => onPlayOpen("shuffle")}
+            disabled={!canPlayOpen}
+            title={shuffle.label}
+            aria-label={shuffle.label}
+          >
+            {shuffle.icon}
           </button>
           <button
             className="icon"

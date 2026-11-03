@@ -18,6 +18,10 @@ pub struct Facets {
     /// 出典ごとの件数。id が None は「（出典なし）」。0件の出典は入らない
     pub sources: Vec<CountItem>,
     pub licenses: Vec<CountItem>,
+    /// 「その他」の各項目を選んだときの件数（項目どうしとほかの条件はAND）
+    pub duplicates: i64,
+    pub recent: i64,
+    pub missing: i64,
 }
 
 /// 条件に合うファイルの id・出典・ライセンス
@@ -148,7 +152,12 @@ pub fn facet_counts(conn: &Connection, filter: &FileFilter) -> Result<Facets> {
     let sources = group(&keep(&rows), |r| r.source_id);
     let rows = cache.rows(&FileFilter { license_ids: vec![], no_license: false, ..filter.clone() })?;
     let licenses = group(&keep(&rows), |r| r.license_id);
-    Ok(Facets { tags, untagged, sources, licenses })
+    // 「その他」：いまの条件に、その項目を加えたときの件数
+    let mut other = |f: FileFilter| -> Result<i64> { Ok(keep(&cache.rows(&f)?).len() as i64) };
+    let duplicates = other(FileFilter { duplicates_only: true, ..filter.clone() })?;
+    let recent = other(FileFilter { recent_only: true, ..filter.clone() })?;
+    let missing = other(FileFilter { missing_only: true, ..filter.clone() })?;
+    Ok(Facets { tags, untagged, sources, licenses, duplicates, recent, missing })
 }
 
 #[cfg(test)]
@@ -192,6 +201,33 @@ mod tests {
         }
         let none = FileFilter { source_ids: vec![], no_source: true, ..filter.clone() };
         assert_eq!(sources.get(&None).copied().unwrap_or(0), list_files(conn, &none).unwrap().len() as i64);
+        let count = |f: FileFilter| list_files(conn, &f).unwrap().len() as i64;
+        assert_eq!(f.duplicates, count(FileFilter { duplicates_only: true, ..filter.clone() }), "重複");
+        assert_eq!(f.recent, count(FileFilter { recent_only: true, ..filter.clone() }), "直近で再生");
+        assert_eq!(f.missing, count(FileFilter { missing_only: true, ..filter.clone() }), "リンク切れ");
+    }
+
+    #[test]
+    fn other_items_count_with_other_conditions() {
+        let mut conn = setup();
+        // a・b は同じ音声（重複）、c は見つからない、a・c を直近で再生
+        conn.execute("UPDATE audio_files SET hash = 'h1' WHERE id IN (1, 2)", []).unwrap();
+        conn.execute("UPDATE audio_files SET hash = 'h3', missing = 1 WHERE id = 3", []).unwrap();
+        crate::recent::record_play(&conn, 1).unwrap();
+        crate::recent::record_play(&conn, 3).unwrap();
+        let rain = add_tag(&mut conn, &[1, 3], "雨").unwrap();
+        let f = facet_counts(&conn, &FileFilter::default()).unwrap();
+        assert_eq!((f.duplicates, f.recent, f.missing), (2, 2, 1));
+        let f = facet_counts(&conn, &FileFilter { tag_ids: vec![rain], ..Default::default() }).unwrap();
+        assert_eq!((f.duplicates, f.recent, f.missing), (1, 2, 1));
+        for filter in [
+            FileFilter::default(),
+            FileFilter { tag_ids: vec![rain], ..Default::default() },
+            FileFilter { recent_only: true, ..Default::default() },
+            FileFilter { duplicates_only: true, missing_only: true, ..Default::default() },
+        ] {
+            check_against_list(&conn, &filter);
+        }
     }
 
     #[test]

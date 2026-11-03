@@ -142,16 +142,6 @@ h2:first-child {
   border: none;
 }
 
-/* 押すと選んだ状態になる記号のボタン（ツールバーの絞り込み） */
-button.toggle.on {
-  background: var(--selected);
-  border-color: var(--accent);
-}
-
-.warn-toggle {
-  color: var(--warn);
-}
-
 .folder-path {
   word-break: break-all;
 }

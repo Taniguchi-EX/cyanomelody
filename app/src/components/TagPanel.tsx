@@ -66,11 +66,21 @@ export function TagPanel({
       id="tags"
       title="タグ"
       selectedCount={filter.tagIds.length + (filter.untaggedOnly ? 1 : 0)}
-      actions={
-        <button className="icon" onClick={() => setCreating(true)} disabled={busy} title="タグを作る" aria-label="タグを作る">
+      actions={(expand) => (
+        <button
+          className="icon"
+          onClick={() => {
+            // たたんでいるときは、開いてから入力欄を出す
+            expand();
+            setCreating(true);
+          }}
+          disabled={busy}
+          title="タグを作る"
+          aria-label="タグを作る"
+        >
           ＋
         </button>
-      }
+      )}
     >
       {creating && (
         <NameInput

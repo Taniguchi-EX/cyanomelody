@@ -19,7 +19,7 @@ ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a libvorbis "$forma
 ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a aac "$formats/サブフォルダ/チャイム.m4a"
 
 # hash/ … ハッシュ値の機能の確認用。重複（そのままのコピーと、タグだけ書き換えたもの）と、壊れたファイルを含む
-# outside/ … ライブラリに登録しない場所の音声（ファイルを指定して探すときに使う）
+# outside/ … ライブラリの外の音声（リンク切れのファイルを紐づけるときに、フォルダごと登録される）
 hash="$out/hash"
 outside="$out/outside"
 rm -rf "$hash" "$outside"
@@ -31,6 +31,8 @@ ff -f lavfi -i "sine=frequency=659:duration=0.5" -metadata title="ミ" "$hash/se
 printf x > "$hash/broken.wav"
 cp "$hash/se2.wav" "$outside/se2_outside.wav"
 printf 'not audio' > "$outside/text.mp3"
+# 曲名（タグ情報のタイトル）のない音声。再生の欄で、拡張子を除いたファイル名を出すことの確認に使う
+ff -f lavfi -i "sine=frequency=440:duration=0.5" -map_metadata -1 "$outside/no_title.wav"
 
 if [ ! -d "$large" ]; then
   for d in $(seq -w 0 99); do

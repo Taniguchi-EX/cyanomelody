@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::audio_hash::{audio_hash, HashError};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::library::absolute_path;
 
 /// ハッシュ値の計算を待っているファイル
@@ -123,22 +123,7 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
         match candidates.as_slice() {
             [] => result.not_found += 1,
             [target] => {
-                tx.execute(
-                    "INSERT OR IGNORE INTO file_tags (file_id, tag_id)
-                     SELECT ?2, tag_id FROM file_tags WHERE file_id = ?1",
-                    params![id, target],
-                )?;
-                // 出典・ライセンスは、ひも付け直し先に設定がなければ移す
-                tx.execute(
-                    "UPDATE audio_files SET
-                       source_id = coalesce(source_id, (SELECT source_id FROM audio_files WHERE id = ?1)),
-                       license_id = coalesce(license_id, (SELECT license_id FROM audio_files WHERE id = ?1))
-                     WHERE id = ?2",
-                    params![id, target],
-                )?;
-                // プレイリストのファイルの項目も付け替える
-                tx.execute("UPDATE playlist_items SET file_id = ?2 WHERE file_id = ?1", params![id, target])?;
-                tx.execute("DELETE FROM audio_files WHERE id = ?1", [id])?;
+                merge_into(&tx, id, *target)?;
                 result.relinked += 1;
             }
             _ => result.ambiguous += 1,
@@ -146,6 +131,54 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
     }
     tx.commit()?;
     Ok(result)
+}
+
+/// 見つからないファイル missing の、タグ・出典・ライセンス・プレイリストの項目・再生の履歴を target に移し、
+/// missing の情報を消す（ひも付け直しの共通の処理）
+fn merge_into(conn: &Connection, missing: i64, target: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO file_tags (file_id, tag_id)
+         SELECT ?2, tag_id FROM file_tags WHERE file_id = ?1",
+        params![missing, target],
+    )?;
+    // 出典・ライセンスは、ひも付け直し先に設定がなければ移す
+    conn.execute(
+        "UPDATE audio_files SET
+           source_id = coalesce(source_id, (SELECT source_id FROM audio_files WHERE id = ?1)),
+           license_id = coalesce(license_id, (SELECT license_id FROM audio_files WHERE id = ?1))
+         WHERE id = ?2",
+        params![missing, target],
+    )?;
+    // プレイリストのファイルの項目も付け替える
+    conn.execute("UPDATE playlist_items SET file_id = ?2 WHERE file_id = ?1", params![missing, target])?;
+    // 再生の履歴は、新しい方を残す
+    conn.execute(
+        "INSERT INTO recent_plays (file_id, seq) SELECT ?2, seq FROM recent_plays WHERE file_id = ?1
+         ON CONFLICT(file_id) DO UPDATE SET seq = max(seq, excluded.seq)",
+        params![missing, target],
+    )?;
+    conn.execute("DELETE FROM audio_files WHERE id = ?1", [missing])?;
+    Ok(())
+}
+
+/// 見つからないファイル missing を、ユーザーが選んだファイル target にひも付け直す（ハッシュ値は比べない）
+pub fn relink_to(conn: &mut Connection, missing: i64, target: i64) -> Result<()> {
+    let tx = conn.transaction()?;
+    let is_missing: Option<bool> = tx
+        .query_row("SELECT missing FROM audio_files WHERE id = ?1", [missing], |r| r.get(0))
+        .optional()?;
+    if is_missing != Some(true) {
+        return Err(Error::invalid("見つからないファイルではありません"));
+    }
+    let target_ok: Option<bool> = tx
+        .query_row("SELECT missing = 0 FROM audio_files WHERE id = ?1", [target], |r| r.get(0))
+        .optional()?;
+    if target_ok != Some(true) || target == missing {
+        return Err(Error::invalid("ひも付け先のファイルが見つかりません"));
+    }
+    merge_into(&tx, missing, target)?;
+    tx.commit()?;
+    Ok(())
 }
 
 #[cfg(test)]

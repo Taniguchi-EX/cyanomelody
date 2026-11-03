@@ -127,6 +127,14 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE playlist_items ADD COLUMN effect_chain_id INTEGER REFERENCES effect_chains(id) ON DELETE SET NULL;
     CREATE INDEX playlist_items_chain ON playlist_items(effect_chain_id);
     "#,
+    // 8: 直近で再生したファイル。seq は再生した順の通し番号（大きいほど新しい）
+    r#"
+    CREATE TABLE recent_plays (
+        file_id INTEGER PRIMARY KEY REFERENCES audio_files(id) ON DELETE CASCADE,
+        seq INTEGER NOT NULL
+    );
+    CREATE INDEX recent_plays_seq ON recent_plays(seq);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

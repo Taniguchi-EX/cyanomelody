@@ -53,6 +53,8 @@ pub struct FileFilter {
     pub file_ids: Option<Vec<i64>>,
     /// このライブラリフォルダのファイルに絞り込む
     pub folder_id: Option<i64>,
+    /// 直近で再生したファイル（recent_plays）に絞り込む。このときは新しく再生した順に並べる
+    pub recent_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -103,6 +105,9 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     if filter.missing_only {
         sql.push_str(" AND a.missing = 1");
     }
+    if filter.recent_only {
+        sql.push_str(" AND a.id IN (SELECT file_id FROM recent_plays)");
+    }
     if filter.duplicates_only {
         sql.push_str(
             " AND a.hash IN (SELECT hash FROM audio_files WHERE hash IS NOT NULL
@@ -142,7 +147,10 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
          WHERE 1 = 1{conditions}"
     );
     // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
-    sql.push_str(&if filter.duplicates_only {
+    // 直近で再生したものは、新しく再生した順にする
+    sql.push_str(&if filter.recent_only {
+        format!(" ORDER BY (SELECT seq FROM recent_plays r WHERE r.file_id = a.id) DESC, {FILE_ORDER}")
+    } else if filter.duplicates_only {
         format!(" ORDER BY a.hash, {FILE_ORDER}")
     } else {
         format!(" ORDER BY {FILE_ORDER}")

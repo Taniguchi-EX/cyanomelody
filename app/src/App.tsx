@@ -17,6 +17,7 @@ import {
   describeExport,
   type LibraryFolder,
   type LicenseType,
+  type LinkOutcome,
   type MoveTarget,
   playlistApi,
   type PlayMode,
@@ -42,6 +43,8 @@ import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { AliasField, ItemDetail } from "./components/ItemDetail";
 import { CreditPanel } from "./components/CreditPanel";
+import { OtherPanel } from "./components/OtherPanel";
+import { OTHER_ITEMS, type OtherKey } from "./otherFilters";
 import { CreditForm } from "./components/CreditForm";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
@@ -62,7 +65,11 @@ const EMPTY_FILTER: FileFilter = {
   noLicense: false,
   fileIds: null,
   folderId: null,
+  recentOnly: false,
 };
+
+/** 「ファイルを紐づける」で選べるファイル（スキャンの対象と同じ拡張子） */
+const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a"];
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
 const FILTER_KEYS = {
@@ -120,7 +127,17 @@ export default function App() {
   const checks = useChecks(files, showError);
   const checked = checks.checked;
   /** 試聴とプレイリストの再生 */
-  const audio = useAudioPlayer({ onInfo: showInfo, onError: showError });
+  // 鳴らし始めたファイルは「直近で再生したもの」に記録し、一覧と件数を読み直す（reloadFiles は後で作るので ref で呼ぶ）
+  const reloadFilesRef = useRef<() => Promise<void>>(async () => {});
+  const audio = useAudioPlayer({
+    onInfo: showInfo,
+    onError: showError,
+    onPlayed: (fileId) =>
+      api
+        .recordPlay(fileId)
+        .then(() => reloadFilesRef.current())
+        .catch(showError),
+  });
 
   // 「チェックしたファイルだけ表示」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
@@ -132,6 +149,10 @@ export default function App() {
     // 絞り込みで消えたファイルは、右の欄からも消す
     setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
   }, [filter, checkedFilter]);
+
+  useEffect(() => {
+    reloadFilesRef.current = reloadFiles;
+  }, [reloadFiles]);
 
   /** 開いているプレイリストの中身を読み直す。削除されていたら、ファイルの一覧に戻る */
   const reloadPlaylistDetail = async () => {
@@ -322,7 +343,6 @@ export default function App() {
     });
 
   /** 絞り込み・チェック・右の欄の表示のどれかがあるか */
-  const missingTotal = folders.reduce((n, f) => n + f.missingCount, 0);
 
   const anyActive =
     filter.folderId !== null ||
@@ -330,6 +350,7 @@ export default function App() {
     filter.untaggedOnly ||
     filter.missingOnly ||
     filter.duplicatesOnly ||
+    filter.recentOnly ||
     filter.hash !== null ||
     filter.sourceIds.length > 0 ||
     filter.noSource ||
@@ -596,6 +617,37 @@ export default function App() {
       showInfo(`プレイリスト「${playlistName(playlistId)}」から外しました`);
     });
 
+  /** 「その他」の条件（重複・直近で再生・リンク切れ）を選ぶ・外す */
+  const toggleOther = (key: OtherKey) => setFilter((f) => ({ ...f, [key]: !f[key] }));
+
+  /** 結び付けの結果を出す。フォルダを登録したときは、ハッシュ値の計算を始める */
+  const reportLink = (r: LinkOutcome) => {
+    showInfo(
+      r.addedFolder
+        ? `フォルダ「${r.addedFolder}」をライブラリに登録し、${r.path} にひも付けました`
+        : `${r.path} にひも付けました`,
+    );
+    if (r.addedFolder) startHashing();
+  };
+
+  /** リンク切れのファイルを、選んだファイルにひも付ける */
+  const linkMissingFile = async (file: AudioFile) => {
+    const path = await pickPath({ filters: [{ name: "音声ファイル", extensions: AUDIO_EXTENSIONS }] }).catch(showError);
+    if (typeof path !== "string") return;
+    run(async () => reportLink(await api.linkMissingFile(file.id, path)));
+  };
+
+  /** リンク切れのファイルと同じ音声のファイルを、選んだフォルダから探してひも付ける */
+  const findMissingInFolder = async (file: AudioFile) => {
+    const folder = await pickPath({ directory: true }).catch(showError);
+    if (typeof folder !== "string") return;
+    run(async () => {
+      const r = await api.findMissingInFolder(file.id, folder);
+      if (r) reportLink(r);
+      else showInfo(`同じ音声のファイルは見つかりませんでした: ${folder}`);
+    });
+  };
+
   /** 絞り込みの条件だけをすべて外す（チェックと右の欄の表示はそのまま） */
   const clearConditions = () => {
     setText("");
@@ -792,6 +844,11 @@ export default function App() {
       });
     }
   }
+  for (const item of OTHER_ITEMS) {
+    if (filter[item.key]) {
+      filterChips.push({ key: item.key, icon: item.icon, label: item.chip, title: item.label, onRemove: () => toggleOther(item.key) });
+    }
+  }
   if (filter.hash) {
     const hash = filter.hash;
     filterChips.push({
@@ -822,29 +879,6 @@ export default function App() {
                 ✕
               </button>
             )}
-          </div>
-          <div className="row">
-            {/* 見つからないファイルがないときは、絞り込んでも0件なので出さない */}
-            {(missingTotal > 0 || filter.missingOnly) && (
-              <button
-                className={"icon toggle warn-toggle" + (filter.missingOnly ? " on" : "")}
-                aria-pressed={filter.missingOnly}
-                onClick={() => setFilter((f) => ({ ...f, missingOnly: !f.missingOnly }))}
-                title={`見つからないファイルだけ（${missingTotal}件）`}
-                aria-label="見つからないファイルだけ"
-              >
-                ⚠
-              </button>
-            )}
-            <button
-              className={"icon toggle" + (filter.duplicatesOnly ? " on" : "")}
-              aria-pressed={filter.duplicatesOnly}
-              onClick={() => setFilter((f) => ({ ...f, duplicatesOnly: !f.duplicatesOnly }))}
-              title="重複しているファイルだけ"
-              aria-label="重複しているファイルだけ"
-            >
-              ⧉
-            </button>
           </div>
           <FilterChips chips={filterChips} onClearAll={clearConditions} />
         </div>
@@ -893,6 +927,7 @@ export default function App() {
             onDelete={(credit) => deleteCredit(kind, credit)}
           />
         ))}
+        <OtherPanel filter={filter} onToggle={toggleOther} facets={facets} />
       </aside>
       <Splitter
         label="左の欄の幅"
@@ -1005,6 +1040,8 @@ export default function App() {
           onRemoveTag={removeTag}
           onRemoveMissing={() => removeMissing(focusedIds(), 1)}
           onRelink={() => relink(focusedIds())}
+          onLinkFile={() => focusedFile && linkMissingFile(focusedFile)}
+          onFindInFolder={() => focusedFile && findMissingInFolder(focusedFile)}
           onShowSameAudio={showSameAudio}
           playlists={playlists}
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}

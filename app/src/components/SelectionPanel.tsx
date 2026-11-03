@@ -13,6 +13,10 @@ type Props = {
   onRemoveTag: (tagId: number) => void;
   onRemoveMissing: () => void;
   onRelink: () => void;
+  /** 見つからないファイルを、選んだファイルにひも付ける */
+  onLinkFile: () => void;
+  /** 見つからないファイルと同じ音声のファイルを、選んだフォルダから探す */
+  onFindInFolder: () => void;
   onShowSameAudio: (hash: string) => void;
   /** プレイリストの下に出す欄（出典・ライセンス） */
   children?: ReactNode;
@@ -34,6 +38,8 @@ export function SelectionPanel({
   onRemoveTag,
   onRemoveMissing,
   onRelink,
+  onLinkFile,
+  onFindInFolder,
   onShowSameAudio,
   children,
   top,
@@ -203,6 +209,22 @@ export function SelectionPanel({
             </button>
             <button onClick={onRemoveMissing} disabled={busy} title="ファイルの情報と、付けたタグなどの設定を消す">
               ライブラリから外す
+            </button>
+          </div>
+          <div className="row" style={{ marginTop: 4 }}>
+            <button onClick={onLinkFile} disabled={busy} title="ファイルを選んで、タグなどをそのファイルに移す">
+              ファイルを紐づける
+            </button>
+            <button
+              onClick={onFindInFolder}
+              disabled={busy || !file.hash}
+              title={
+                file.hash
+                  ? "フォルダを選んで、その中から同じ音声のファイルを探す"
+                  : "ハッシュ値がないため、同じ音声のファイルを探せません"
+              }
+            >
+              指定フォルダから自動で探す
             </button>
           </div>
         </>

@@ -17,13 +17,15 @@ export type Player = {
 type Options = {
   onInfo: (text: string) => void;
   onError: (text: string) => void;
+  /** ファイルを鳴らし始めたとき（試聴とプレイリストの1曲ごと。「直近で再生したもの」に記録する） */
+  onPlayed: (fileId: number) => void;
 };
 
 /**
  * 1つの audio 要素で、試聴（1件）とプレイリストの連続再生を行う。
  * どちらかを始めると、もう一方は止まる。
  */
-export function useAudioPlayer({ onInfo, onError }: Options) {
+export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
   const audioRef = useRef<HTMLAudioElement>(null);
   /** 試聴中のファイル */
   const [previewFile, setPreviewFile] = useState<AudioFile | null>(null);
@@ -62,6 +64,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
     setPlayer(null);
     audio.src = convertFileSrc(path);
     setPreviewFile(file);
+    onPlayed(file.id);
     audio.play().catch((e) => {
       setPreviewFile(null);
       onError(`再生できませんでした: ${file.relPath}（${e}）`);
@@ -79,6 +82,7 @@ export function useAudioPlayer({ onInfo, onError }: Options) {
       return;
     }
     const entry = p.queue[index];
+    onPlayed(entry.fileId);
     const next = { ...p, index, paused: false, preparing: entry.effects.length > 0 };
     setPlayer(next);
     setPreviewFile(null);

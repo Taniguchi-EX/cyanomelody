@@ -48,7 +48,12 @@ export type FileFilter = {
   fileIds: number[] | null;
   /** このライブラリフォルダのファイルだけ。null なら絞り込まない */
   folderId: number | null;
+  /** 直近で再生したファイルだけ（新しく再生した順に並ぶ） */
+  recentOnly: boolean;
 };
+
+/** ひも付けた結果。ライブラリに登録したフォルダがあれば、そのパス */
+export type LinkOutcome = { path: string; addedFolder: string | null };
 
 /** 絞り込みの各項目を選んだときの件数。0件の項目は入らない */
 export type Facets = {
@@ -57,6 +62,10 @@ export type Facets = {
   /** id が null は「（出典なし）」 */
   sources: CountItem[];
   licenses: CountItem[];
+  /** 「その他」の各項目を選んだときの件数 */
+  duplicates: number;
+  recent: number;
+  missing: number;
 };
 
 /** 件数の内訳の1項目。id が null は「なし」 */
@@ -104,6 +113,12 @@ export const api = {
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
+  /** 見つからないファイルを、選んだファイルにひも付ける（ライブラリの外なら、そのファイルのフォルダを登録する） */
+  linkMissingFile: (fileId: number, path: string) => invoke<LinkOutcome>("link_missing_file", { fileId, path }),
+  /** 見つからないファイルと同じ音声のファイルをフォルダの中から探してひも付ける。見つからなければ null */
+  findMissingInFolder: (fileId: number, folder: string) =>
+    invoke<LinkOutcome | null>("find_missing_in_folder", { fileId, folder }),
+  recordPlay: (fileId: number) => invoke<void>("record_play", { fileId }),
   licenseTypes: () => invoke<LicenseType[]>("license_types"),
   listCredits: (kind: CreditKind) => invoke<Credit[]>("list_credits", { kind }),
   createCredit: (kind: CreditKind, input: CreditInput) => invoke<number>("create_credit", { kind, input }),

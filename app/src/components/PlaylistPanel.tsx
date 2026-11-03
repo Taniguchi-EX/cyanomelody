@@ -55,14 +55,18 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMov
       id="playlists"
       title="プレイリスト"
       selectedCount={0}
-      actions={
+      actions={(expand) => (
         <span className="row">
           <button onClick={onManageEffects} aria-label="エフェクトのまとまりを管理">
             エフェクト
           </button>
           <button
             className="icon"
-            onClick={() => setCreating(true)}
+            onClick={() => {
+              // たたんでいるときは、開いてから入力欄を出す
+              expand();
+              setCreating(true);
+            }}
             disabled={busy}
             title="プレイリストを作る"
             aria-label="プレイリストを作る"
@@ -70,7 +74,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMov
             ＋
           </button>
         </span>
-      }
+      )}
     >
       {creating && (
         <NameInput

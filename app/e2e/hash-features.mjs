@@ -7,6 +7,12 @@ import { connect, expect, parseArgs } from "./helpers.mjs";
 const { dataDir, shotDir } = parseArgs("hash-features.mjs");
 const hashDir = path.join(dataDir, "hash");
 const large = path.join(dataDir, "large");
+const outside = path.join(dataDir, "outside");
+// リンク切れのテスト（H11〜H15）で作るフォルダ。前に途中で止まって残っていると件数が変わるので、最初に消す
+const linkDir = path.join(hashDir, "link");
+const searchDir = path.join(dataDir, "link_search");
+const emptyDir = path.join(dataDir, "link_empty");
+for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });
 
 const ui = await connect(shotDir);
 const { page, step, shot, status, fileCount, row, waitIdle, addFolder, clearFilter, addTag } = ui;
@@ -33,6 +39,17 @@ async function scan() {
   await waitIdle();
 }
 const selectedHash = () => page.getByTestId("selected-hash").innerText();
+/** 名前に name を含むフォルダの行の「⟳」でスキャンする */
+async function scanFolder(name) {
+  await page.getByTestId("folder").filter({ hasText: name }).getByRole("button", { name: "スキャン", exact: true }).click();
+  await waitIdle();
+}
+/** 検索の欄に入れて、一覧をその名前のファイルに絞る（3万件のフォルダがあると、後ろの行は描かれないため） */
+async function search(text) {
+  await page.getByLabel("検索", { exact: true }).fill(text);
+  await page.waitForTimeout(500);
+}
+const tagsOf = (rel) => row(rel).locator(".chip").allInnerTexts();
 
 await step("H01", "フォルダを登録すると、ハッシュ値の計算が自動で始まり、終わると件数が出る", async () => {
   await hashingAfter(() => addFolder(hashDir));
@@ -54,7 +71,7 @@ await step("H03", "計算できなかったファイルは、理由が出て、�
 });
 
 await step("H04", "重複しているファイルだけに絞り込める（タグだけ違うファイルも重複になる）", async () => {
-  await page.getByRole("button", { name: "重複しているファイルだけ" }).click();
+  await ui.otherItem("duplicatesOnly").click();
   await page.waitForTimeout(400);
   expect((await fileCount()) === 3, `件数 ${await fileCount()}`);
   for (const rel of ["se1.mp3", "dup/se1_copy.mp3", "se1_retag.mp3"]) {
@@ -136,6 +153,110 @@ await step("H10", "ハッシュ値の計算を中止でき、次のスキャン�
   const done2 = parseInt(s2.match(/（(\d+)件/)?.[1] ?? "-1", 10);
   expect(s2.includes("計算しました") && done1 + done2 === 30000, `1回目 ${done1}件、2回目 ${s2}`);
   return `中止までに ${done1}件、続きの ${done2}件に ${Date.now() - t0}ms（中身がダミーで、すべて計算できないファイル）`;
+});
+
+// ===== リンク切れのファイルを、選んだファイル・フォルダからひも付ける =====
+
+await step("H11", "「ファイルを紐づける」：ライブラリの中のファイルを選ぶと、タグなどがそのファイルに移る（ハッシュ値は比べない）", async () => {
+  // H10 でフォルダを登録すると、そのフォルダだけの表示になるので、条件を外しておく
+  await clearFilter();
+  fs.mkdirSync(path.join(linkDir, "moved"), { recursive: true });
+  fs.copyFileSync(path.join(hashDir, "se2.wav"), path.join(linkDir, "l1.wav"));
+  await hashingAfter(() => scanFolder("hash"));
+  await search("l1");
+  await row("link/l1.wav").click();
+  await addTag("紐づけ");
+  fs.renameSync(path.join(linkDir, "l1.wav"), path.join(linkDir, "moved", "l1_moved.wav"));
+  await scanFolder("hash");
+  await search("l1");
+  await row("link/l1.wav").click();
+  const buttons = page.getByTestId("detail-panel");
+  expect((await buttons.getByRole("button", { name: "ファイルを紐づける" }).count()) === 1, "ボタンがない");
+  await shot("H11_リンク切れの操作");
+  await ui.setDialogReply(path.join(linkDir, "moved", "l1_moved.wav"));
+  await buttons.getByRole("button", { name: "ファイルを紐づける" }).click();
+  await waitIdle();
+  expect((await status()).includes("ひも付けました"), await status());
+  expect((await row("link/l1.wav").count()) === 0, "リンク切れのファイルが残っている");
+  expect((await tagsOf("link/moved/l1_moved.wav")).includes("紐づけ"), "タグが移らない");
+});
+
+await step("H12", "「ファイルを紐づける」：ライブラリの外のファイルを選ぶと、そのフォルダを登録してからひも付ける", async () => {
+  fs.rmSync(path.join(linkDir, "moved", "l1_moved.wav"));
+  await scanFolder("hash");
+  await search("l1");
+  await row("link/moved/l1_moved.wav").click();
+  const folders = await page.getByTestId("folder").count();
+  await ui.setDialogReply(path.join(outside, "se2_outside.wav"));
+  await page.getByRole("button", { name: "ファイルを紐づける" }).click();
+  await waitIdle();
+  const s = await status();
+  expect(s.includes("ライブラリに登録し") && s.includes("outside"), s);
+  expect((await page.getByTestId("folder").count()) === folders + 1, "フォルダが登録されない");
+  await search("se2_outside");
+  expect((await tagsOf("se2_outside.wav")).includes("紐づけ"), "タグが移らない");
+  await search("l1");
+  expect((await row("link/moved/l1_moved.wav").count()) === 0, "リンク切れのファイルが残っている");
+  await ui.waitHashing();
+});
+
+await step("H13", "「指定フォルダから自動で探す」：見つからなければ知らせ、見つかればフォルダを登録してひも付ける", async () => {
+  const original = path.join(outside, "se2_outside.wav");
+  const renamed = path.join(searchDir, "deep", "renamed.wav");
+  fs.mkdirSync(path.dirname(renamed), { recursive: true });
+  fs.mkdirSync(emptyDir, { recursive: true });
+  fs.copyFileSync(path.join(hashDir, "se1.mp3"), path.join(emptyDir, "other.mp3"));
+  fs.renameSync(original, renamed);
+  try {
+    await scanFolder("outside");
+    await search("se2_outside");
+    await row("se2_outside.wav").click();
+    const find = page.getByRole("button", { name: "指定フォルダから自動で探す" });
+    // 同じ音声がないフォルダ
+    const folders = await page.getByTestId("folder").count();
+    await ui.setDialogReply(emptyDir);
+    await find.click();
+    await waitIdle();
+    expect((await status()).includes("同じ音声のファイルは見つかりませんでした"), await status());
+    expect((await page.getByTestId("folder").count()) === folders, "見つからないのにフォルダが登録された");
+    // サブフォルダに、名前の違う同じ音声がある
+    await ui.setDialogReply(searchDir);
+    await find.click();
+    await waitIdle();
+    expect((await status()).includes("ひも付けました"), await status());
+    expect((await page.getByTestId("folder").count()) === folders + 1, "フォルダが登録されない");
+    await search("renamed");
+    expect((await tagsOf("deep/renamed.wav")).includes("紐づけ"), "タグが移らない");
+  } finally {
+    fs.renameSync(renamed, original);
+  }
+});
+
+await step("H14", "ハッシュ値のないリンク切れのファイルでは、「指定フォルダから自動で探す」は押せない", async () => {
+  const broken = path.join(hashDir, "broken.wav");
+  fs.renameSync(broken, `${broken}.moved`);
+  try {
+    await scanFolder("hash");
+    await search("broken");
+    await row("broken.wav").click();
+    const find = page.getByRole("button", { name: "指定フォルダから自動で探す" });
+    expect(await find.isDisabled(), "押せる");
+    expect((await find.getAttribute("title")).includes("ハッシュ値がない"), await find.getAttribute("title"));
+    expect(!(await page.getByRole("button", { name: "ファイルを紐づける" }).isDisabled()), "紐づけるが押せない");
+  } finally {
+    fs.renameSync(`${broken}.moved`, broken);
+  }
+});
+
+await step("H15", "再生の欄の曲の名前は、曲名がなければ拡張子を除いたファイル名（パスは出さない）", async () => {
+  await search("no_title");
+  await row("no_title.wav").getByRole("button", { name: "再生", exact: true }).click();
+  await page.waitForTimeout(500);
+  expect((await page.getByTestId("player-file").innerText()) === "no_title", await page.getByTestId("player-file").innerText());
+  expect((await page.getByTestId("player-file-name").innerText()) === "no_title.wav", "2行目にファイル名が出ない");
+  await row("no_title.wav").getByRole("button", { name: "停止", exact: true }).click();
+  await search("");
+  for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 await ui.finish();

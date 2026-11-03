@@ -158,6 +158,8 @@ export async function connect(shotDir) {
       );
       await page.waitForTimeout(1000);
     },
+    /** 左の欄の「その他」の項目（duplicatesOnly・recentOnly・missingOnly） */
+    otherItem: (key) => page.locator(`[data-testid=other][data-other=${key}]`),
     /** 左の欄の行の記号のボタン（✎・🗑）を押す。記号は行にマウスを乗せたときだけ出る */
     async rowAction(item, name) {
       await item.hover();

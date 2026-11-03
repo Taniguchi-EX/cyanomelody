@@ -10,8 +10,10 @@ mod facets;
 mod files;
 mod hashing;
 mod library;
+mod linking;
 mod metadata;
 mod playlists;
+mod recent;
 mod tags;
 mod tree;
 
@@ -186,6 +188,63 @@ async fn add_folder(app: AppHandle, state: State<'_, AppState>, path: String) ->
     let id = library::add_folder(&conn, Path::new(&path))?;
     allow_asset_dir(&app, &library::folder_path(&conn, id)?);
     library::scan_folder(&mut conn, id)
+}
+
+/// ひも付けた結果。ライブラリに登録したフォルダがあれば、そのパス
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LinkOutcome {
+    path: String,
+    added_folder: Option<String>,
+}
+
+/// 見つからないファイルを path のファイルにひも付ける。path がライブラリの外なら add_root を登録する
+fn link_missing(app: &AppHandle, conn: &mut Connection, missing: i64, path: &Path, add_root: &Path) -> Result<LinkOutcome> {
+    let (target, added) = linking::ensure_in_library(conn, path, add_root)?;
+    let added_folder = match added {
+        Some(id) => {
+            let folder = library::folder_path(conn, id)?;
+            allow_asset_dir(app, &folder);
+            Some(folder.to_string_lossy().into_owned())
+        }
+        None => None,
+    };
+    // 元の場所に戻っていたときは、スキャンで見つかったので、ひも付け直すものはない
+    if target != missing {
+        hashing::relink_to(conn, missing, target)?;
+    }
+    Ok(LinkOutcome { path: path.to_string_lossy().into_owned(), added_folder })
+}
+
+/// 見つからないファイルを、ユーザーが選んだファイルにひも付ける（ライブラリの外なら、そのファイルのフォルダを登録する）
+#[tauri::command]
+async fn link_missing_file(app: AppHandle, state: State<'_, AppState>, file_id: i64, path: String) -> Result<LinkOutcome> {
+    let path = PathBuf::from(path);
+    let parent = path.parent().ok_or_else(|| Error::invalid("フォルダが分かりません"))?.to_path_buf();
+    link_missing(&app, &mut state.conn(), file_id, &path, &parent)
+}
+
+/// 見つからないファイルと同じ音声のファイルを folder の中から探し、見つかればひも付ける（ライブラリの外なら folder を登録する）。
+/// 見つからなければ None
+#[tauri::command]
+async fn find_missing_in_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    file_id: i64,
+    folder: String,
+) -> Result<Option<LinkOutcome>> {
+    let mut conn = state.conn();
+    let folder = PathBuf::from(folder);
+    match linking::find_in_folder(&conn, file_id, &folder)? {
+        Some(found) => link_missing(&app, &mut conn, file_id, &found, &folder).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// ファイルを再生したことを記録する（「直近で再生したもの」）
+#[tauri::command]
+async fn record_play(state: State<'_, AppState>, file_id: i64) -> Result<()> {
+    recent::record_play(&state.conn(), file_id)
 }
 
 #[tauri::command]
@@ -589,6 +648,9 @@ pub fn run() {
             expand_playlist_item,
             playlists_with_file,
             existing_file_ids,
+            link_missing_file,
+            find_missing_in_folder,
+            record_play,
             remove_file_from_playlist,
         ])
         .run(tauri::generate_context!())
