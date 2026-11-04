@@ -120,7 +120,7 @@ await step("E05", "開いた元の項目の曲にかけて試聴できる（エ�
 
 await step("E06", "エフェクトセットを付けた項目だけ、エフェクトのかかった音で再生される", async () => {
   // 項目の並びはファイルの一覧の順（mp3、wav）
-  await page.getByRole("button", { name: "順に再生" }).click();
+  await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `エフェクトのない曲: ${await audioSrc()}`);
   await page.getByRole("button", { name: "次へ" }).click();
@@ -200,7 +200,7 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   // wav の項目にだけエフェクトセットを付ける（項目の並びは mp3、wav）
   await fx("chime.wav").selectOption({ label: "新しいエフェクトセット" });
   await waitIdle();
-  await page.getByRole("button", { name: "順に再生" }).click();
+  await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `選ぶ前: ${await audioSrc()}`);
   // 鳴らしている間に選ぶと、その曲にすぐかかる
@@ -219,7 +219,7 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   expect((await playerFx.locator("option:checked").innerText()) === "新しいエフェクトセット", "再読み込みで消えた");
   await playerFx.selectOption({ label: "fx なし" });
   await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
-  await page.getByRole("button", { name: "順に再生" }).click();
+  await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `fx なし: ${await audioSrc()}`);
   await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
@@ -242,7 +242,7 @@ await step("E13", "再生の欄のエフェクトセットからも管理画面�
   expect((await playerFx.locator("option:checked").innerText()) === "再生の欄の fx", `選ばれない: ${await playerFx.locator("option:checked").innerText()}`);
   expect((await options()).endsWith("新しいfxを作る,このfxを編集"), await options());
   // 鳴らしている間に「このfxを編集」：そのエフェクトセットを選んで開き、鳴らしている曲で試聴できる
-  await page.getByRole("button", { name: "順に再生" }).click();
+  await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   await playerFx.selectOption({ label: "このfxを編集" });
   await dialog().waitFor({ timeout: 3000 });

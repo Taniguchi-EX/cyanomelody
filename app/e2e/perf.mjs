@@ -110,7 +110,7 @@ await step("PF04", "3万件が対象のタグの組み合わせを再生し始�
   await waitIdle();
   await ui.filtered(() => tagItem("大量").locator(".tag-name").click());
   const t0 = Date.now();
-  await page.getByRole("button", { name: "順に再生" }).click();
+  await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying(30000);
   const ms = Date.now() - t0;
   const position = await page.getByTestId("player-position").innerText();

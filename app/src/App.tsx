@@ -59,16 +59,6 @@ import { useStoredNumber, useStoredString } from "./storage";
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
 const LIST_NAME = "ファイルの一覧";
 
-/** 並びをばらばらにした写し（フィッシャー–イェーツ） */
-function shuffled<T>(list: T[]): T[] {
-  const out = [...list];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 /** 「ファイルを紐づける」で選べるファイル（スキャンの対象と同じ拡張子） */
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a"];
 
@@ -797,37 +787,37 @@ export default function App() {
 
   /**
    * 再生の順番を作って鳴らす。鳴らすファイルがなければ、そのことを出す。
-   * name は再生の欄に出す名前、sourceId は再生しているプレイリスト（詳細画面で再生中の項目を示すのに使う）
+   * name は再生の欄に出す名前、sourceId は再生しているプレイリスト（詳細画面で再生中の項目を示すのに使う）。
+   * 読み込んだ並び（中の項目の再生方法は当てはめたもの）に、再生の欄で選んだ再生方法を当てはめて鳴らす
    */
   const startQueue = async (name: string, load: () => Promise<PlayEntry[]>, sourceId: number | null, empty: string) => {
     try {
-      const queue = await load();
-      if (queue.length === 0) showInfo(empty);
-      else audio.playQueue(name, queue, 0, sourceId);
+      const source = await load();
+      if (source.length === 0) showInfo(empty);
+      else audio.playSource(name, source, null, sourceId);
     } catch (e) {
       showError(e);
     }
   };
 
-  const playPlaylist = (id: number, mode: PlayMode = "order") =>
-    startQueue(playlistName(id), () => playlistApi.expand(id, mode), id, `「${playlistName(id)}」には再生するファイルがありません`);
+  /** プレイリストを、再生の欄で選んだ再生方法で再生する（プレイリスト自体は順に展開してから当てはめる） */
+  const playPlaylist = (id: number) =>
+    startQueue(playlistName(id), () => playlistApi.expand(id, "order"), id, `「${playlistName(id)}」には再生するファイルがありません`);
 
   /**
    * 表示中のファイルの一覧を、プレイリストのように再生する（試聴）。見つからないファイルは除く。
-   * 再生を始めたときの一覧で再生し、途中で絞り込みを変えても順番は変わらない。start があればその曲から
+   * 再生を始めたときの一覧で再生し、途中で絞り込みを変えても順番は変わらない。start があればその曲から（再生方法に従う）
    */
-  const playList = (mode: PlayMode, start?: AudioFile) => {
-    let queue: PlayEntry[] = files
+  const playList = (start?: AudioFile) => {
+    const source: PlayEntry[] = files
       .filter((f) => !f.missing)
       .map((f) => ({ fileId: f.id, relPath: f.relPath, path: f.path, alias: null, chains: [], itemId: null }));
-    if (queue.length === 0) {
+    if (source.length === 0) {
       showInfo("再生するファイルがありません");
       return;
     }
-    if (mode === "shuffle") queue = shuffled(queue);
-    if (mode === "random") queue = [queue[Math.floor(Math.random() * queue.length)]];
-    const index = start ? Math.max(0, queue.findIndex((e) => e.fileId === start.id)) : 0;
-    audio.playQueue(LIST_NAME, queue, index);
+    const index = start ? source.findIndex((e) => e.fileId === start.id) : -1;
+    audio.playSource(LIST_NAME, source, index >= 0 ? index : null);
   };
 
   /** 鳴らしているファイル（一覧の再生・プレイリストの再生・エフェクトの試聴） */
@@ -836,7 +826,7 @@ export default function App() {
   /** 一覧の行の「▶」：その行から一覧を再生する。鳴らしている行なら止める */
   const toggleRowPlay = (file: AudioFile) => {
     if (playingFileId === file.id) audio.stop();
-    else playList("order", file);
+    else playList(file);
   };
 
   const playPlaylistItem = (item: PlaylistItem) =>
@@ -1092,7 +1082,9 @@ export default function App() {
         time={audio.time}
         // プレイリストを開いていればそのプレイリスト、開いていなければ表示中の一覧を再生する
         canPlayOpen={playlistDetail !== null || files.some((f) => !f.missing)}
-        onPlayOpen={(mode) => (playlistDetail ? playPlaylist(playlistDetail.id, mode) : playList(mode))}
+        onPlayOpen={() => (playlistDetail ? playPlaylist(playlistDetail.id) : playList())}
+        playMode={audio.playMode}
+        onPlayMode={audio.setPlayMode}
         onSeek={audio.seek}
         onPrev={audio.prev}
         onNext={audio.next}

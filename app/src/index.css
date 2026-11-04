@@ -358,6 +358,12 @@ h2:first-child {
   padding-right: 0;
 }
 
+/* 再生方法のボタン（記号の幅がそれぞれ違うので、幅をそろえて「■」の位置が動かないようにする） */
+.play-buttons button.play-mode {
+  width: 2em;
+  text-align: center;
+}
+
 
 
 .play-seek {

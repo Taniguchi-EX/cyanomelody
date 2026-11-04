@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
-import { api, PLAY_MODES, type PlayMode } from "../api";
+import { api } from "../api";
 import type { EffectChain } from "../effects";
 import { stem } from "../paths";
-import type { Player, PreviewTarget } from "../hooks/useAudioPlayer";
+import { PLAYER_MODES, type Player, type PlayerMode, type PreviewTarget } from "../hooks/useAudioPlayer";
 
 type Props = {
   /** プレイリストの再生。何も再生していなければ null */
   player: Player | null;
   /** 再生中の位置と長さ（秒） */
   time: { current: number; duration: number };
-  /** 詳細画面で開いているプレイリストがあるか（「▶」「🔀」「🎲」で再生する） */
+  /** 何も再生していないときに「▶」で再生するものがあるか（開いているプレイリストか、表示中のファイルの一覧） */
   canPlayOpen: boolean;
-  /** 開いているプレイリストを、その方法で最初から再生する */
-  onPlayOpen: (mode: PlayMode) => void;
+  /** 開いているプレイリスト（なければ表示中のファイルの一覧）を、選んでいる再生方法で再生する */
+  onPlayOpen: () => void;
+  /** 再生方法（再生方法のボタンで、押すたびに変わる） */
+  playMode: PlayerMode;
+  onPlayMode: (mode: PlayerMode) => void;
   onSeek: (ratio: number) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -42,7 +45,6 @@ const EDIT_FX = "edit-fx";
 const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
 const SEEK_STEPS = 1000;
-const modeOf = (mode: PlayMode) => PLAY_MODES.find((m) => m.mode === mode)!;
 
 /** ウィンドウの下の、プレイリストの再生の欄。何も再生していないときも出しておく */
 // 中央の丸の中の記号。文字（▶⏸）は書体によって中心がずれるので、図形で描く
@@ -64,6 +66,8 @@ export function PlayerBar({
   time,
   canPlayOpen,
   onPlayOpen,
+  playMode,
+  onPlayMode,
   onSeek,
   onPrev,
   onNext,
@@ -101,8 +105,10 @@ export function PlayerBar({
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
   // 鳴らしている曲にプレイリストの項目のエフェクトがかかるときは、再生の欄のエフェクトセットはかけない
   const itemFx = (entry?.chains.length ?? 0) > 0;
-  const shuffle = modeOf("shuffle");
-  const random = modeOf("random");
+  // 再生方法のボタン：今の再生方法と、押したときに変わる先
+  const modeIndex = PLAYER_MODES.findIndex((m) => m.mode === playMode);
+  const mode = PLAYER_MODES[modeIndex];
+  const nextMode = PLAYER_MODES[(modeIndex + 1) % PLAYER_MODES.length];
 
   // 中央の「▶」：再生中は一時停止・再開。何も再生していなければ、開いているプレイリストを順に再生する
   const main = player
@@ -113,9 +119,9 @@ export function PlayerBar({
         disabled: player.preparing,
       }
     : {
-        label: modeOf("order").label,
+        label: "再生を始める",
         icon: PLAY_ICON,
-        onClick: () => onPlayOpen("order"),
+        onClick: onPlayOpen,
         disabled: !canPlayOpen,
       };
 
@@ -190,23 +196,16 @@ export function PlayerBar({
               ⏭
             </button>
             <div className="play-modes">
+            {/* 再生方法：押すたびに 一曲だけ → 順に連続 → ランダム → ランダムセレクト と変わる。再生中なら今の曲の後に効く */}
             <button
-              className="icon"
-              onClick={() => onPlayOpen("shuffle")}
-              disabled={!canPlayOpen}
-              title={shuffle.label}
-              aria-label={shuffle.label}
+              className="icon play-mode"
+              onClick={() => onPlayMode(nextMode.mode)}
+              title={`再生方法：${mode.label}（押すと「${nextMode.label}」）`}
+              aria-label="再生方法"
+              data-testid="play-mode"
+              data-mode={mode.mode}
             >
-              {shuffle.icon}
-            </button>
-            <button
-              className="icon"
-              onClick={() => onPlayOpen("random")}
-              disabled={!canPlayOpen}
-              title={random.label}
-              aria-label={random.label}
-            >
-              {random.icon}
+              {mode.icon}
             </button>
             <button className="icon" onClick={onStop} disabled={!player} title="停止" aria-label="停止">
               ■
