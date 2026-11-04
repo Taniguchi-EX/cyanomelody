@@ -18,6 +18,7 @@ mod recent;
 mod romaji;
 mod settings;
 mod tags;
+mod transfer;
 mod tree;
 mod update;
 
@@ -307,6 +308,84 @@ async fn rename_tag(
 #[tauri::command]
 async fn set_tag_settings(state: State<'_, AppState>, tag_id: i64, settings: TagSettings) -> Result<()> {
     tags::set_tag_settings(&state.conn(), tag_id, &settings)
+}
+
+/// エクスポートで書き出した件数
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportSummary {
+    folders: usize,
+    files: usize,
+    tags: usize,
+    playlists: usize,
+    effect_chains: usize,
+    sources: usize,
+    licenses: usize,
+}
+
+/// データのエクスポート：選んだ項目を path に JSON で書き出す。screen は画面の設定
+#[tauri::command]
+async fn export_data(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    sections: transfer::Sections,
+    screen: Option<serde_json::Map<String, serde_json::Value>>,
+) -> Result<ExportSummary> {
+    let data = transfer::export(&state.conn(), sections, &app.package_info().version.to_string(), screen)?;
+    let json = serde_json::to_string_pretty(&data).map_err(|e| Error::invalid(e.to_string()))?;
+    std::fs::write(&path, json)?;
+    Ok(ExportSummary {
+        folders: data.folders.len(),
+        files: data.files.len(),
+        tags: data.tags.len(),
+        playlists: data.playlists.len(),
+        effect_chains: data.effect_chains.len(),
+        sources: data.sources.len(),
+        licenses: data.licenses.len(),
+    })
+}
+
+fn read_data_file(path: &str) -> Result<transfer::DataFile> {
+    transfer::parse(&std::fs::read_to_string(path)?)
+}
+
+/// インポートの見込み（中身の件数、見つかる曲の数、置き換えで消える件数）
+#[tauri::command]
+async fn inspect_import(state: State<'_, AppState>, path: String) -> Result<transfer::ImportPreview> {
+    let data = read_data_file(&path)?;
+    transfer::preview(&state.conn(), &data)
+}
+
+/// データのインポート：ファイルに入っている項目のうち、選んだものを取り込む。replace なら、選んだ項目の今のデータを置き換える
+#[tauri::command]
+async fn import_data(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    sections: transfer::Sections,
+    replace: bool,
+) -> Result<transfer::ImportResult> {
+    let data = read_data_file(&path)?;
+    let has = data.sections;
+    let sections = transfer::Sections {
+        library: sections.library && has.library,
+        tags: sections.tags && has.tags,
+        playlists: sections.playlists && has.playlists,
+        credits: sections.credits && has.credits,
+    };
+    let mut result = transfer::ImportResult::default();
+    let mut conn = state.conn();
+    // フォルダを登録してスキャンしてから、曲を見分ける
+    if sections.library {
+        transfer::import_folders(&conn, &data, replace, &mut result)?;
+        for &id in &result.folders_added {
+            allow_asset_dir(&app, &library::folder_path(&conn, id)?);
+            library::scan_folder(&mut conn, id)?;
+        }
+    }
+    transfer::import_data(&mut conn, &data, sections, replace, &mut result)?;
+    Ok(result)
 }
 
 /// 新しく作るタグの既定値（設定画面の「一般」）
@@ -657,6 +736,9 @@ pub fn run() {
             rename_tag,
             set_tag_settings,
             new_tag_settings,
+            export_data,
+            inspect_import,
+            import_data,
             set_new_tag_settings,
             delete_tag,
             move_tag,

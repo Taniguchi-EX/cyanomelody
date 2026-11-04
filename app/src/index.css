@@ -1416,3 +1416,33 @@ button.add-button:hover:not(:disabled) {
   padding: 6px;
   border-radius: 4px;
 }
+
+/* 設定画面の「データ」：エクスポート・インポートの項目 */
+.data-tab section + section {
+  margin-top: 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.data-check {
+  display: block;
+  margin: 3px 0;
+}
+
+.data-check.disabled {
+  color: var(--muted, #888);
+}
+
+.data-tab .row {
+  margin: 6px 0;
+  gap: 12px;
+}
+
+.import-preview {
+  margin-top: 8px;
+}
+
+.import-result {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}

@@ -1158,7 +1158,17 @@ export default function App() {
           onClose={() => setEffectDialog(null)}
         />
       )}
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} onError={showSettingsError} />}
+      {settingsOpen && (
+        <SettingsDialog
+          onClose={() => setSettingsOpen(false)}
+          onError={showSettingsError}
+          onImported={(r) => {
+            showInfo("データを取り込みました");
+            reloadAll().catch(showError);
+            if (r.foldersAdded.length > 0) startHashing();
+          }}
+        />
+      )}
       {update && update !== skippedUpdate && (
         <UpdateDialog
           version={update}

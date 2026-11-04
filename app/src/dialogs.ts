@@ -1,4 +1,4 @@
-import { open, type OpenDialogOptions } from "@tauri-apps/plugin-dialog";
+import { open, save, type OpenDialogOptions, type SaveDialogOptions } from "@tauri-apps/plugin-dialog";
 
 declare global {
   interface Window {
@@ -14,4 +14,10 @@ export async function pickPath(options: Omit<OpenDialogOptions, "multiple">): Pr
   if (window.__dialogReply !== undefined) return window.__dialogReply;
   const selected = await open({ ...options, multiple: false });
   return typeof selected === "string" ? selected : null;
+}
+
+/** 保存先のファイルを選ぶOSのダイアログ。キャンセルしたら null（画面テストでは window.__dialogReply を返す） */
+export async function pickSavePath(options: SaveDialogOptions): Promise<string | null> {
+  if (window.__dialogReply !== undefined) return window.__dialogReply;
+  return await save(options);
 }

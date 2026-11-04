@@ -1,25 +1,29 @@
 import { useEffect, useState } from "react";
-import { api, type ChildSort, type TagSettings } from "../api";
+import { api, type ChildSort, type ImportResult, type TagSettings } from "../api";
 import { useEscape } from "../hooks/useEscape";
 import { useStoredString } from "../storage";
 import { DEFAULT_BG, DEFAULT_FG, SORTS } from "../tagSettings";
 import { ColorRow } from "./TagDetail";
 import { LicenseTab } from "./LicenseTab";
+import { DataTab } from "./DataTab";
 
 type Props = {
   onClose: () => void;
   onError: (e: unknown) => void;
+  /** データを取り込んだ後 */
+  onImported: (result: ImportResult) => void;
 };
 
 const TABS = [
   { key: "general", label: "一般" },
+  { key: "data", label: "データ" },
   { key: "license", label: "バージョンとライセンス" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
 
 /** 設定画面。再生の欄の右端の歯車から開く。タブごとに中身を出す */
-export function SettingsDialog({ onClose, onError }: Props) {
+export function SettingsDialog({ onClose, onError, onImported }: Props) {
   // 前に開いていたタブ（最初は「一般」）
   const [stored, setStored] = useStoredString("cyanomelody.settingsTab");
   const tab: TabKey = TABS.find((t) => t.key === stored)?.key ?? "general";
@@ -45,7 +49,9 @@ export function SettingsDialog({ onClose, onError }: Props) {
           ))}
         </div>
         <div className="tab-body" role="tabpanel">
-          {tab === "general" ? <GeneralTab onError={onError} /> : <LicenseTab onError={onError} />}
+          {tab === "general" && <GeneralTab onError={onError} />}
+          {tab === "data" && <DataTab onError={onError} onImported={onImported} />}
+          {tab === "license" && <LicenseTab onError={onError} />}
         </div>
       </div>
     </div>

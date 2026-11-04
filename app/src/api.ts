@@ -156,6 +156,14 @@ export const api = {
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
+  /** データのエクスポート：選んだ項目を path に書き出す。screen は画面の設定 */
+  exportData: (path: string, sections: DataSections, screen: Record<string, unknown> | null) =>
+    invoke<ExportSummary>("export_data", { path, sections, screen }),
+  /** インポートの見込み */
+  inspectImport: (path: string) => invoke<ImportPreview>("inspect_import", { path }),
+  /** データのインポート。replace なら、選んだ項目の今のデータを置き換える */
+  importData: (path: string, sections: DataSections, replace: boolean) =>
+    invoke<ImportResult>("import_data", { path, sections, replace }),
   /** 新しく作るタグの既定値（設定画面の「一般」） */
   newTagSettings: () => invoke<TagSettings>("new_tag_settings"),
   setNewTagSettings: (settings: TagSettings) => invoke<void>("set_new_tag_settings", { settings }),
@@ -361,3 +369,77 @@ export function describeExport(p: ExportProgress): string {
   if (p.failed) parts.push(`書き出せなかったファイル ${p.failed}件`);
   return `${p.cancelled ? "書き出しを中止しました" : "書き出しました"}（${parts.join("、")}）: `;
 }
+
+/** エクスポート・インポートする項目 */
+export type DataSections = {
+  /** ライブラリ（登録したフォルダ） */
+  library: boolean;
+  /** タグと曲へのタグ付け */
+  tags: boolean;
+  /** プレイリストとエフェクトセット */
+  playlists: boolean;
+  /** 出典・ライセンスと曲への設定、新しく作るタグの既定値、画面の設定 */
+  credits: boolean;
+};
+
+/** エクスポートで書き出した件数 */
+export type ExportSummary = {
+  folders: number;
+  files: number;
+  tags: number;
+  playlists: number;
+  effectChains: number;
+  sources: number;
+  licenses: number;
+};
+
+/** インポートの見込み */
+export type ImportPreview = {
+  sections: DataSections;
+  appVersion: string;
+  /** 書き出した日時（UNIX 時間の秒） */
+  exportedAt: number;
+  folders: number;
+  /** このPCにあるフォルダの数 */
+  foldersFound: number;
+  files: number;
+  tags: number;
+  playlists: number;
+  effectChains: number;
+  sources: number;
+  licenses: number;
+  /** 今のライブラリで見つかる曲 */
+  matchedByPath: number;
+  matchedByHash: number;
+  matchedByName: number;
+  /** ハッシュ値をまだ計算していない曲の数 */
+  pendingHashes: number;
+  /** 「置き換える」で消える、今のデータの数 */
+  current: {
+    foldersNotInFile: number;
+    tags: number;
+    playlists: number;
+    effectChains: number;
+    sources: number;
+    licenses: number;
+  };
+};
+
+/** インポートの結果 */
+export type ImportResult = {
+  foldersAdded: number[];
+  foldersSkipped: number;
+  foldersRemoved: number;
+  filesMatched: number;
+  filesUnmatched: number;
+  tagsAdded: number;
+  fileTagsAdded: number;
+  sourcesAdded: number;
+  licensesAdded: number;
+  creditsSet: number;
+  effectChainsAdded: number;
+  playlistsAdded: number;
+  itemsSkipped: number;
+  /** 取り込んだ画面の設定 */
+  screen: Record<string, unknown> | null;
+};
