@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Facets, FileFilter } from "../api";
-import { DURATION_LIMITS, OTHER_ITEMS, type DurationKey, type OtherKey } from "../otherFilters";
+import { DURATION_LIMITS, OTHER_ITEMS, parseDuration, type DurationKey, type OtherKey } from "../otherFilters";
 import { Collapsible } from "./Collapsible";
 
 type Props = {
@@ -12,20 +12,11 @@ type Props = {
   facets: Facets | null;
 };
 
-const DURATION_UNITS = [
-  { key: "h", label: "時", seconds: 3600 },
-  { key: "m", label: "分", seconds: 60 },
-  { key: "s", label: "秒", seconds: 1 },
-] as const;
-
-/** 入力欄の文字を数にする（数字だけ。空は0） */
-const digits = (text: string) => text.replace(/[^0-9]/g, "");
-
 /** 左の欄の「その他」。重複・直近で再生・リンク切れ・長さで絞り込む（項目どうしとほかの条件はAND） */
 export function OtherPanel({ filter, onToggle, onDuration, facets }: Props) {
-  // 長さの入力欄（時・分・秒）。条件を加えた後も残す
-  const [parts, setParts] = useState({ h: "", m: "", s: "" });
-  const seconds = DURATION_UNITS.reduce((sum, u) => sum + Number(parts[u.key] || 0) * u.seconds, 0);
+  // 長さの入力欄（時:分:秒）。条件を加えた後も残す
+  const [durationText, setDurationText] = useState("00:00:00");
+  const seconds = parseDuration(durationText);
   const selectedCount =
     OTHER_ITEMS.filter((i) => filter[i.key]).length + DURATION_LIMITS.filter((l) => filter[l.key] !== null).length;
   return (
@@ -53,27 +44,24 @@ export function OtherPanel({ filter, onToggle, onDuration, facets }: Props) {
           );
         })}
       </ul>
-      {/* 長さ：時・分・秒を入れて「以上」「以下」で条件を加える（それぞれ1つまで。押し直すと置き換わる） */}
+      {/* 長さ：「時:分:秒」を入れて「以上」「以下」で条件を加える（それぞれ1つまで。押し直すと置き換わる） */}
       <div className="duration-filter" data-testid="duration-input">
         <span className="chip-icon">⏱</span>
         <span className="duration-label">長さ</span>
-        {DURATION_UNITS.map((u) => (
-          <label key={u.key} className="duration-part">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={parts[u.key]}
-              onChange={(e) => setParts((p) => ({ ...p, [u.key]: digits(e.target.value) }))}
-              aria-label={`長さの${u.label}`}
-            />
-            {u.label}
-          </label>
-        ))}
+        <input
+          type="text"
+          className={seconds === null ? "invalid" : undefined}
+          value={durationText}
+          onChange={(e) => setDurationText(e.target.value)}
+          onFocus={(e) => e.target.select()}
+          aria-label="長さ"
+          title="時:分:秒（「分:秒」「秒」でもよい）"
+        />
         {DURATION_LIMITS.map((l) => (
           <button
             key={l.key}
-            onClick={() => onDuration(l.key, seconds)}
-            disabled={seconds === 0}
+            onClick={() => seconds && onDuration(l.key, seconds)}
+            disabled={!seconds}
             title={`長さがこれ${l.label}のファイルに絞り込む`}
           >
             {l.label}

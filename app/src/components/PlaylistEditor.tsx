@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PLAY_MODES, type PlayMode, type PlaylistDetail, type PlaylistItem, type PlaylistNode, type Tag } from "../api";
 import { makesLoop } from "../playlistGraph";
 import type { EffectChain } from "../effects";
@@ -25,6 +25,9 @@ type Props = {
   playingItemId: number | null;
   /** 項目の行を押したとき（右の欄にその項目を出す） */
   onFocusItem: (item: PlaylistItem) => void;
+  /** この項目の行までスクロールする（seq が変わるたびに）。スクロールしたら onRevealed を呼ぶ */
+  reveal: { id: number; seq: number } | null;
+  onRevealed: () => void;
   chains: EffectChain[];
   /** 項目にエフェクトセットを付ける（null なら外す）。チェックした項目の fx を変えたときは、チェックした項目すべて */
   onSetChain: (items: PlaylistItem[], chainId: number | null) => void;
@@ -76,6 +79,8 @@ export function PlaylistEditor({
   focusedItemId,
   playingItemId,
   onFocusItem,
+  reveal,
+  onRevealed,
   chains,
   onSetChain,
   onOpenEffects,
@@ -97,6 +102,16 @@ export function PlaylistEditor({
       else next.add(id);
       return next;
     });
+  // 再生の欄の曲名を押したとき、その項目の行までスクロールする（プレイリストを開いた直後なら、項目を読み終えてから）
+  const itemsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    const row = itemsRef.current?.querySelector(`[data-item-id="${reveal.id}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    onRevealed();
+  }, [reveal, detail.items, onRevealed]);
+
   /** 操作の対象：チェックした項目を操作したならチェックした項目すべて、そうでなければその項目だけ */
   const targetsOf = (item: PlaylistItem) => (checked.has(item.id) ? checkedItems : [item]);
   // 項目の行をつかんで、左の欄に落とす（チェックした行ならチェックした項目すべて）
@@ -199,7 +214,7 @@ export function PlaylistEditor({
             </button>
           </div>
         )}
-        <div className="playlist-items">
+        <div className="playlist-items" ref={itemsRef}>
           {detail.items.length === 0 && <div className="empty">項目はまだありません</div>}
           {detail.items.map((item, index) => (
             <div
@@ -214,6 +229,7 @@ export function PlaylistEditor({
                 (item.file?.missing ? " missing" : "")
               }
               data-testid="playlist-item"
+              data-item-id={item.id}
               data-item-index={index}
               data-item-kind={item.kind}
               // 行の中のボタン・プルダウン・チェックボックス・取っ手を押したときは、その操作だけにする

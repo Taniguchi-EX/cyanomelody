@@ -196,7 +196,7 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   const playerFx = page.getByTestId("player-fx");
   expect((await playerFx.inputValue()) === "", `最初の選択 ${await playerFx.inputValue()}`);
   const options = await playerFx.locator("option").allInnerTexts();
-  expect(options.join(",") === "fx なし,新しいエフェクトセット", options.join(","));
+  expect(options.join(",") === "fx なし,新しいエフェクトセット,新しいfxを作る", options.join(","));
   // wav の項目にだけエフェクトセットを付ける（項目の並びは mp3、wav）
   await fx("chime.wav").selectOption({ label: "新しいエフェクトセット" });
   await waitIdle();
@@ -222,6 +222,37 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   await page.getByRole("button", { name: "順に再生" }).click();
   await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `fx なし: ${await audioSrc()}`);
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+});
+
+await step("E13", "再生の欄のエフェクトセットからも管理画面を開ける：「新しいfxを作る」で作ると再生の欄で選ばれ、「このfxを編集」（選んでいるときだけ）でそれを選んで開く。試聴は鳴らしている曲で", async () => {
+  const playerFx = page.getByTestId("player-fx");
+  const options = () => playerFx.locator("option").allInnerTexts().then((t) => t.join(","));
+  // 「fx なし」のときは「このfxを編集」がない
+  expect((await options()) === "fx なし,新しいエフェクトセット,新しいfxを作る", await options());
+  // 何も鳴らしていないときは試聴できない
+  await playerFx.selectOption({ label: "新しいfxを作る" });
+  await dialog().waitFor({ timeout: 3000 });
+  expect((await nameField().inputValue()).startsWith("新しいエフェクトセット"), `名前: [${await nameField().inputValue()}]`);
+  expect(await page.getByRole("button", { name: "試聴", exact: true }).isDisabled(), "鳴らしていないのに試聴できる");
+  await nameField().fill("再生の欄の fx");
+  await addEffect("gain");
+  await save();
+  await close();
+  expect((await playerFx.locator("option:checked").innerText()) === "再生の欄の fx", `選ばれない: ${await playerFx.locator("option:checked").innerText()}`);
+  expect((await options()).endsWith("新しいfxを作る,このfxを編集"), await options());
+  // 鳴らしている間に「このfxを編集」：そのエフェクトセットを選んで開き、鳴らしている曲で試聴できる
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  await playerFx.selectOption({ label: "このfxを編集" });
+  await dialog().waitFor({ timeout: 3000 });
+  expect((await chainItem("再生の欄の fx").getAttribute("class")).includes("active"), "そのエフェクトセットが選ばれていない");
+  const previewButton = dialog().locator(".preview-button");
+  expect(!(await previewButton.isDisabled()) && (await previewButton.innerText()).includes("chime.mp3"), await previewButton.innerText());
+  await shot("E13_再生の欄から開いた管理画面");
+  await close();
+  // 開いても、再生の欄の選択は変わらない
+  expect((await playerFx.locator("option:checked").innerText()) === "再生の欄の fx", "選択が変わった");
   await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
 });
 

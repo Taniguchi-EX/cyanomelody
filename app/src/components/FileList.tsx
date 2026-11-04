@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
 import { baseName } from "../paths";
@@ -31,6 +31,9 @@ type Props = {
   onDrop: (fileIds: number[], target: FileDropTarget) => void;
   /** タグのidから、チップの色を引く表（色のないタグは入らない） */
   tagStyles: Map<number, CSSProperties>;
+  /** この行までスクロールする（seq が変わるたびに）。スクロールしたら onRevealed を呼ぶ */
+  reveal: { id: number; seq: number } | null;
+  onRevealed: () => void;
 };
 
 export function FileList({
@@ -46,6 +49,8 @@ export function FileList({
   showHash,
   onDrop,
   tagStyles,
+  reveal,
+  onRevealed,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -55,6 +60,13 @@ export function FileList({
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  useEffect(() => {
+    if (!reveal) return;
+    const index = files.findIndex((f) => f.id === reveal.id);
+    if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
+    onRevealed();
+  }, [reveal, files, virtualizer, onRevealed]);
 
   return (
     <>

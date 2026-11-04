@@ -55,6 +55,43 @@ pub struct FileFilter {
     /// 長さ（秒）がこれ以上・以下のファイルに絞り込む。長さのないファイルは出さない
     pub min_duration: Option<f64>,
     pub max_duration: Option<f64>,
+    /// 一覧の並び順（絞り込みには使わない）。同じ値どうしはパス順
+    pub sort: FileSort,
+    pub sort_desc: bool,
+}
+
+/// ファイルの一覧の並び順
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FileSort {
+    /// ライブラリフォルダのパス、相対パスの順
+    #[default]
+    Path,
+    /// フォルダを除いたファイル名（大文字・小文字は区別しない）
+    Name,
+    /// ライブラリに追加した日時
+    Added,
+    /// ファイルの更新日時
+    Modified,
+    /// 長さ。長さのないファイルは、昇順・降順とも最後
+    Duration,
+}
+
+impl FileSort {
+    /// ORDER BY に書く式（パス順の前に置く）。パス順なら None
+    fn key(self, desc: bool) -> Option<String> {
+        let dir = if desc { "DESC" } else { "ASC" };
+        Some(match self {
+            FileSort::Path => return None,
+            // 最後の「/」の後ろ（rtrim で「/」以外を消した長さが、最後の「/」の位置になる）
+            FileSort::Name => format!(
+                "substr(a.rel_path, length(rtrim(a.rel_path, replace(a.rel_path, '/', ''))) + 1) COLLATE NOCASE {dir}"
+            ),
+            FileSort::Added => format!("a.added_at {dir}, a.id {dir}"),
+            FileSort::Modified => format!("a.modified_at {dir}"),
+            FileSort::Duration => format!("a.duration IS NULL, a.duration {dir}"),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -178,15 +215,23 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
          FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
          WHERE 1 = 1{conditions}"
     );
-    // 重複の一覧では、同じハッシュ値のファイルが並ぶようにする
-    // 直近で再生したものは、新しく再生した順にする
-    sql.push_str(&if filter.recent_only {
-        format!(" ORDER BY (SELECT seq FROM recent_plays r WHERE r.file_id = a.id) DESC, {FILE_ORDER}")
-    } else if filter.duplicates_only {
-        format!(" ORDER BY a.hash, {FILE_ORDER}")
+    // 直近で再生したものは、新しく再生した順にする（選んだ並び順は使わない）
+    // 重複の一覧では、同じハッシュ値のファイルが並ぶようにし、その中を選んだ順にする
+    let mut order: Vec<String> = Vec::new();
+    if filter.recent_only {
+        order.push("(SELECT seq FROM recent_plays r WHERE r.file_id = a.id) DESC".into());
     } else {
-        format!(" ORDER BY {FILE_ORDER}")
+        if filter.duplicates_only {
+            order.push("a.hash".into());
+        }
+        order.extend(filter.sort.key(filter.sort_desc));
+    }
+    order.push(if filter.sort == FileSort::Path && filter.sort_desc && !filter.recent_only {
+        "f.path DESC, a.rel_path DESC".into()
+    } else {
+        FILE_ORDER.into()
     });
+    sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
 
     // ファイルに付いたタグは、タグの一覧と同じ順に並べる
     let rank = tag_rank(conn)?;
@@ -418,6 +463,40 @@ mod tests {
         assert_eq!(list(None, Some(89.0)), vec!["a.wav"]);
         assert_eq!(list(Some(31.0), Some(89.0)), Vec::<String>::new());
         assert_eq!(list(Some(10.0), Some(60.0)), vec!["a.wav"]);
+    }
+
+    #[test]
+    fn sort_orders() {
+        let (_dir, conn) = setup();
+        let set = |rel: &str, added: i64, modified: i64, duration: Option<f64>| {
+            conn.execute(
+                "UPDATE audio_files SET added_at = ?2, modified_at = ?3, duration = ?4 WHERE rel_path = ?1",
+                params![rel, added, modified, duration],
+            )
+            .unwrap();
+        };
+        set("a.wav", 2, 30, Some(90.0));
+        set("b.mp3", 3, 10, None);
+        set("sub/c_100%.flac", 1, 20, Some(30.0));
+        let list = |sort: FileSort, desc: bool| -> Vec<String> {
+            let f = FileFilter { sort, sort_desc: desc, ..Default::default() };
+            list_files(&conn, &f).unwrap().into_iter().map(|f| f.rel_path).collect()
+        };
+        assert_eq!(list(FileSort::Path, false), vec!["a.wav", "b.mp3", "sub/c_100%.flac"]);
+        assert_eq!(list(FileSort::Path, true), vec!["sub/c_100%.flac", "b.mp3", "a.wav"]);
+        assert_eq!(list(FileSort::Added, false), vec!["sub/c_100%.flac", "a.wav", "b.mp3"]);
+        assert_eq!(list(FileSort::Added, true), vec!["b.mp3", "a.wav", "sub/c_100%.flac"]);
+        assert_eq!(list(FileSort::Modified, true), vec!["a.wav", "sub/c_100%.flac", "b.mp3"]);
+        // 長さのないファイルは、どちらでも最後
+        assert_eq!(list(FileSort::Duration, false), vec!["sub/c_100%.flac", "a.wav", "b.mp3"]);
+        assert_eq!(list(FileSort::Duration, true), vec!["a.wav", "sub/c_100%.flac", "b.mp3"]);
+        // ファイル名はフォルダを除いて比べる（大文字・小文字は区別しない）
+        conn.execute("UPDATE audio_files SET rel_path = 'z/A.wav' WHERE rel_path = 'a.wav'", []).unwrap();
+        assert_eq!(list(FileSort::Name, false), vec!["z/A.wav", "b.mp3", "sub/c_100%.flac"]);
+        assert_eq!(list(FileSort::Name, true), vec!["sub/c_100%.flac", "b.mp3", "z/A.wav"]);
+        // 直近で再生したものの絞り込みでは、選んだ並び順は使わない
+        let recent = FileFilter { recent_only: true, sort: FileSort::Name, ..Default::default() };
+        assert!(list_files(&conn, &recent).unwrap().is_empty());
     }
 
     #[test]

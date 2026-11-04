@@ -13,7 +13,8 @@ type Props = {
 };
 
 const SORTS: { value: ChildSort | ""; label: string }[] = [
-  { value: "", label: "ドラッグで決めた順" },
+  { value: "", label: "親の設定を引き継ぐ" },
+  { value: "manual", label: "ドラッグで決めた順" },
   { value: "created", label: "登録順" },
   { value: "files", label: "ファイル数順" },
   { value: "romaji", label: "ローマ字順" },
@@ -77,6 +78,10 @@ export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
     if (await onSubmit(name, settings)) onClose();
   };
 
+  // 引き継ぐときに、実際に並べる順（親が実際に並べる順）
+  const inherited = parent ? { sort: parent.shownChildSort, desc: parent.shownChildSortDesc } : { sort: "manual", desc: false };
+  const sortLabel = (sort: ChildSort, desc: boolean) =>
+    SORTS.find((s) => s.value === sort)!.label + (sort === "manual" ? "" : desc ? "・降順" : "・昇順");
   // 見本の色。自分の色がなければ、親の表示の色を引き継ぐ
   const bg = settings.bgColor ?? parent?.shownBgColor ?? null;
   const fg = settings.fgColor ?? parent?.shownFgColor ?? null;
@@ -112,13 +117,19 @@ export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
             </select>
             <select
               aria-label="昇順・降順"
-              value={settings.childSortDesc ? "desc" : "asc"}
-              disabled={settings.childSort === null}
+              // 引き継ぐときは、引き継いだ昇順・降順を出す（選べない）
+              value={(settings.childSort === null ? inherited.desc : settings.childSortDesc) ? "desc" : "asc"}
+              disabled={settings.childSort === null || settings.childSort === "manual"}
               onChange={(e) => update({ childSortDesc: e.target.value === "desc" })}
             >
               <option value="asc">昇順</option>
               <option value="desc">降順</option>
             </select>
+            {settings.childSort === null && (
+              <span className="sub" data-testid="inherited-sort">
+                今は{sortLabel(inherited.sort as ChildSort, inherited.desc)}
+              </span>
+            )}
           </span>
           <ColorRow
             id="tag-detail-bg"

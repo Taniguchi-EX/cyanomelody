@@ -29,7 +29,15 @@ type Props = {
   /** 再生の欄で選んだエフェクトセット（null は「fx なし」） */
   baseChain: number | null;
   onBaseChain: (chainId: number | null) => void;
+  /** エフェクトセットの管理画面を開く。chainId を選んで開き、null なら新しいエフェクトセットを作る */
+  onOpenEffects: (chainId: number | null) => void;
+  /** 曲名を押したとき：鳴らしている曲を中央の欄に出す */
+  onJump: () => void;
 };
+
+/** fx のプルダウンの、管理画面を開く選び肢 */
+const NEW_FX = "new-fx";
+const EDIT_FX = "edit-fx";
 
 const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
@@ -68,6 +76,8 @@ export function PlayerBar({
   chains,
   baseChain,
   onBaseChain,
+  onOpenEffects,
+  onJump,
 }: Props) {
   const entry = player?.queue[player.index];
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
@@ -113,9 +123,22 @@ export function PlayerBar({
     <div className="play-area" data-testid="player-bar" data-playing={player !== null}>
       {/* 1行目に曲の名前、2行目にファイル名（1行目と同じなら出さない）・プレイリスト名・何曲目。試聴中はファイル名と「試聴」 */}
       <div className="play-now">
-        <div className="player-file" title={playingPath ?? undefined} data-testid="player-file">
-          {name}
-        </div>
+        {/* 押すと、鳴らしている曲（プレイリストの項目の行か、ライブラリの行）へ飛ぶ */}
+        {playing ? (
+          <div
+            className="player-file jump"
+            role="button"
+            tabIndex={0}
+            onClick={onJump}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onJump())}
+            title={`${playingPath}（押すと、この曲を出します）`}
+            data-testid="player-file"
+          >
+            {name}
+          </div>
+        ) : (
+          <div className="player-file" data-testid="player-file" />
+        )}
         {/* 2行目：ファイル名（相対パス）と、プレイリスト名・何曲目（試聴なら「試聴」） */}
         {player && (
           <div className="sub play-where">
@@ -216,7 +239,12 @@ export function PlayerBar({
         <select
           className={`player-fx${itemFx ? " overridden" : ""}`}
           value={baseChain ?? ""}
-          onChange={(e) => onBaseChain(e.target.value ? Number(e.target.value) : null)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === NEW_FX) onOpenEffects(null);
+            else if (v === EDIT_FX) onOpenEffects(baseChain);
+            else onBaseChain(v ? Number(v) : null);
+          }}
           aria-label="再生する曲にかけるエフェクト"
           title={
             itemFx
@@ -232,6 +260,8 @@ export function PlayerBar({
               {c.name}
             </option>
           ))}
+          <option value={NEW_FX}>新しいfxを作る</option>
+          {baseChain !== null && <option value={EDIT_FX}>このfxを編集</option>}
         </select>
         <span className="sub" aria-hidden="true">
           🔈

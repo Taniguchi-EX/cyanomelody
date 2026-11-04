@@ -308,6 +308,38 @@ await step("T01", "子のタグの並び順：ローマ字順・登録順・フ�
   expect((await childrenOf("動物")) === "うさぎ,Cat,いぬ", `戻した後 ${await childrenOf("動物")}`);
 });
 
+await step("T03", "並び順の「親の設定を引き継ぐ」：作ったタグはこれになり、親が実際に並べる順で自分の子を並べる（今の順を横に出す）。昇順・降順は選べない", async () => {
+  await createTags(["猫", "みけ", "Tora", "くろ"]);
+  await dragTo("猫", tagItem("動物"), 0.5);
+  for (const n of ["みけ", "Tora", "くろ"]) await dragTo(n, tagItem("猫"), 0.5);
+  // 動物はドラッグで決めた順なので、猫の子もドラッグで決めた順
+  expect((await childrenOf("猫")) === "みけ,Tora,くろ", `引き継ぐ前 ${await childrenOf("猫")}`);
+  await openTagDetail("猫");
+  const sortSelect = page.getByLabel("子のタグの並び順");
+  expect((await sortSelect.locator("option:checked").innerText()) === "親の設定を引き継ぐ", "作ったタグが引き継がない");
+  expect((await sortSelect.locator("option").first().innerText()) === "親の設定を引き継ぐ", "一番上にない");
+  expect(await page.getByLabel("昇順・降順").isDisabled(), "引き継ぐのに昇順・降順を選べる");
+  expect((await page.getByTestId("inherited-sort").innerText()) === "今はドラッグで決めた順", await page.getByTestId("inherited-sort").innerText());
+  await detail().getByRole("button", { name: "やめる" }).click();
+  // 親（動物）をローマ字順の降順にすると、猫の子も同じ順に並ぶ
+  await saveDetail("動物", async () => {
+    await sortSelect.selectOption({ label: "ローマ字順" });
+    await page.getByLabel("昇順・降順").selectOption({ label: "降順" });
+  });
+  expect((await childrenOf("猫")) === "Tora,みけ,くろ", `引き継いだ後 ${await childrenOf("猫")}`);
+  await openTagDetail("猫");
+  expect((await page.getByTestId("inherited-sort").innerText()) === "今はローマ字順・降順", await page.getByTestId("inherited-sort").innerText());
+  expect((await page.getByLabel("昇順・降順").inputValue()) === "desc", "引き継いだ降順が出ない");
+  await shot("T03_親の設定を引き継ぐ");
+  // 自分で「ドラッグで決めた順」にすれば、引き継がない
+  await sortSelect.selectOption({ label: "ドラッグで決めた順" });
+  expect(await page.getByLabel("昇順・降順").isDisabled(), "ドラッグで決めた順なのに昇順・降順を選べる");
+  await detail().getByRole("button", { name: "保存" }).click();
+  await waitIdle();
+  expect((await childrenOf("猫")) === "みけ,Tora,くろ", `ドラッグで決めた順 ${await childrenOf("猫")}`);
+  await saveDetail("動物", () => sortSelect.selectOption({ label: "ドラッグで決めた順" }));
+});
+
 await step("T02", "色：ライブラリの行と右の欄のタグのチップに付く。色のないタグは親の色を引き継ぎ、子の色が優先する（背景色と文字色は別々）", async () => {
   const rowChip = (file, tag) => row(file).locator(".chip", { hasText: tag });
   const detailChip = (tag) => page.locator(`[data-testid="selected-tag"][data-tag-name="${tag}"]`);

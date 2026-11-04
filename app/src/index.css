@@ -1302,12 +1302,29 @@ button.add-button:hover:not(:disabled) {
   margin-right: 2px;
 }
 
-.duration-part input {
-  width: 2.6em;
-  margin-right: 1px;
+.duration-filter input {
+  width: 6em;
   text-align: right;
+}
+
+.duration-filter input.invalid {
+  border-color: var(--error);
 }
 
 .duration-filter button {
   padding: 1px 6px;
+}
+
+/* ライブラリの並び順のプルダウン（検索の欄の右） */
+.library-head .file-sort {
+  flex: none;
+}
+
+/* 再生の欄の曲名（押すと鳴らしている曲へ飛ぶ） */
+.player-file.jump {
+  cursor: pointer;
+}
+
+.player-file.jump:hover {
+  text-decoration: underline;
 }

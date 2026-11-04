@@ -31,12 +31,17 @@ pub struct Tag {
     /// 表示に使う色。自分の色がなければ、親（その親…）の色を引き継ぐ
     pub shown_bg_color: Option<String>,
     pub shown_fg_color: Option<String>,
+    /// 子のタグを実際に並べる順。親の設定を引き継ぐなら、引き継いだもの
+    pub shown_child_sort: ChildSort,
+    pub shown_child_sort_desc: bool,
 }
 
-/// 子のタグの並び順。None はドラッグで決めた順
+/// 子のタグの並び順。設定では None が「親の設定を引き継ぐ」
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ChildSort {
+    /// ドラッグで決めた順
+    Manual,
     /// 登録順（作った順）
     Created,
     /// ファイル数順（子孫を含む総数）
@@ -48,6 +53,7 @@ pub enum ChildSort {
 impl ChildSort {
     fn as_str(self) -> &'static str {
         match self {
+            ChildSort::Manual => "manual",
             ChildSort::Created => "created",
             ChildSort::Files => "files",
             ChildSort::Romaji => "romaji",
@@ -56,6 +62,7 @@ impl ChildSort {
 
     fn parse(s: &str) -> Option<Self> {
         match s {
+            "manual" => Some(ChildSort::Manual),
             "created" => Some(ChildSort::Created),
             "files" => Some(ChildSort::Files),
             "romaji" => Some(ChildSort::Romaji),
@@ -68,6 +75,7 @@ impl ChildSort {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TagSettings {
+    /// None は親の設定を引き継ぐ（最上位までたどって決まっていなければ、ドラッグで決めた順）
     pub child_sort: Option<ChildSort>,
     pub child_sort_desc: bool,
     /// 背景色・文字色（#rrggbb）。None は親の色を引き継ぐ
@@ -89,6 +97,8 @@ struct Row {
     name: String,
     parent_id: Option<i64>,
     settings: TagSettings,
+    /// 子を実際に並べる順（親の設定を引き継いだ結果）と降順か
+    shown_sort: (ChildSort, bool),
 }
 
 /// タグごとの、そのタグか子孫のタグが付いたファイルの数（同じファイルは1回だけ数える）
@@ -112,7 +122,7 @@ fn children_map(conn: &Connection) -> Result<(Vec<Row>, HashMap<Option<i64>, Vec
         "SELECT id, name, parent_id, child_sort, child_sort_desc, bg_color, fg_color
          FROM tags ORDER BY position, name COLLATE NOCASE",
     )?;
-    let rows: Vec<Row> = stmt
+    let mut rows: Vec<Row> = stmt
         .query_map([], |r| {
             let sort: Option<String> = r.get(3)?;
             Ok(Row {
@@ -125,34 +135,57 @@ fn children_map(conn: &Connection) -> Result<(Vec<Row>, HashMap<Option<i64>, Vec
                     bg_color: r.get(5)?,
                     fg_color: r.get(6)?,
                 },
+                shown_sort: (ChildSort::Manual, false),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
     let index: HashMap<i64, usize> = rows.iter().enumerate().map(|(i, r)| (r.id, i)).collect();
+    // 引き継ぐタグは、決めている先祖までたどる（親子が輪になっていても止まるよう、たどる数を限る）
+    let shown: Vec<(ChildSort, bool)> = (0..rows.len())
+        .map(|start| {
+            let mut i = start;
+            for _ in 0..rows.len() {
+                if let Some(sort) = rows[i].settings.child_sort {
+                    return (sort, rows[i].settings.child_sort_desc);
+                }
+                match rows[i].parent_id.and_then(|p| index.get(&p)) {
+                    Some(&p) => i = p,
+                    None => break,
+                }
+            }
+            (ChildSort::Manual, false)
+        })
+        .collect();
+    for (r, s) in rows.iter_mut().zip(shown) {
+        r.shown_sort = s;
+    }
     let mut children: HashMap<Option<i64>, Vec<usize>> = HashMap::new();
     for (i, r) in rows.iter().enumerate() {
         // 親が見つからない行は最上位として扱う
         let parent = r.parent_id.filter(|p| index.contains_key(p));
         children.entry(parent).or_default().push(i);
     }
-    let counts = if rows.iter().any(|r| r.settings.child_sort == Some(ChildSort::Files)) {
+    let counts = if rows.iter().any(|r| r.shown_sort.0 == ChildSort::Files) {
         file_counts(conn)?
     } else {
         HashMap::new()
     };
     for (parent, list) in children.iter_mut() {
-        let Some(p) = parent.and_then(|p| index.get(&p)).map(|&i| &rows[i].settings) else { continue };
-        let Some(sort) = p.child_sort else { continue };
+        let Some(&(sort, desc)) = parent.and_then(|p| index.get(&p)).map(|&i| &rows[i].shown_sort) else { continue };
+        if sort == ChildSort::Manual {
+            continue;
+        }
         let key = |i: usize| -> (i64, String) {
             let r = &rows[i];
             match sort {
+                ChildSort::Manual => (0, String::new()),
                 ChildSort::Created => (r.id, String::new()),
                 ChildSort::Files => (counts.get(&r.id).copied().unwrap_or(0), String::new()),
                 ChildSort::Romaji => (0, romaji_key(&r.name)),
             }
         };
         // 安定な並べ替えなので、同じ値どうしはドラッグで決めた順のまま
-        if p.child_sort_desc {
+        if desc {
             list.sort_by_cached_key(|&i| std::cmp::Reverse(key(i)));
         } else {
             list.sort_by_cached_key(|&i| key(i));
@@ -214,6 +247,8 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
                 settings: r.settings.clone(),
                 shown_bg_color: bg,
                 shown_fg_color: fg,
+                shown_child_sort: r.shown_sort.0,
+                shown_child_sort_desc: r.shown_sort.1,
             }
         })
         .collect())
@@ -611,11 +646,12 @@ mod tests {
         for &id in &ids {
             move_tag(&mut conn, id, MoveTarget::Child(root)).unwrap();
         }
-        // 孫は親の設定の影響を受けない
+        // 子が自分の並び順を決めていれば、孫は親の設定の影響を受けない
         let grand_b = create_tag(&conn, "b").unwrap();
         let grand_a = create_tag(&conn, "a").unwrap();
         move_tag(&mut conn, grand_b, MoveTarget::Child(ids[0])).unwrap();
         move_tag(&mut conn, grand_a, MoveTarget::Child(ids[0])).unwrap();
+        sort(&conn, ids[0], Some(ChildSort::Manual), false);
         // ドラッグで「雷」を先頭にしておく
         move_tag(&mut conn, ids[3], MoveTarget::Before(ids[0])).unwrap();
         let children = |conn: &Connection| -> Vec<String> {
@@ -644,8 +680,39 @@ mod tests {
         assert_eq!(children(&conn), vec!["雷", "Ame", "かぜ", "ゆき"]);
 
         // ドラッグで決めた順に戻す
-        sort(&conn, root, None, false);
+        sort(&conn, root, Some(ChildSort::Manual), false);
         assert_eq!(children(&conn), vec!["雷", "かぜ", "Ame", "ゆき"]);
+    }
+
+    #[test]
+    fn child_sort_inherits_from_ancestors() {
+        let mut conn = setup();
+        let root = create_tag(&conn, "親").unwrap();
+        let mid = create_tag(&conn, "子").unwrap();
+        move_tag(&mut conn, mid, MoveTarget::Child(root)).unwrap();
+        for n in ["c", "a", "b"] {
+            let id = create_tag(&conn, n).unwrap();
+            move_tag(&mut conn, id, MoveTarget::Child(mid)).unwrap();
+        }
+        let grand = |conn: &Connection| -> Vec<String> {
+            list_tags(conn).unwrap().into_iter().filter(|t| t.depth == 2).map(|t| t.name).collect()
+        };
+        let shown = |conn: &Connection, id: i64| {
+            let t = list_tags(conn).unwrap().into_iter().find(|t| t.id == id).unwrap();
+            (t.settings.child_sort, t.shown_child_sort, t.shown_child_sort_desc)
+        };
+        // 作ったタグは引き継ぐ。最上位までたどって決まっていなければ、ドラッグで決めた順
+        assert_eq!(shown(&conn, mid), (None, ChildSort::Manual, false));
+        assert_eq!(grand(&conn), vec!["c", "a", "b"]);
+        // 祖父の設定（降順も）を、子が引き継いで孫を並べる
+        sort(&conn, root, Some(ChildSort::Romaji), true);
+        assert_eq!(shown(&conn, mid), (None, ChildSort::Romaji, true));
+        assert_eq!(grand(&conn), vec!["c", "b", "a"]);
+        // 子が自分で決めれば、そちらにする
+        sort(&conn, mid, Some(ChildSort::Manual), false);
+        assert_eq!(grand(&conn), vec!["c", "a", "b"]);
+        sort(&conn, mid, Some(ChildSort::Romaji), false);
+        assert_eq!(grand(&conn), vec!["a", "b", "c"]);
     }
 
     #[test]

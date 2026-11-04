@@ -5,6 +5,7 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
   describeScan,
+  FILE_SORTS,
   type AudioFile,
   type Credit,
   type CreditInput,
@@ -53,7 +54,7 @@ import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { SearchBox } from "./components/SearchBox";
-import { useStoredNumber } from "./storage";
+import { useStoredNumber, useStoredString } from "./storage";
 
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
 const LIST_NAME = "ファイルの一覧";
@@ -85,8 +86,17 @@ export default function App() {
   /** 絞り込みの条件 */
   const fileFilter = useFileFilter();
   const { filter, text, setText, toggleTag, toggleUntagged, toggleCredit, toggleCreditNone, toggleOther } = fileFilter;
+  /** ライブラリの一覧の並び順（FILE_SORTS の value）。アプリを閉じても覚えておく */
+  const [fileSortValue, setFileSortValue] = useStoredString("cyanomelody.fileSort");
+  const fileSort = FILE_SORTS.find((s) => s.value === fileSortValue) ?? FILE_SORTS[0];
   /** クリックして右の欄に出しているファイル */
   const [focusedId, setFocusedId] = useState<number | null>(null);
+  /**
+   * 一覧のその行までスクロールする（再生の欄の曲名を押したとき）。seq は押すたびに変え、同じ行でもスクロールし直す。
+   * スクロールし終えたら null に戻す
+   */
+  const [revealFile, setRevealFile] = useState<{ id: number; seq: number } | null>(null);
+  const [revealItem, setRevealItem] = useState<{ id: number; seq: number } | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
   /** 左の欄の検索の文字（タグ・プレイリスト・出典・ライセンスを名前で絞り込む） */
   const [sideQuery, setSideQuery] = useState("");
@@ -116,6 +126,8 @@ export default function App() {
     itemIds: number[];
     /** 選んだ状態で開くエフェクトセット。null なら「新しいfxを作る」から開いた（保存していない新しいエフェクトセットを出す） */
     chainId: number | null;
+    /** 再生の欄から開いた（作ったエフェクトセットを、再生の欄のエフェクトセットに選ぶ） */
+    forPlayer: boolean;
   } | null>(null);
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
@@ -158,14 +170,19 @@ export default function App() {
   // 「チェックしたファイルだけ表示」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
   const reloadFiles = useCallback(async () => {
-    const request = { ...filter, fileIds: checkedFilter ? [...checkedFilter] : null };
+    const request = {
+      ...filter,
+      fileIds: checkedFilter ? [...checkedFilter] : null,
+      sort: fileSort.sort,
+      sortDesc: fileSort.desc,
+    };
     const [list, counts] = await Promise.all([api.listFiles(request), api.facetCounts(request)]);
     setFiles(list);
     setFacets(counts);
     setListVersion((v) => v + 1);
     // 絞り込みで消えたファイルは、右の欄からも消す
     setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
-  }, [filter, checkedFilter]);
+  }, [filter, checkedFilter, fileSort.sort, fileSort.desc]);
 
   useEffect(() => {
     reloadFilesRef.current = reloadFiles;
@@ -724,13 +741,47 @@ export default function App() {
   const openEffects = async (item: PlaylistItem, chainId: number | null, itemIds: number[]) => {
     const first = (await playlistApi.itemFiles(item.id).catch(() => []))[0];
     const target = first ? { id: first.fileId, relPath: first.relPath, path: first.path } : null;
-    setEffectDialog({ target, itemIds, chainId });
+    setEffectDialog({ target, itemIds, chainId, forPlayer: false });
   };
 
-  /** 管理画面で作ったエフェクトセットを、開いた元の項目に付ける */
+  /** 鳴らしているファイル（プレイリストの再生の曲か、試聴中のファイル） */
+  const playingEntry = audio.player?.queue[audio.player.index] ?? null;
+  const playingTarget: PreviewTarget | null = playingEntry
+    ? { id: playingEntry.fileId, relPath: playingEntry.relPath, path: playingEntry.path }
+    : audio.previewFile;
+
+  /** 再生の欄のエフェクトセットから、管理画面を開く。試聴するのは鳴らしているファイル */
+  const openPlayerEffects = (chainId: number | null) =>
+    setEffectDialog({ target: playingTarget, itemIds: [], chainId, forPlayer: true });
+
+  /** 管理画面で作ったエフェクトセットを、開いた元の項目（再生の欄から開いたなら、再生の欄）に付ける */
   const attachCreatedChain = (chainId: number) => {
+    if (effectDialog?.forPlayer) audio.setBaseChain(chainId);
     const ids = effectDialog?.itemIds ?? [];
     if (ids.length > 0) setItemsChain(ids, chainId);
+  };
+
+  /**
+   * 再生の欄の曲名を押したとき：鳴らしている曲を中央の欄に出す。
+   * プレイリストを再生しているならその項目の行、ライブラリの一覧（試聴を含む）ならそのファイルの行へスクロールし、右の欄に出す
+   */
+  const jumpToPlaying = () => {
+    const sourceId = audio.player?.sourceId ?? null;
+    const itemId = playingEntry?.itemId ?? null;
+    if (sourceId !== null && itemId !== null && playlists.some((p) => p.id === sourceId)) {
+      if (openPlaylistId !== sourceId) openPlaylist(sourceId);
+      setFocusedItemId(itemId);
+      setRevealItem({ id: itemId, seq: Date.now() });
+      return;
+    }
+    if (!playingTarget) return;
+    if (playlistDetail) closePlaylist();
+    if (!files.some((f) => f.id === playingTarget.id)) {
+      showInfo("鳴らしている曲は、今の絞り込みではライブラリの一覧に出ていません");
+      return;
+    }
+    setFocusedId(playingTarget.id);
+    setRevealFile({ id: playingTarget.id, seq: Date.now() });
   };
 
   const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) =>
@@ -899,6 +950,8 @@ export default function App() {
                 : null
             }
             onFocusItem={(item) => setFocusedItemId(item.id)}
+            reveal={revealItem}
+            onRevealed={() => setRevealItem(null)}
             chains={chains}
             onSetChain={(items, chainId) => setItemsChain(items.map((i) => i.id), chainId)}
             onOpenEffects={openEffects}
@@ -918,6 +971,22 @@ export default function App() {
               </h2>
               {/* ファイル名（相対パス）で一覧を絞り込む */}
               <SearchBox value={text} onChange={setText} label="ファイル名で検索" testId="file-search" />
+              {/* 直近で再生したものは、再生した順に並べる（選べない） */}
+              <select
+                className="file-sort"
+                value={fileSort.value}
+                onChange={(e) => setFileSortValue(e.target.value)}
+                disabled={filter.recentOnly}
+                aria-label="並び順"
+                title={filter.recentOnly ? "直近で再生したものは、新しく再生した順に並べます" : "一覧の並び順"}
+                data-testid="file-sort"
+              >
+                {FILE_SORTS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (
@@ -947,6 +1016,8 @@ export default function App() {
               showHash={filter.duplicatesOnly || filter.hash !== null}
               onDrop={dropFiles}
               tagStyles={tagStyles}
+              reveal={revealFile}
+              onRevealed={() => setRevealFile(null)}
             />
           </>
         )}
@@ -1034,6 +1105,8 @@ export default function App() {
         chains={chains}
         baseChain={audio.baseChain}
         onBaseChain={audio.setBaseChain}
+        onOpenEffects={openPlayerEffects}
+        onJump={jumpToPlaying}
       />
       <StatusBar
         status={status}

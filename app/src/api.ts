@@ -51,7 +51,24 @@ export type FileFilter = {
   /** 長さ（秒）がこれ以上・以下のファイルだけ（長さのないファイルは出ない）。null なら絞り込まない */
   minDuration: number | null;
   maxDuration: number | null;
+  /** 一覧の並び順（絞り込みには使わない）。なければパス順 */
+  sort?: FileSort;
+  sortDesc?: boolean;
 };
+
+/** ファイルの一覧の並び順 */
+export type FileSort = "path" | "name" | "added" | "modified" | "duration";
+
+/** ライブラリの並び順のプルダウンの選び肢。同じ値どうしはパス順 */
+export const FILE_SORTS: { value: string; sort: FileSort; desc: boolean; label: string }[] = [
+  { value: "path", sort: "path", desc: false, label: "パス順" },
+  { value: "name", sort: "name", desc: false, label: "ファイル名順" },
+  { value: "added-desc", sort: "added", desc: true, label: "追加した順（新しい順）" },
+  { value: "added", sort: "added", desc: false, label: "追加した順（古い順）" },
+  { value: "modified-desc", sort: "modified", desc: true, label: "更新日時順（新しい順）" },
+  { value: "duration", sort: "duration", desc: false, label: "長さ順（短い順）" },
+  { value: "duration-desc", sort: "duration", desc: true, label: "長さ順（長い順）" },
+];
 
 /** ひも付けた結果。ライブラリに登録したフォルダがあれば、そのパス */
 export type LinkOutcome = { path: string; addedFolder: string | null };
@@ -87,13 +104,17 @@ export type Tag = {
   /** 表示に使う色。自分の色がなければ、親（その親…）の色を引き継いだもの */
   shownBgColor: string | null;
   shownFgColor: string | null;
+  /** 子のタグを実際に並べる順。親の設定を引き継ぐなら、引き継いだもの */
+  shownChildSort: ChildSort;
+  shownChildSortDesc: boolean;
 } & TagSettings;
 
-/** 子のタグの並び順。null はドラッグで決めた順 */
-export type ChildSort = "created" | "files" | "romaji";
+/** 子のタグの並び順。manual はドラッグで決めた順 */
+export type ChildSort = "manual" | "created" | "files" | "romaji";
 
 /** タグの詳細画面で決めるもの（名前を除く） */
 export type TagSettings = {
+  /** null は親の設定を引き継ぐ（最上位までたどって決まっていなければ、ドラッグで決めた順） */
   childSort: ChildSort | null;
   childSortDesc: boolean;
   /** 背景色・文字色（#rrggbb）。null は親の色を引き継ぐ */

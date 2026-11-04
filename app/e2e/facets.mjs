@@ -107,14 +107,9 @@ await step("F10", "選んでいる条件が左の欄の一番上にチップで�
   expect((await chips()).length === 0, "すべて解除で消えない");
 });
 
-await step("F11", "「その他」の長さ：時・分・秒を入れて「以上」「以下」で条件を加える（押し直すと置き換わる）。チップで外せる。空のときは押せない", async () => {
-  const part = (unit) => page.getByLabel(`長さの${unit}`, { exact: true });
+await step("F11", "「その他」の長さ：「時:分:秒」（最初は 00:00:00）を入れて「以上」「以下」で条件を加える（押し直すと置き換わる）。チップで外せる。0秒や形の違うときは押せない", async () => {
+  const field = () => page.getByLabel("長さ", { exact: true });
   const button = (label) => page.getByTestId("duration-input").getByRole("button", { name: label, exact: true });
-  const setParts = async (h, m, s) => {
-    await part("時").fill(h);
-    await part("分").fill(m);
-    await part("秒").fill(s);
-  };
   const durationChips = () => page.getByTestId("duration-filter").allInnerTexts().then((t) => t.map((s) => s.replace(/\s+/g, "")).join(","));
   const shown = () => page.getByTestId("file-row").locator(".file-name").allInnerTexts().then((t) => t.join(","));
   // 長さの違う3つの音声を加え、長さを調べ終わるのを待つ
@@ -129,15 +124,19 @@ await step("F11", "「その他」の長さ：時・分・秒を入れて「以�
     { timeout: 30000 },
   );
   expect((await fileCount()) === 8, `件数 ${await fileCount()}`);
-  // 空のときは押せない。数字のほかは入らない
-  expect(await button("以上").isDisabled(), "空なのに押せる");
-  await setParts("", "1", "x");
-  expect((await part("秒").inputValue()) === "", `秒の欄 ${await part("秒").inputValue()}`);
+  // 最初は 00:00:00 で、0秒なので押せない。形の違う文字でも押せない
+  expect((await field().inputValue()) === "00:00:00", `最初の値 ${await field().inputValue()}`);
+  expect(await button("以上").isDisabled(), "0秒なのに押せる");
+  await field().fill("1:x");
+  expect(await button("以下").isDisabled(), "形が違うのに押せる");
+  // 「分:秒」の形でもよい
+  await field().fill("1:00");
   await ui.filtered(() => button("以上").click());
   expect((await shown()) === "d_3700s.mp3,d_70s.mp3", `1分以上 ${await shown()}`);
   // 押した後も入力欄の値は残る
-  expect((await part("分").inputValue()) === "1", "入力欄が消えた");
-  await setParts("1", "", "");
+  expect((await field().inputValue()) === "1:00", "入力欄が消えた");
+  // 全角の数字・コロンでもよい
+  await field().fill("０１：００：００");
   await ui.filtered(() => button("以下").click());
   expect((await shown()) === "d_70s.mp3", `1分以上1時間以下 ${await shown()}`);
   expect((await durationChips()) === "⏱1:00以上✕,⏱1:00:00以下✕", await durationChips());
@@ -145,17 +144,51 @@ await step("F11", "「その他」の長さ：時・分・秒を入れて「以�
   const otherCount = await page.getByTestId("selected-count").allInnerTexts();
   expect(otherCount.join(",") === "2", `選んでいる数 ${otherCount.join(",")}`);
   await shot("F11_長さの条件");
-  // 押し直すと置き換わる
-  await setParts("", "", "5");
+  // 押し直すと置き換わる（「秒」だけの形）
+  await field().fill("5");
   await ui.filtered(() => button("以下").click());
   expect((await fileCount()) === 0, `1分以上5秒以下 ${await fileCount()}`);
   expect((await durationChips()) === "⏱1:00以上✕,⏱0:05以下✕", await durationChips());
-  // チップの「✕」でその条件だけ外れる（1秒のチャイム5つと3秒の音声）
+  // チップの「✕」でその条件だけ外れる（短いチャイム5つと3秒の音声）
   await ui.filtered(() => page.getByTestId("duration-filter").first().click());
   expect((await fileCount()) === 6, `5秒以下 ${await fileCount()}`);
   await clearFilter();
   expect((await durationChips()) === "", "すべて解除で消えない");
   expect((await fileCount()) === 8, `解除後 ${await fileCount()}`);
+});
+
+await step("F12", "ライブラリの並び順：検索の欄の右のプルダウンで、パス・ファイル名・追加した順・長さの順に並べ替えられる。再読み込み後も残り、すべての条件を外しても戻らない", async () => {
+  const sort = () => page.getByTestId("file-sort");
+  const shown = () => page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
+  const choose = (label) => ui.filtered(() => sort().selectOption({ label }));
+  // 検索の欄の右にある
+  const [searchBox, sortBox] = await Promise.all([
+    page.getByTestId("file-search").boundingBox(),
+    sort().boundingBox(),
+  ]);
+  expect(sortBox.x > searchBox.x && Math.abs(sortBox.y + sortBox.height / 2 - (searchBox.y + searchBox.height / 2)) < 6, "検索の欄の右にない");
+  // 最初はパス順（durations のフォルダが先）
+  expect((await sort().locator("option:checked").innerText()) === "パス順", "最初がパス順でない");
+  expect((await shown())[0] === "d_3700s.mp3", `パス順 ${(await shown()).join(",")}`);
+  // ファイル名順：フォルダは関係なく、名前で並ぶ（サブフォルダのチャイム.m4a は最後）
+  await choose("ファイル名順");
+  expect((await shown()).slice(0, 2).join(",") === "chime.flac,chime.mp3" && (await shown()).at(-1) === "サブフォルダ/チャイム.m4a", `ファイル名順 ${(await shown()).join(",")}`);
+  // 追加した順（新しい順）：後から加えた durations のファイルが先
+  await choose("追加した順（新しい順）");
+  expect((await shown()).slice(0, 3).every((r) => r.startsWith("d_")), `追加した順 ${(await shown()).join(",")}`);
+  await choose("長さ順（長い順）");
+  expect((await shown()).slice(0, 3).join(",") === "d_3700s.mp3,d_70s.mp3,d_3s.wav", `長い順 ${(await shown()).join(",")}`);
+  await choose("長さ順（短い順）");
+  expect((await shown()).at(-1) === "d_3700s.mp3", `短い順 ${(await shown()).join(",")}`);
+  await shot("F12_並び順");
+  // 再読み込み後も残る。すべての条件を外しても戻らない
+  await ui.reload();
+  expect((await sort().locator("option:checked").innerText()) === "長さ順（短い順）", "再読み込みで戻った");
+  expect((await shown()).at(-1) === "d_3700s.mp3", `再読み込み後 ${(await shown()).join(",")}`);
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  await clearFilter();
+  expect((await sort().locator("option:checked").innerText()) === "長さ順（短い順）", "すべて外すと戻った");
+  await choose("パス順");
 });
 
 await ui.finish();

@@ -589,4 +589,49 @@ await step("P32", "詳細画面の項目のチェック：チェックした行�
   await back();
 });
 
+await step("P33", "再生の欄の曲名を押すと、鳴らしている曲へ飛ぶ：プレイリストの再生ならその項目の行、一覧の再生ならその行を中央に出して右の欄に出す。絞り込みで一覧にないときは知らせる", async () => {
+  const jump = () => page.getByTestId("player-file").click();
+  const selectedItem = () =>
+    page.getByTestId("playlist-item").evaluateAll((rows) => rows.findIndex((r) => r.classList.contains("selected")));
+  // プレイリストの2曲目を鳴らしたまま、ライブラリに戻ってから曲名を押す
+  await open("ドラッグ");
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  await page.getByRole("button", { name: "次へ" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-testid=player-position]")?.textContent?.startsWith("2/"), null, { timeout: 3000 });
+  await back();
+  await jump();
+  await page.getByTestId("playlist-title").filter({ hasText: "ドラッグ" }).waitFor({ timeout: 3000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=playlist-item]")[1]?.classList.contains("selected"), null, { timeout: 3000 }).catch(() => {});
+  expect((await selectedItem()) === 1, `選ばれた項目 ${await selectedItem()}`);
+  await shot("P33_プレイリストの項目へ飛ぶ");
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
+  // 一覧の再生：プレイリストを開いていても、ライブラリのその行へ
+  await back();
+  await ui.clearFilter();
+  const rels = await page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
+  await row(rels[3]).getByRole("button", { name: "再生", exact: true }).click();
+  await ui.waitPlaying();
+  await open("ドラッグ");
+  await jump();
+  await page.getByTestId("list-title").waitFor({ timeout: 3000 });
+  expect((await row(rels[3]).getAttribute("class")).includes("selected"), "その行が選ばれない");
+  // 絞り込みで一覧に出ていないときは、そのことを出す（絞り込みは変えない）。風は chime.flac だけ
+  await ui.filtered(() => tagItem("風").locator(".tag-name").click());
+  await jump();
+  expect((await status()).includes("今の絞り込みではライブラリの一覧に出ていません"), await status());
+  expect((await ui.fileCount()) === 1, `絞り込みが変わった ${await ui.fileCount()}`);
+  await ui.clearFilter();
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
+  // 何も鳴らしていないときは、曲名の欄は押せない
+  expect((await page.getByTestId("player-file").getAttribute("role")) === null, "鳴らしていないのに押せる");
+  // 「直近で再生したもの」で絞り込むと、並び順は選べない（再生した順）
+  await ui.filtered(() => ui.otherItem("recentOnly").click());
+  expect(await page.getByTestId("file-sort").isDisabled(), "直近で再生したものなのに並び順を選べる");
+  await ui.filtered(() => ui.otherItem("recentOnly").click());
+  expect(!(await page.getByTestId("file-sort").isDisabled()), "並び順を選べない");
+});
+
 await ui.finish();
