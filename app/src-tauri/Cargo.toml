@@ -30,6 +30,7 @@ thiserror = "2"
 blake3 = "1"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
+encoding_rs = "0.8"
 symphonia = { version = "0.5", features = ["aac", "isomp4", "mp3", "flac", "vorbis", "ogg", "wav", "pcm"] }
 
 [dev-dependencies]
