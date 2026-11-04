@@ -5,6 +5,7 @@ import { connect, expect, parseArgs } from "./helpers.mjs";
 
 const { dataDir, shotDir } = parseArgs("facets.mjs");
 const formats = path.join(dataDir, "formats");
+const durations = path.join(dataDir, "durations");
 
 const ui = await connect(shotDir);
 const { page, step, shot, fileCount, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
@@ -104,6 +105,57 @@ await step("F10", "選んでいる条件が左の欄の一番上にチップで�
   expect(!(await tagItem("雨").getAttribute("class")).includes("active"), "雨が選ばれたまま");
   await clearFilter();
   expect((await chips()).length === 0, "すべて解除で消えない");
+});
+
+await step("F11", "「その他」の長さ：時・分・秒を入れて「以上」「以下」で条件を加える（押し直すと置き換わる）。チップで外せる。空のときは押せない", async () => {
+  const part = (unit) => page.getByLabel(`長さの${unit}`, { exact: true });
+  const button = (label) => page.getByTestId("duration-input").getByRole("button", { name: label, exact: true });
+  const setParts = async (h, m, s) => {
+    await part("時").fill(h);
+    await part("分").fill(m);
+    await part("秒").fill(s);
+  };
+  const durationChips = () => page.getByTestId("duration-filter").allInnerTexts().then((t) => t.map((s) => s.replace(/\s+/g, "")).join(","));
+  const shown = () => page.getByTestId("file-row").locator(".file-name").allInnerTexts().then((t) => t.join(","));
+  // 長さの違う3つの音声を加え、長さを調べ終わるのを待つ
+  const before = await page.evaluate(() => document.querySelector("[data-testid=hash-status]")?.textContent ?? "");
+  await addFolder(durations);
+  await page.waitForFunction(
+    (b) => {
+      const t = document.querySelector("[data-testid=hash-status]")?.textContent ?? "";
+      return t !== b && t.includes("計算しました");
+    },
+    before,
+    { timeout: 30000 },
+  );
+  expect((await fileCount()) === 8, `件数 ${await fileCount()}`);
+  // 空のときは押せない。数字のほかは入らない
+  expect(await button("以上").isDisabled(), "空なのに押せる");
+  await setParts("", "1", "x");
+  expect((await part("秒").inputValue()) === "", `秒の欄 ${await part("秒").inputValue()}`);
+  await ui.filtered(() => button("以上").click());
+  expect((await shown()) === "d_3700s.mp3,d_70s.mp3", `1分以上 ${await shown()}`);
+  // 押した後も入力欄の値は残る
+  expect((await part("分").inputValue()) === "1", "入力欄が消えた");
+  await setParts("1", "", "");
+  await ui.filtered(() => button("以下").click());
+  expect((await shown()) === "d_70s.mp3", `1分以上1時間以下 ${await shown()}`);
+  expect((await durationChips()) === "⏱1:00以上✕,⏱1:00:00以下✕", await durationChips());
+  // 「その他」の見出しに、選んでいる数（長さの条件2つ）を出す
+  const otherCount = await page.getByTestId("selected-count").allInnerTexts();
+  expect(otherCount.join(",") === "2", `選んでいる数 ${otherCount.join(",")}`);
+  await shot("F11_長さの条件");
+  // 押し直すと置き換わる
+  await setParts("", "", "5");
+  await ui.filtered(() => button("以下").click());
+  expect((await fileCount()) === 0, `1分以上5秒以下 ${await fileCount()}`);
+  expect((await durationChips()) === "⏱1:00以上✕,⏱0:05以下✕", await durationChips());
+  // チップの「✕」でその条件だけ外れる（1秒のチャイム5つと3秒の音声）
+  await ui.filtered(() => page.getByTestId("duration-filter").first().click());
+  expect((await fileCount()) === 6, `5秒以下 ${await fileCount()}`);
+  await clearFilter();
+  expect((await durationChips()) === "", "すべて解除で消えない");
+  expect((await fileCount()) === 8, `解除後 ${await fileCount()}`);
 });
 
 await ui.finish();

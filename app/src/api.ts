@@ -48,6 +48,9 @@ export type FileFilter = {
   folderId: number | null;
   /** 直近で再生したファイルだけ（新しく再生した順に並ぶ） */
   recentOnly: boolean;
+  /** 長さ（秒）がこれ以上・以下のファイルだけ（長さのないファイルは出ない）。null なら絞り込まない */
+  minDuration: number | null;
+  maxDuration: number | null;
 };
 
 /** ひも付けた結果。ライブラリに登録したフォルダがあれば、そのパス */

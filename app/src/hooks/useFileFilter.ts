@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Credit, CreditKind, FileFilter, LibraryFolder, Tag } from "../api";
 import { CREDIT_LABEL } from "../credits";
 import { baseName } from "../paths";
-import { OTHER_ITEMS, type OtherKey } from "../otherFilters";
+import { DURATION_LIMITS, formatDuration, OTHER_ITEMS, type DurationKey, type OtherKey } from "../otherFilters";
 import type { FilterChip } from "../components/FilterChips";
 
 export const EMPTY_FILTER: FileFilter = {
@@ -19,6 +19,8 @@ export const EMPTY_FILTER: FileFilter = {
   fileIds: null,
   folderId: null,
   recentOnly: false,
+  minDuration: null,
+  maxDuration: null,
 };
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
@@ -97,6 +99,9 @@ export function useFileFilter() {
   /** 「その他」の条件（重複・直近で再生・リンク切れ）を選ぶ・外す */
   const toggleOther = (key: OtherKey) => setFilter((f) => ({ ...f, [key]: !f[key] }));
 
+  /** 長さの条件（以上・以下）を決める。null で外す */
+  const setDuration = (key: DurationKey, seconds: number | null) => setFilter((f) => ({ ...f, [key]: seconds }));
+
   /** 選んでいる条件のチップ（検索の欄の下に出す。押すとその条件だけ外す） */
   const chips = ({ folders, tags, credits }: ChipNames): FilterChip[] => {
     const nameOf = (list: { id: number; name: string }[], id: number) => list.find((x) => x.id === id)?.name ?? "?";
@@ -136,6 +141,19 @@ export function useFileFilter() {
         out.push({ key: item.key, icon: item.icon, label: item.chip, title: item.label, onRemove: () => toggleOther(item.key) });
       }
     }
+    for (const limit of DURATION_LIMITS) {
+      const seconds = filter[limit.key];
+      if (seconds !== null) {
+        out.push({
+          key: limit.key,
+          icon: "⏱",
+          label: `${formatDuration(seconds)}${limit.label}`,
+          title: `長さが${formatDuration(seconds)}${limit.label}`,
+          onRemove: () => setDuration(limit.key, null),
+          testId: "duration-filter",
+        });
+      }
+    }
     if (filter.hash) {
       out.push({
         key: "hash",
@@ -163,6 +181,7 @@ export function useFileFilter() {
     toggleCreditNone,
     dropCredit,
     toggleOther,
+    setDuration,
     chips,
   };
 }

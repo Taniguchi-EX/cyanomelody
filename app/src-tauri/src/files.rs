@@ -52,6 +52,9 @@ pub struct FileFilter {
     pub folder_id: Option<i64>,
     /// 直近で再生したファイル（recent_plays）に絞り込む。このときは新しく再生した順に並べる
     pub recent_only: bool,
+    /// 長さ（秒）がこれ以上・以下のファイルに絞り込む。長さのないファイルは出さない
+    pub min_duration: Option<f64>,
+    pub max_duration: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -138,6 +141,14 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     if let Some(hash) = &filter.hash {
         sql.push_str(" AND a.hash = ?");
         args.push(Value::Text(hash.clone()));
+    }
+    if let Some(min) = filter.min_duration {
+        sql.push_str(" AND a.duration >= ?");
+        args.push(Value::Real(min));
+    }
+    if let Some(max) = filter.max_duration {
+        sql.push_str(" AND a.duration <= ?");
+        args.push(Value::Real(max));
     }
     for (column, ids, none) in [
         ("a.source_id", &filter.source_ids, filter.no_source),
@@ -388,6 +399,25 @@ mod tests {
         assert!(list_files(&conn, &other).unwrap().is_empty());
         let and = FileFilter { folder_id: Some(folder), text: "mp3".into(), ..Default::default() };
         assert_eq!(rels(&list_files(&conn, &and).unwrap()), vec!["b.mp3"]);
+    }
+
+    #[test]
+    fn filter_by_duration() {
+        let (_dir, conn) = setup();
+        // a.wav は 30秒、b.mp3 は 90秒、c は長さなし（調べていない・読めない）
+        conn.execute("UPDATE audio_files SET duration = 30 WHERE rel_path = 'a.wav'", []).unwrap();
+        conn.execute("UPDATE audio_files SET duration = 90 WHERE rel_path = 'b.mp3'", []).unwrap();
+        let list = |min: Option<f64>, max: Option<f64>| -> Vec<String> {
+            let f = FileFilter { min_duration: min, max_duration: max, ..Default::default() };
+            list_files(&conn, &f).unwrap().into_iter().map(|f| f.rel_path).collect()
+        };
+        assert_eq!(list(None, None).len(), 3);
+        assert_eq!(list(Some(30.0), None), vec!["a.wav", "b.mp3"]);
+        assert_eq!(list(Some(31.0), None), vec!["b.mp3"]);
+        assert_eq!(list(None, Some(90.0)), vec!["a.wav", "b.mp3"]);
+        assert_eq!(list(None, Some(89.0)), vec!["a.wav"]);
+        assert_eq!(list(Some(31.0), Some(89.0)), Vec::<String>::new());
+        assert_eq!(list(Some(10.0), Some(60.0)), vec!["a.wav"]);
     }
 
     #[test]

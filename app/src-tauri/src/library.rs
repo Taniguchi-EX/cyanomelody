@@ -213,10 +213,12 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
              VALUES (?1, ?2, ?3, ?4, 0, ?5)",
         )?;
         let mut update = tx.prepare(
-            // サイズか更新日時が変わったら、ハッシュ値を消して計算し直させる
+            // サイズか更新日時が変わったら、ハッシュ値と長さを消して計算し直させる
             "UPDATE audio_files SET
                 hash = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash END,
                 hash_error = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash_error END,
+                duration = CASE WHEN size = ?2 AND modified_at = ?3 THEN duration END,
+                duration_done = CASE WHEN size = ?2 AND modified_at = ?3 THEN duration_done ELSE 0 END,
                 size = ?2, modified_at = ?3, missing = 0
              WHERE id = ?1",
         )?;
@@ -356,7 +358,8 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         let id = add_folder(&conn, dir.path()).unwrap();
         scan_folder(&mut conn, id).unwrap();
-        conn.execute("UPDATE audio_files SET hash = 'h', hash_error = NULL", []).unwrap();
+        conn.execute("UPDATE audio_files SET hash = 'h', hash_error = NULL, duration = 1.5, duration_done = 1", [])
+            .unwrap();
 
         fs::write(dir.path().join("b.wav"), b"changed content").unwrap();
         scan_folder(&mut conn, id).unwrap();
@@ -366,6 +369,15 @@ mod tests {
         }
         assert_eq!(hash(&conn, "a.wav").as_deref(), Some("h"));
         assert_eq!(hash(&conn, "b.wav"), None);
+        // 長さも同じく、変わったファイルだけ調べ直させる
+        let duration = |rel: &str| -> (Option<f64>, i64) {
+            conn.query_row("SELECT duration, duration_done FROM audio_files WHERE rel_path = ?1", [rel], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap()
+        };
+        assert_eq!(duration("a.wav"), (Some(1.5), 1));
+        assert_eq!(duration("b.wav"), (None, 0));
 
         // 見つからなくなってもハッシュ値は残す
         fs::remove_file(dir.path().join("a.wav")).unwrap();

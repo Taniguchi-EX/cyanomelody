@@ -104,7 +104,7 @@ fn allow_asset_dir(app: &AppHandle, path: &Path) {
     }
 }
 
-/// 計算待ちのファイルのハッシュ値を、別スレッドで計算する。
+/// 計算待ちのファイルのハッシュ値と長さを、別スレッドで計算する。
 /// 進み具合はイベント "hash-progress" で画面に知らせる。
 fn run_hashing(app: AppHandle, job: Arc<HashJob>) {
     let state = app.state::<AppState>();
@@ -122,13 +122,13 @@ fn run_hashing(app: AppHandle, job: Arc<HashJob>) {
     };
     notify(&progress);
     for batch in pending.chunks(HASH_BATCH) {
-        let results: Vec<_> = hashing::compute_parallel(batch, &job.cancel)
+        let results: Vec<_> = hashing::compute_parallel(batch, &job.cancel, hashing::analyze)
             .into_iter()
             .filter_map(|(id, r)| r.map(|r| (id, r)))
             .collect();
-        progress.failed += results.iter().filter(|(_, r)| r.is_err()).count();
+        progress.failed += results.iter().filter(|(_, r)| r.hash.is_err()).count();
         progress.done += results.len();
-        if let Err(e) = hashing::save_hashes(&mut state.conn(), &results) {
+        if let Err(e) = hashing::save_analyses(&mut state.conn(), &results) {
             log::error!("hashing: {e}");
         }
         if job.cancel.load(Ordering::Relaxed) {

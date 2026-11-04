@@ -4,6 +4,7 @@
 # 出力先に以下を作る。
 #   formats/  … 5つの形式の音声（1秒のチャイム）。サブフォルダと日本語の名前を含む
 #   large/    … 一覧の確認用に、中身がダミーの .wav を3万個
+#   durations/ … 長さでの絞り込みの確認用に、長さの違う音声（3秒、1分10秒、1時間1分40秒）
 set -euo pipefail
 
 out="${1:?出力先フォルダを指定してください}"
@@ -33,6 +34,16 @@ cp "$hash/se2.wav" "$outside/se2_outside.wav"
 printf 'not audio' > "$outside/text.mp3"
 # 曲名（タグ情報のタイトル）のない音声。再生の欄で、拡張子を除いたファイル名を出すことの確認に使う
 ff -f lavfi -i "sine=frequency=440:duration=0.5" -map_metadata -1 "$outside/no_title.wav"
+
+# 長い音声は作るのに時間がかかるので、一度作ったら作り直さない
+durations="$out/durations"
+if [ ! -d "$durations" ]; then
+  mkdir -p "$durations.tmp"
+  ff -f lavfi -i "sine=frequency=440:duration=3" "$durations.tmp/d_3s.wav"
+  ff -f lavfi -i "sine=frequency=440:duration=70" -ac 1 -ar 8000 -c:a libmp3lame -b:a 8k "$durations.tmp/d_70s.mp3"
+  ff -f lavfi -i "sine=frequency=440:duration=3700" -ac 1 -ar 8000 -c:a libmp3lame -b:a 8k "$durations.tmp/d_3700s.mp3"
+  mv "$durations.tmp" "$durations"
+fi
 
 if [ ! -d "$large" ]; then
   for d in $(seq -w 0 99); do

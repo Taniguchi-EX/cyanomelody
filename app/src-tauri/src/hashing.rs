@@ -1,6 +1,6 @@
-//! ハッシュ値の計算待ちの取得・保存と、ひも付け直し
+//! ハッシュ値と長さの計算待ちの取得・保存と、ひも付け直し
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,8 +9,9 @@ use serde::Serialize;
 use crate::audio_hash::{audio_hash, HashError};
 use crate::error::{Error, Result};
 use crate::library::absolute_path;
+use crate::metadata;
 
-/// ハッシュ値の計算を待っているファイル
+/// ハッシュ値か長さの計算を待っているファイル
 #[derive(Debug, Clone)]
 pub struct PendingFile {
     pub id: i64,
@@ -19,12 +20,24 @@ pub struct PendingFile {
 
 pub type HashOutcome = std::result::Result<String, HashError>;
 
-/// ハッシュ値がまだなく、計算できなかった記録もない、見つかっているファイル
+/// ファイルを調べた結果（ハッシュ値と長さ）
+pub struct Analysis {
+    pub hash: HashOutcome,
+    /// 長さ（秒）。読めなかったときは None
+    pub duration: Option<f64>,
+}
+
+/// ファイルのハッシュ値と長さを調べる
+pub fn analyze(path: &Path) -> Analysis {
+    Analysis { hash: audio_hash(path), duration: metadata::duration(path) }
+}
+
+/// 見つかっているファイルのうち、ハッシュ値がまだなく計算できなかった記録もないもの、または長さをまだ調べていないもの
 pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, f.path, a.rel_path FROM audio_files a
          JOIN library_folders f ON f.id = a.folder_id
-         WHERE a.hash IS NULL AND a.hash_error IS NULL AND a.missing = 0
+         WHERE ((a.hash IS NULL AND a.hash_error IS NULL) OR a.duration_done = 0) AND a.missing = 0
          ORDER BY a.id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -38,14 +51,16 @@ pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
-pub fn save_hashes(conn: &mut Connection, results: &[(i64, HashOutcome)]) -> Result<()> {
+pub fn save_analyses(conn: &mut Connection, results: &[(i64, Analysis)]) -> Result<()> {
     let tx = conn.transaction()?;
     {
-        let mut stmt = tx.prepare("UPDATE audio_files SET hash = ?2, hash_error = ?3 WHERE id = ?1")?;
-        for (id, outcome) in results {
-            match outcome {
-                Ok(hash) => stmt.execute(params![id, hash, None::<String>])?,
-                Err(e) => stmt.execute(params![id, None::<String>, e.to_string()])?,
+        let mut stmt = tx.prepare(
+            "UPDATE audio_files SET hash = ?2, hash_error = ?3, duration = ?4, duration_done = 1 WHERE id = ?1",
+        )?;
+        for (id, a) in results {
+            match &a.hash {
+                Ok(hash) => stmt.execute(params![id, hash, None::<String>, a.duration])?,
+                Err(e) => stmt.execute(params![id, None::<String>, e.to_string(), a.duration])?,
             };
         }
     }
@@ -53,9 +68,13 @@ pub fn save_hashes(conn: &mut Connection, results: &[(i64, HashOutcome)]) -> Res
     Ok(())
 }
 
-/// ファイルのハッシュ値を、複数のスレッドで並列に計算する。
+/// ファイルごとの計算（ハッシュ値など）を、複数のスレッドで並列に行う。
 /// cancel が立ったら、まだ始めていないファイルは計算せずに None を返す。
-pub fn compute_parallel(files: &[PendingFile], cancel: &AtomicBool) -> Vec<(i64, Option<HashOutcome>)> {
+pub fn compute_parallel<T: Send>(
+    files: &[PendingFile],
+    cancel: &AtomicBool,
+    work: fn(&Path) -> T,
+) -> Vec<(i64, Option<T>)> {
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
@@ -71,7 +90,7 @@ pub fn compute_parallel(files: &[PendingFile], cancel: &AtomicBool) -> Vec<(i64,
                             if cancel.load(Ordering::Relaxed) {
                                 (f.id, None)
                             } else {
-                                (f.id, Some(audio_hash(&f.path)))
+                                (f.id, Some(work(&f.path)))
                             }
                         })
                         .collect::<Vec<_>>()
@@ -202,11 +221,11 @@ mod tests {
 
     fn hash_all(conn: &mut Connection) -> usize {
         let pending = pending_files(conn).unwrap();
-        let results: Vec<(i64, HashOutcome)> = compute_parallel(&pending, &AtomicBool::new(false))
+        let results: Vec<(i64, Analysis)> = compute_parallel(&pending, &AtomicBool::new(false), analyze)
             .into_iter()
             .map(|(id, r)| (id, r.unwrap()))
             .collect();
-        save_hashes(conn, &results).unwrap();
+        save_analyses(conn, &results).unwrap();
         results.len()
     }
 
@@ -235,13 +254,22 @@ mod tests {
             .query_row("SELECT hash_error FROM audio_files WHERE rel_path = 'broken.wav'", [], |r| r.get(0))
             .unwrap();
         assert!(error.is_some());
+        // 長さも一緒に調べる。読めないファイルは長さなし
+        let duration = |rel: &str| -> Option<f64> {
+            conn.query_row("SELECT duration FROM audio_files WHERE rel_path = ?1", [rel], |r| r.get(0)).unwrap()
+        };
+        assert!(duration("a.mp3").is_some_and(|d| (d - 0.3).abs() < 0.1), "{:?}", duration("a.mp3"));
+        assert_eq!(duration("broken.wav"), None);
+        // ハッシュ値があっても、長さを調べていなければ計算待ちになる
+        conn.execute("UPDATE audio_files SET duration_done = 0 WHERE rel_path = 'b.mp3'", []).unwrap();
+        assert_eq!(pending_files(&conn).unwrap().len(), 1);
     }
 
     #[test]
     fn cancel_skips_remaining_files() {
         let (_dir, conn, _) = setup();
         let pending = pending_files(&conn).unwrap();
-        let results = compute_parallel(&pending, &AtomicBool::new(true));
+        let results = compute_parallel(&pending, &AtomicBool::new(true), analyze);
         assert!(results.iter().all(|(_, r)| r.is_none()));
     }
 

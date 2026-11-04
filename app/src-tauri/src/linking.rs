@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
+use crate::audio_hash::audio_hash;
 use crate::hashing::{compute_parallel, PendingFile};
 use crate::library::{self, absolute_path, comparable, is_audio_file};
 
@@ -102,7 +103,7 @@ pub fn find_in_folder(conn: &Connection, missing: i64, folder: &Path) -> Result<
         .collect();
     let cancel = AtomicBool::new(false);
     for batch in files.chunks(SEARCH_BATCH) {
-        for (i, outcome) in compute_parallel(batch, &cancel) {
+        for (i, outcome) in compute_parallel(batch, &cancel, audio_hash) {
             if matches!(outcome, Some(Ok(ref h)) if *h == hash) {
                 return Ok(Some(files[i as usize].path.clone()));
             }

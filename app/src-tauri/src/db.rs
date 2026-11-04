@@ -149,6 +149,11 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE tags ADD COLUMN bg_color TEXT;
     ALTER TABLE tags ADD COLUMN fg_color TEXT;
     "#,
+    // 11: ファイルの長さ（秒）。ハッシュ値の計算と一緒に調べる。duration_done は調べたら1（読めなかったときも）
+    r#"
+    ALTER TABLE audio_files ADD COLUMN duration REAL;
+    ALTER TABLE audio_files ADD COLUMN duration_done INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
