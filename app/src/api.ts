@@ -156,6 +156,10 @@ export const api = {
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
+  /** 新しい版があれば、その版（開発用のビルドや、探せなかったときは null） */
+  checkUpdate: () => invoke<string | null>("check_update"),
+  /** 新しい版をダウンロードしてインストールし、アプリを再起動する */
+  installUpdate: () => invoke<void>("install_update"),
   relinkFiles: (fileIds: number[]) => invoke<RelinkResult>("relink_files", { fileIds }),
   /** 見つからないファイルを、選んだファイルにひも付ける（ライブラリの外なら、そのファイルのフォルダを登録する） */
   linkMissingFile: (fileId: number, path: string) => invoke<LinkOutcome>("link_missing_file", { fileId, path }),

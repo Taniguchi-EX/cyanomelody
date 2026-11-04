@@ -50,6 +50,7 @@ import { CreditPanel } from "./components/CreditPanel";
 import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
 import { TagDetail } from "./components/TagDetail";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
@@ -216,6 +217,25 @@ export default function App() {
   useEffect(() => {
     api.licenseTypes().then(setLicenseTypes).catch(showError);
   }, []);
+
+  /** 起動したときに見つかった新しい版。「このバージョンをスキップ」した版は出さない */
+  const [update, setUpdate] = useState<string | null>(null);
+  const [skippedUpdate, setSkippedUpdate] = useStoredString("cyanomelody.skippedUpdate");
+  const [updating, setUpdating] = useState(false);
+  useEffect(() => {
+    api
+      .checkUpdate()
+      .then((v) => v && setUpdate(v))
+      .catch(() => {});
+  }, []);
+  const installUpdate = () => {
+    setUpdating(true);
+    api.installUpdate().catch((e) => {
+      setUpdating(false);
+      setUpdate(null);
+      showError(e);
+    });
+  };
 
   // ハッシュ値の計算の進み具合。終わったら一覧を読み直す（重複や、右の欄のファイルのハッシュ値が変わるため）
   const reloadAllRef = useRef(reloadAll);
@@ -1129,6 +1149,18 @@ export default function App() {
           previewing={audio.previewId !== null && audio.previewId === effectDialog.target?.id}
           onStopPreview={audio.stopPreview}
           onClose={() => setEffectDialog(null)}
+        />
+      )}
+      {update && update !== skippedUpdate && (
+        <UpdateDialog
+          version={update}
+          busy={updating}
+          onUpdate={installUpdate}
+          onLater={() => setUpdate(null)}
+          onSkip={() => {
+            setSkippedUpdate(update);
+            setUpdate(null);
+          }}
         />
       )}
       {tagDetail && (

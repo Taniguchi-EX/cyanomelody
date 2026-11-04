@@ -1,9 +1,9 @@
 [package]
 name = "cyanomelody"
-version = "0.1.0"
+version = "1.0.0"
 description = "音声素材の管理アプリ"
 authors = ["Taniguchi"]
-license = ""
+license = "MIT"
 repository = ""
 edition = "2024"
 rust-version = "1.90"
@@ -30,6 +30,7 @@ thiserror = "2"
 blake3 = "1"
 tauri-plugin-log = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 encoding_rs = "0.8"
 symphonia = { version = "0.5", features = ["aac", "isomp4", "mp3", "flac", "vorbis", "ogg", "wav", "pcm"] }
 

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "cyanomelody",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "dev.cyanomelody.app",
   "build": {
     "frontendDist": "../dist",
@@ -29,7 +29,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +41,28 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "createUpdaterArtifacts": true,
+    "publisher": "Taniguchi-EX",
+    "shortDescription": "音声ファイルにタグを付けて整理し、プレイリストで再生するアプリ",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Japanese"
+        ]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY5REFFRjM4MTlDOUE2OTkKUldTWnBza1pPTy9hYVpQTjJLZk52UnRNbHg5U1F6OUtKMFF1WUQvNmMxVHhoS0gzSGhyS0pZZUEK",
+      "endpoints": [
+        "https://github.com/Taniguchi-EX/cyanomelody/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

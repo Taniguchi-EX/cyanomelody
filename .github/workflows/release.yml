@@ -1,0 +1,49 @@
+# 版のタグ（v1.0.0 など）を押すと、Windows 向けのインストーラーと自動アップデートの情報（latest.json）をビルドし、
+# それらを付けた Release の下書きを作る。下書きを確かめてから、GitHub の画面で公開する。
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - name: 依存関係を入れる
+        working-directory: app
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 自動アップデートの署名の鍵（リポジトリのシークレットに登録する）
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: app
+          tauriScript: npx tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: cyanomelody ${{ github.ref_name }}
+          releaseBody: "インストール方法と使い方は README を見てください。"
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true

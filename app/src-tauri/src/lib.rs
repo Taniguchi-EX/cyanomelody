@@ -18,6 +18,7 @@ mod recent;
 mod romaji;
 mod tags;
 mod tree;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -165,6 +166,18 @@ async fn cancel_hashing(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
     Ok(state.hashing.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
+}
+
+/// 新しい版があれば、その版。開発用のビルドや、探せなかったときは None
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<String>> {
+    Ok(update::check(&app).await)
+}
+
+/// 新しい版をダウンロードしてインストールし、アプリを再起動する
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<()> {
+    update::install(&app).await
 }
 
 /// 音声ファイルのトラック名（タグ情報のタイトル）。ないときは None
@@ -593,6 +606,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -639,6 +653,8 @@ pub fn run() {
             cancel_hashing,
             hashing_progress,
             track_title,
+            check_update,
+            install_update,
             relink_files,
             license_types,
             list_credits,
