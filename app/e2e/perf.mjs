@@ -63,7 +63,7 @@ await step("PF01", "3万ファイルのフォルダを登録・表示・スク�
   const scrollMs = Date.now() - t1;
   const rows = await page.getByTestId("file-row").count();
   expect(rows < 200, `描画している行が多すぎる: ${rows}`);
-  await page.getByLabel("検索", { exact: true }).fill("se_42_1");
+  await page.getByLabel("ファイル名で検索", { exact: true }).fill("se_42_1");
   const t2 = Date.now();
   await page.waitForFunction(() => parseInt(document.querySelector("[data-testid=file-count]").textContent, 10) === 100);
   const filterMs = Date.now() - t2;

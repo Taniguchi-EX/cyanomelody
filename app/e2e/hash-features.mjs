@@ -45,7 +45,7 @@ async function scanFolder(name) {
 }
 /** 検索の欄に入れて、一覧をその名前のファイルに絞る（3万件のフォルダがあると、後ろの行は描かれないため） */
 async function search(text) {
-  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill(text));
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill(text));
 }
 const tagsOf = (rel) => row(rel).locator(".chip").allInnerTexts();
 

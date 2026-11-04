@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import type { MoveTarget, PlaylistNode } from "../api";
 import { reachable } from "../playlistGraph";
 import { useStoredIdSet } from "../storage";
-import { descendantsAndSelf, parentIds, visibleNodes } from "../tree";
+import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, NameInput, Twisty } from "./TreeParts";
+import { DragHandle, NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   playlists: PlaylistNode[];
@@ -14,18 +14,26 @@ type Props = {
   busy: boolean;
   onOpen: (id: number) => void;
   onCreate: (name: string) => Promise<boolean>;
+  /** 名前を変える。終わったら true */
+  onRename: (id: number, name: string) => Promise<boolean>;
+  onDelete: (id: number) => void;
   onMove: (id: number, target: MoveTarget) => void;
+  /** 左の欄の検索の文字。あてはまるプレイリスト（と、薄くした祖先）だけを出す */
+  query: string;
 };
 
-/** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成（再生・名前変更・削除は中央の詳細画面で行う） */
-export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMove }: Props) {
+/** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成・名前変更・削除（再生は中央の詳細画面で行う） */
+export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRename, onDelete, onMove, query }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const parents = useMemo(() => parentIds(playlists), [playlists]);
   const byId = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists]);
 
-  const shown = useMemo(() => visibleNodes(playlists, collapsed), [playlists, collapsed]);
+  // 検索しているときは、たたんでいてもあてはまるプレイリストを出す（開閉の状態は変えない）
+  const search = useMemo(() => searchNodes(playlists, query), [playlists, query]);
+  const shown = useMemo(() => search?.shown ?? visibleNodes(playlists, collapsed), [search, playlists, collapsed]);
 
   /** 落とした先で入る親（最上位なら null） */
   const containerOf = (target: number, pos: "before" | "after" | "child") =>
@@ -86,7 +94,10 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMov
           <li
             key={p.id}
             className={
-              (openId === p.id ? "active" : "") + (moving.has(p.id) ? " drag-source" : "") + drag.dropClass(p.id)
+              (openId === p.id ? "active" : "") +
+              (moving.has(p.id) ? " drag-source" : "") +
+              (search?.dimmed.has(p.id) ? " search-parent" : "") +
+              drag.dropClass(p.id)
             }
             onClick={() => onOpen(p.id)}
             data-testid="playlist"
@@ -98,11 +109,30 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onMov
           >
             <Twisty
               name={p.name}
-              hasChildren={parents.has(p.id)}
+              // 検索しているときは、開閉の印を出さない（あてはまるものをすべて開いて見せる）
+              hasChildren={!search && parents.has(p.id)}
               collapsed={collapsed.has(p.id)}
               onToggle={() => toggleCollapsed(p.id)}
             />
-            <span className="tag-name">{p.name}</span>
+            {editingId === p.id ? (
+              <NameInput
+                label="プレイリストの新しい名前"
+                initial={p.name}
+                onCommit={async (name) => {
+                  if (name.trim() === p.name || (await onRename(p.id, name))) setEditingId(null);
+                }}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <span className="tag-name">{p.name}</span>
+            )}
+            <RowActions
+              name={p.name}
+              busy={busy}
+              editLabel="名前を変える"
+              onEdit={() => setEditingId(p.id)}
+              onDelete={() => onDelete(p.id)}
+            />
             <span className="sub">{p.itemCount}</span>
             <DragHandle name={p.name} handlers={drag.handleProps(p.id)} />
           </li>

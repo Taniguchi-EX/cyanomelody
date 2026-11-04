@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import type { Facets, FileFilter, MoveTarget, Tag } from "../api";
 import { useStoredIdSet } from "../storage";
-import { descendantsAndSelf, parentIds, visibleNodes } from "../tree";
+import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, NameInput, RowActions, Twisty } from "./TreeParts";
+import { DragHandle, HandleSpace, NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   tags: Tag[];
@@ -19,6 +19,8 @@ type Props = {
   onMove: (tag: Tag, target: MoveTarget) => void;
   /** 各項目を選んだときの件数。まだ求めていなければ null（タグの総数を出す） */
   facets: Facets | null;
+  /** 左の欄の検索の文字。あてはまるタグ（と、薄くした祖先）だけを出す */
+  query: string;
 };
 
 /** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト、作成・名前変更・削除 */
@@ -33,6 +35,7 @@ export function TagPanel({
   onDelete,
   onMove,
   facets,
+  query,
 }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.tagTree.collapsed");
   const [creating, setCreating] = useState(false);
@@ -44,7 +47,9 @@ export function TagPanel({
   const countOf = (t: Tag) => (facets ? (facetMap.get(t.id) ?? 0) : t.fileCount);
   const untaggedCount = facets?.untagged ?? null;
   const untaggedDisabled = untaggedCount === 0 && !filter.untaggedOnly;
-  const shown = useMemo(() => visibleNodes(tags, collapsed), [tags, collapsed]);
+  // 検索しているときは、たたんでいてもあてはまるタグを出す（開閉の状態は変えない）
+  const search = useMemo(() => searchNodes(tags, query), [tags, query]);
+  const shown = useMemo(() => search?.shown ?? visibleNodes(tags, collapsed), [search, tags, collapsed]);
 
   // 自分自身や子孫の中（前・後ろ・子のどれでも）には落とせない
   const drag = useTreeDrag({
@@ -93,15 +98,19 @@ export function TagPanel({
         />
       )}
       <ul className={`tag-list tag-tree${drag.dragId !== null ? " dragging" : ""}`}>
-        <li
-          className={(filter.untaggedOnly ? "active" : "") + (untaggedDisabled ? " disabled" : "")}
-          onClick={() => !untaggedDisabled && onToggleUntagged()}
-          aria-disabled={untaggedDisabled}
-          data-testid="untagged"
-        >
-          <span className="tag-name">（タグなし）</span>
-          {untaggedCount !== null && <span className="sub">{untaggedCount}</span>}
-        </li>
+        {/* 検索しているときは「（タグなし）」を出さない */}
+        {!search && (
+          <li
+            className={(filter.untaggedOnly ? "active" : "") + (untaggedDisabled ? " disabled" : "")}
+            onClick={() => !untaggedDisabled && onToggleUntagged()}
+            aria-disabled={untaggedDisabled}
+            data-testid="untagged"
+          >
+            <span className="tag-name">（タグなし）</span>
+            {untaggedCount !== null && <span className="sub">{untaggedCount}</span>}
+            <HandleSpace />
+          </li>
+        )}
         {shown.map((t) => {
           const selected = filter.tagIds.includes(t.id);
           const disabled = countOf(t) === 0 && !selected;
@@ -112,6 +121,7 @@ export function TagPanel({
                 (selected ? "active" : "") +
                 (disabled ? " disabled" : "") +
                 (moving.has(t.id) ? " drag-source" : "") +
+                (search?.dimmed.has(t.id) ? " search-parent" : "") +
                 drag.dropClass(t.id)
               }
               // aria-disabled は付けない（中の「✎」「🗑」まで押せない扱いになるため）。グレーアウトは class で示す
@@ -125,7 +135,8 @@ export function TagPanel({
             >
               <Twisty
                 name={t.name}
-                hasChildren={parents.has(t.id)}
+                // 検索しているときは、開閉の印を出さない（あてはまるものをすべて開いて見せる）
+                hasChildren={!search && parents.has(t.id)}
                 collapsed={collapsed.has(t.id)}
                 onToggle={() => toggleCollapsed(t.id)}
               />
@@ -141,7 +152,6 @@ export function TagPanel({
               ) : (
                 <span className="tag-name">{t.name}</span>
               )}
-              <span className="sub">{countOf(t)}</span>
               <RowActions
                 name={t.name}
                 busy={busy}
@@ -149,6 +159,7 @@ export function TagPanel({
                 onEdit={() => setEditingId(t.id)}
                 onDelete={() => onDelete(t)}
               />
+              <span className="sub">{countOf(t)}</span>
               <DragHandle name={t.name} handlers={drag.handleProps(t.id)} />
             </li>
           );

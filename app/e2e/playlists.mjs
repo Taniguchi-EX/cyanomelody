@@ -221,17 +221,17 @@ await step("P14", "一覧の行の「▶」を押すと、プレイリストの�
   await ui.waitStopped();
 });
 
-await step("P15", "上の行の「✎」で名前を変えられる（同じ名前はエラー。Escでやめる）", async () => {
+await step("P15", "左の欄の行の「✎」で名前を変えられる（同じ名前はエラー。Escでやめる）。詳細画面の上の行には「✎」がない", async () => {
   await open("足音");
-  const input = page.getByLabel("プレイリストの名前", { exact: true });
+  expect((await page.getByRole("button", { name: "プレイリストの名前を変える" }).count()) === 0, "詳細画面に✎が残っている");
+  const input = page.getByLabel("プレイリストの新しい名前", { exact: true });
   expect((await input.count()) === 0, "最初から入力欄になっている");
-  expect((await page.getByTestId("playlist-title").innerText()) === "足音", await page.getByTestId("playlist-title").innerText());
-  await page.getByRole("button", { name: "プレイリストの名前を変える" }).click();
+  await ui.rowAction(playlistItem("足音"), "足音の名前を変える");
   await input.fill("やめる");
   await input.press("Escape");
   expect((await input.count()) === 0, "Escで閉じない");
   expect((await tree()).includes("足音:"), await tree());
-  await page.getByRole("button", { name: "プレイリストの名前を変える" }).click();
+  await ui.rowAction(playlistItem("足音"), "足音の名前を変える");
   await input.fill("環境");
   await input.press("Enter");
   await waitIdle();
@@ -241,14 +241,14 @@ await step("P15", "上の行の「✎」で名前を変えられる（同じ名�
   await input.press("Enter");
   await waitIdle();
   expect((await tree()).includes("足音（短い）:0"), await tree());
-  expect((await page.getByTestId("playlist-title").innerText()) === "足音（短い）", "見出しが変わらない");
+  expect((await page.getByTestId("playlist-title").innerText()) === "足音（短い）", "詳細画面の見出しが変わらない");
 });
 
-await step("P16", "削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {
+await step("P16", "左の欄の行の「🗑」で削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {
   // 環境の子に足音（短い）を入れてから、環境を削除する
   await ui.dragTo(playlistItem("足音（短い）").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
   await open("環境");
-  await page.getByRole("button", { name: "このプレイリストを削除" }).click();
+  await ui.rowAction(playlistItem("環境"), "環境を削除");
   await waitIdle();
   const message = await ui.lastConfirm();
   expect(message.includes("子のプレイリスト1件は") && message.includes("入れているプレイリスト1件から外れます"), message);
@@ -418,13 +418,14 @@ await step("P23", "右の欄に、そのファイルを入れているプレイ�
   await back();
 });
 
-await step("P25", "左の欄の行は開閉の印・名前・数・取っ手だけ。詳細画面：丸い「＜」で戻る。「書き出す」と「🗑」は一番下の行。タグの組み合わせの項目を押すと、右の欄にその名前の欄と内容が出る", async () => {
-  // 左の欄のプレイリストの行には、開閉の印・名前・数・取っ手だけ（旧 P24）
+await step("P25", "左の欄の行は開閉の印・名前・✎・🗑・数・取っ手の順。詳細画面：丸い「＜」で戻る。「書出」は一番下の行（🗑はない）。タグの組み合わせの項目を押すと、右の欄にその名前の欄と内容が出る", async () => {
   await back();
   const item = playlistItem("ドラッグ");
   await item.hover();
-  expect((await item.getByRole("button").count()) === 0, `行にボタンがある: ${await item.getByRole("button").allInnerTexts()}`);
-  expect((await item.getByTestId("drag-handle").count()) === 1, "取っ手がない");
+  const order = await item.evaluate((li) =>
+    [...li.children].map((c) => c.dataset.testid ?? (c.classList.contains("sub") ? "count" : c.className)).join(","),
+  );
+  expect(order === "tag-twisty,tag-name,row-actions,count,drag-handle", order);
   await createPlaylist("消す用");
   await open("消す用");
   await ui.filtered(() => tagItem("雨").click());
@@ -433,7 +434,7 @@ await step("P25", "左の欄の行は開閉の印・名前・数・取っ手だ�
   await ui.filtered(() => tagItem("雨").click());
   const foot = page.locator(".editor-foot");
   expect((await foot.getByRole("button", { name: "書出" }).count()) === 1, "書出が下の行にない");
-  expect((await foot.getByRole("button", { name: "このプレイリストを削除" }).count()) === 1, "削除が下の行にない");
+  expect((await foot.getByRole("button", { name: "このプレイリストを削除" }).count()) === 0, "詳細画面に🗑が残っている");
   await itemRow("雨").locator(".item-content").click();
   expect((await page.getByTestId("item-detail-content").innerText()) === "雨", await page.getByTestId("item-detail-content").innerText());
   // その項目の曲のリスト（ファイル名で、順に再生したときの並び）と曲数
@@ -449,7 +450,7 @@ await step("P25", "左の欄の行は開閉の印・名前・数・取っ手だ�
   await page.getByLabel("雨のエフェクト").click();
   await page.keyboard.press("Escape");
   await shot("P25_詳細画面");
-  await page.getByRole("button", { name: "このプレイリストを削除" }).click();
+  await ui.rowAction(playlistItem("消す用"), "消す用を削除");
   await waitIdle();
   expect((await ui.lastConfirm()).includes("プレイリスト「消す用」を削除しますか"), await ui.lastConfirm());
   expect(!(await tree()).includes("消す用"), await tree());

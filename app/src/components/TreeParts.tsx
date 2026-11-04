@@ -1,6 +1,6 @@
 import { useState, type MouseEvent } from "react";
 
-// 木（タグ・プレイリスト）の行に共通の部品
+// 左の欄の行（タグ・プレイリスト・出典・ライセンス）に共通の部品
 
 type TwistyProps = {
   name: string;
@@ -44,6 +44,15 @@ export function DragHandle({ name, handlers }: HandleProps) {
       data-testid="drag-handle"
       {...handlers}
     >
+      ≡
+    </span>
+  );
+}
+
+/** 取っ手のない行（「（タグなし）」など）で、件数の位置をほかの行とそろえるために、取っ手の幅だけ空ける */
+export function HandleSpace() {
+  return (
+    <span className="drag-handle handle-space" aria-hidden="true">
       ≡
     </span>
   );

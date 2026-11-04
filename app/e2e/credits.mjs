@@ -227,7 +227,7 @@ await step("C18", "フォームを「やめる」・Escで閉じると何も変�
   await page.getByLabel("名前", { exact: true }).press("Escape");
   await form().waitFor({ state: "detached", timeout: 3000 }).catch(() => {});
   expect((await form().count()) === 0, "Escで閉じない");
-  expect((await leftNames("license")).join(",") === "サイトB規約,サイトC規約", (await leftNames("license")).join(","));
+  expect((await leftNames("license")).join(",") === "サイトC規約,サイトB規約", (await leftNames("license")).join(","));
   await ui.setConfirmReply(false);
   await ui.confirmed(() => ui.rowAction(leftItem("license", "サイトB規約"), "サイトB規約を削除"));
   await ui.setConfirmReply(true);
@@ -267,6 +267,40 @@ await step("C22", "右の欄の出典・ライセンスはプルダウン：（�
   await waitIdle();
   expect((await current("source")) === "なし", await current("source"));
   await shot("C22_右の欄のプルダウン");
+});
+
+await step("C23", "出典・ライセンスは取っ手のドラッグで並べ替えられる（前・後ろ・最後）。件数は✎🗑の右。「なし」の件数はほかの行とそろう。左の欄の検索で絞り込める", async () => {
+  const names = await leftNames("license");
+  expect(names.length >= 2, names.join(","));
+  const [first, second] = names;
+  // 2番目を1番目の前（上半分）に落とす
+  await ui.dragTo(leftItem("license", second).getByTestId("drag-handle"), leftItem("license", first), 0.2);
+  expect((await leftNames("license"))[0] === second, (await leftNames("license")).join(","));
+  // 一覧の下の空いた所に落とすと最後
+  await ui.dragTo(leftItem("license", second).getByTestId("drag-handle"), page.getByTestId("license-drop-root"), 0.5);
+  const after = await leftNames("license");
+  expect(after[after.length - 1] === second, after.join(","));
+  await ui.reload();
+  expect((await leftNames("license")).join(",") === after.join(","), "再読み込みで戻った");
+  // 行の並び：名前、（条項の記号）、✎🗑、件数、取っ手
+  const order = await leftItem("license", first).evaluate((li) =>
+    [...li.children].map((c) => c.dataset.testid ?? c.className).join(","),
+  );
+  expect(order === "credit-name,term-marks,row-actions,credit-count,drag-handle", order);
+  // 「なし」の行の件数の右端は、ほかの行の件数の右端とそろう
+  const rights = await page.evaluate(() => {
+    const none = document.querySelector("[data-testid=source-none] .sub").getBoundingClientRect().right;
+    const other = document.querySelector("[data-testid=source] [data-testid=credit-count]").getBoundingClientRect().right;
+    return [none, other];
+  });
+  expect(Math.abs(rights[0] - rights[1]) <= 1, `なし ${rights[0]}、ほか ${rights[1]}`);
+  // 左の欄の検索で、あてはまるものだけ出す（「なし」は隠す）
+  await page.getByLabel("検索", { exact: true }).fill(first.slice(-2));
+  expect((await leftNames("license")).includes(first), (await leftNames("license")).join(","));
+  expect((await leftNames("license")).every((n) => n.includes(first.slice(-2))), (await leftNames("license")).join(","));
+  expect((await page.getByTestId("license-none").count()) === 0, "（ライセンスなし）が出ている");
+  await shot("C23_並べ替えと検索");
+  await page.getByRole("button", { name: "検索の文字を消す", exact: true }).click();
 });
 
 await ui.finish();

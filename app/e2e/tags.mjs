@@ -210,4 +210,31 @@ await step("G13", "子のあるタグを削除すると、子はその位置に�
   expect((await tree()) === "雨:0 爆発:0 風:0 強風:1", await tree());
 });
 
+await step("G14", "左の欄の検索：あてはまるタグだけを出す（たたんだ中でも出す）。あてはまるタグの親は薄く出し、押して絞り込める。（タグなし）は隠す。×で消すと元の開閉に戻る。開閉の印は行の高さいっぱいで押せる", async () => {
+  // 開閉の印の押せる範囲は、縦が行の高さいっぱい
+  const heights = await tagItem("風").evaluate((li) => [li.getBoundingClientRect().height, li.querySelector(".twisty").getBoundingClientRect().height]);
+  expect(Math.abs(heights[0] - heights[1]) <= 1, `行 ${heights[0]}px、開閉の印 ${heights[1]}px`);
+  await page.getByRole("button", { name: "風をたたむ" }).click();
+  expect((await tree()) === "雨:0 爆発:0 風:0", await tree());
+  const search = page.getByLabel("検索", { exact: true });
+  await search.fill("強");
+  expect((await tree()) === "風:0 強風:1", `検索中 ${await tree()}`);
+  expect((await tagItem("風").getAttribute("class")).includes("search-parent"), "親が薄くない");
+  expect(!(await tagItem("強風").getAttribute("class")).includes("search-parent"), "あてはまるタグが薄い");
+  expect((await page.getByTestId("untagged").count()) === 0, "（タグなし）が出ている");
+  // ファイルの一覧は絞り込まない
+  expect((await fileCount()) === 5, `一覧 ${await fileCount()}`);
+  await shot("G14_左の欄の検索");
+  // 薄い親も押して絞り込める
+  await ui.filtered(() => tagItem("風").locator(".tag-name").click());
+  expect((await tagItem("風").getAttribute("class")).includes("active"), "薄い親で絞り込めない");
+  await ui.filtered(() => tagItem("風").locator(".tag-name").click());
+  // 「×」で消すと、元の開閉（風はたたんだまま）に戻る
+  await page.getByRole("button", { name: "検索の文字を消す", exact: true }).click();
+  expect((await search.inputValue()) === "", "消えない");
+  expect((await page.getByRole("button", { name: "検索の文字を消す", exact: true }).count()) === 0, "空なのに×が出ている");
+  expect((await tree()) === "雨:0 爆発:0 風:0", `消した後 ${await tree()}`);
+  await page.getByRole("button", { name: "風を開く" }).click();
+});
+
 await ui.finish();

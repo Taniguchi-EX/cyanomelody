@@ -49,6 +49,7 @@ import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
+import { SearchBox } from "./components/SearchBox";
 import { useStoredNumber } from "./storage";
 
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
@@ -83,6 +84,8 @@ export default function App() {
   /** クリックして右の欄に出しているファイル */
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
+  /** 左の欄の検索の文字（タグ・プレイリスト・出典・ライセンスを名前で絞り込む） */
+  const [sideQuery, setSideQuery] = useState("");
   /** 左の欄の各項目を選んだときの件数 */
   const [facets, setFacets] = useState<Facets | null>(null);
   /** 一覧を読み直した回数。画面テストが、絞り込みを変えた後の一覧を待つのに使う（data-list-version） */
@@ -307,7 +310,7 @@ export default function App() {
       startHashing();
     });
 
-  const addTag = async (name: string) => 
+  const addTag = async (name: string) =>
     run(async () => {
       await api.addTag(focusedIds(), name);
       showInfo(`タグ「${name.trim()}」を付けました`);
@@ -368,7 +371,7 @@ export default function App() {
     if (typeof path === "string") await addFolder(path);
   };
 
-  const createTag = async (name: string) => 
+  const createTag = async (name: string) =>
     run(async () => {
       await api.createTag(name);
       showInfo(`タグ「${name.trim()}」を作成しました`);
@@ -412,6 +415,12 @@ export default function App() {
     });
   };
 
+  const moveCredit = (kind: CreditKind, credit: Credit, target: MoveTarget) =>
+    run(async () => {
+      await api.moveCredit(kind, credit.id, target);
+      showInfo(`${CREDIT_LABEL[kind]}「${credit.name}」を移しました`);
+    });
+
   const moveTag = (tag: Tag, target: MoveTarget) =>
     run(async () => {
       await api.moveTag(tag.id, target);
@@ -420,13 +429,13 @@ export default function App() {
 
   const creditsOf = (kind: CreditKind) => (kind === "source" ? sources : licenses);
 
-  const createCredit = async (kind: CreditKind, input: CreditInput) => 
+  const createCredit = async (kind: CreditKind, input: CreditInput) =>
     run(async () => {
       await api.createCredit(kind, input);
       showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を作成しました`);
     });
 
-  const updateCredit = async (kind: CreditKind, credit: Credit, input: CreditInput) => 
+  const updateCredit = async (kind: CreditKind, credit: Credit, input: CreditInput) =>
     run(async () => {
       await api.updateCredit(kind, credit.id, input);
       showInfo(`${CREDIT_LABEL[kind]}「${input.name.trim()}」を保存しました`);
@@ -446,7 +455,7 @@ export default function App() {
     });
   };
 
-  const setFileCredit = async (kind: CreditKind, name: string) => 
+  const setFileCredit = async (kind: CreditKind, name: string) =>
     run(async () => {
       await api.setFileCredit(kind, focusedIds(), name);
       showInfo(`${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`);
@@ -473,13 +482,13 @@ export default function App() {
     setPlaylistDetail(null);
   };
 
-  const createPlaylist = async (name: string, parent: number | null = null) => 
+  const createPlaylist = async (name: string, parent: number | null = null) =>
     run(async () => {
       await playlistApi.create(name, parent);
       showInfo(`プレイリスト「${name.trim()}」を作りました`);
     });
 
-  const renamePlaylist = async (id: number, name: string) => 
+  const renamePlaylist = async (id: number, name: string) =>
     run(async () => {
       await playlistApi.rename(id, name);
       showInfo(`プレイリストの名前を「${name.trim()}」に変えました`);
@@ -510,7 +519,7 @@ export default function App() {
   const playlistName = (id: number) => playlists.find((p) => p.id === id)?.name ?? "";
 
   /** ファイルをプレイリストの最後に加える */
-  const addToPlaylist = async (playlistId: number, fileIds: number[]) => 
+  const addToPlaylist = async (playlistId: number, fileIds: number[]) =>
     run(async () => {
       await playlistApi.addFiles(playlistId, fileIds);
       showInfo(`${fileIds.length}件をプレイリスト「${playlistName(playlistId)}」に追加しました`);
@@ -639,7 +648,7 @@ export default function App() {
     return id;
   };
 
-  const renameChain = async (chain: EffectChain, name: string) => 
+  const renameChain = async (chain: EffectChain, name: string) =>
     run(async () => {
       await chainApi.rename(chain.id, name);
       showInfo(`エフェクトセットの名前を「${name.trim()}」に変えました`);
@@ -655,7 +664,7 @@ export default function App() {
     });
   };
 
-  const saveChain = async (chain: EffectChain, effects: Effect[]) => 
+  const saveChain = async (chain: EffectChain, effects: Effect[]) =>
     run(async () => {
       await chainApi.setEffects(chain.id, effects);
       showInfo(`エフェクトセット「${chain.name}」を保存しました`);
@@ -712,7 +721,7 @@ export default function App() {
     if (ids.length > 0) setItemsChain(ids, chainId);
   };
 
-  const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) => 
+  const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) =>
     run(async () => {
       await playlistApi.setItemAlias(item.id, alias);
       showInfo(alias.trim() ? `プレイリスト上での名前を「${alias.trim()}」にしました` : "プレイリスト上での名前を外しました");
@@ -790,7 +799,8 @@ export default function App() {
         {/* 絞り込みの操作。左の欄をスクロールしても一番上に残す */}
         <div className="filter-bar" data-testid="filter-bar">
           <div className="row">
-            <input type="text" placeholder="検索" value={text} onChange={(e) => setText(e.target.value)} aria-label="検索" />
+            {/* 左の欄のタグ・プレイリスト・出典・ライセンスを名前で絞り込む（ファイルの一覧は絞り込まない） */}
+            <SearchBox value={sideQuery} onChange={setSideQuery} label="検索" testId="side-search" />
           </div>
           <FilterChips chips={filterChips} onClearAll={() => fileFilter.reset()} />
         </div>
@@ -814,6 +824,7 @@ export default function App() {
           facets={facets}
           busy={busy}
           onMove={moveTag}
+          query={sideQuery}
         />
         <PlaylistPanel
           playlists={playlists}
@@ -821,7 +832,10 @@ export default function App() {
           busy={busy}
           onOpen={openPlaylist}
           onCreate={(name) => createPlaylist(name)}
+          onRename={renamePlaylist}
+          onDelete={deletePlaylist}
           onMove={movePlaylist}
+          query={sideQuery}
         />
         {creditKinds.map((kind) => (
           <CreditPanel
@@ -836,6 +850,8 @@ export default function App() {
             busy={busy}
             onEdit={(credit) => setCreditForm({ kind, credit })}
             onDelete={(credit) => deleteCredit(kind, credit)}
+            onMove={(credit, target) => moveCredit(kind, credit, target)}
+            query={sideQuery}
           />
         ))}
         <OtherPanel filter={filter} onToggle={toggleOther} facets={facets} />
@@ -860,8 +876,6 @@ export default function App() {
             filterTagIds={filter.tagIds}
             busy={busy}
             onClose={closePlaylist}
-            onRename={(name) => renamePlaylist(playlistDetail.id, name)}
-            onDelete={() => deletePlaylist(playlistDetail.id)}
             onPlayItem={playPlaylistItem}
             onRemoveItem={removePlaylistItem}
             onMoveItem={movePlaylistItem}
@@ -890,6 +904,8 @@ export default function App() {
               <h2 className="editor-title" data-testid="list-title">
                 ライブラリ
               </h2>
+              {/* ファイル名（相対パス）で一覧を絞り込む */}
+              <SearchBox value={text} onChange={setText} label="ファイル名で検索" testId="file-search" />
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (

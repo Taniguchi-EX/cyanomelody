@@ -27,3 +27,32 @@ export function visibleNodes<T extends TreeNode>(nodes: T[], collapsed: Set<numb
     return true;
   });
 }
+
+/** 左の欄の検索で、名前があてはまるか（部分一致、大文字・小文字は区別しない）。query は小文字にして渡す */
+export const nameMatches = (name: string, query: string) => name.toLowerCase().includes(query);
+
+/**
+ * 左の欄の検索。名前があてはまる節と、その祖先を出す（祖先は、あてはまらなければ dimmed）。
+ * たたんでいる節の中でも出す。query が空なら null（検索していない）
+ */
+export function searchNodes<T extends TreeNode & { name: string }>(
+  nodes: T[],
+  query: string,
+): { shown: T[]; dimmed: Set<number> } | null {
+  const q = query.trim().toLowerCase();
+  if (!q) return null;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const matched = new Set(nodes.filter((n) => nameMatches(n.name, q)).map((n) => n.id));
+  const keep = new Set(matched);
+  for (const id of matched) {
+    let parent = byId.get(id)?.parentId ?? null;
+    while (parent !== null && !keep.has(parent)) {
+      keep.add(parent);
+      parent = byId.get(parent)?.parentId ?? null;
+    }
+  }
+  return {
+    shown: nodes.filter((n) => keep.has(n.id)),
+    dimmed: new Set([...keep].filter((id) => !matched.has(id))),
+  };
+}

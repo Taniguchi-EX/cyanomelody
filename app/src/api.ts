@@ -128,6 +128,8 @@ export const api = {
   updateCredit: (kind: CreditKind, id: number, input: CreditInput) =>
     invoke<void>("update_credit", { kind, id, input }),
   deleteCredit: (kind: CreditKind, id: number) => invoke<void>("delete_credit", { kind, id }),
+  /** 出典・ライセンスの並び順を変える（前・後ろ・最後だけ。階層はない） */
+  moveCredit: (kind: CreditKind, id: number, target: MoveTarget) => invoke<void>("move_credit", { kind, id, target }),
   /** name が null なら外す */
   setFileCredit: (kind: CreditKind, fileIds: number[], name: string | null) =>
     invoke<number | null>("set_file_credit", { kind, fileIds, name }),

@@ -135,6 +135,13 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX recent_plays_seq ON recent_plays(seq);
     "#,
+    // 9: 出典・ライセンスの並び順。今あるものは名前の順で始める
+    r#"
+    ALTER TABLE sources ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE licenses ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+    UPDATE sources SET position = (SELECT count(*) FROM sources s2 WHERE s2.name < sources.name COLLATE NOCASE);
+    UPDATE licenses SET position = (SELECT count(*) FROM licenses l2 WHERE l2.name < licenses.name COLLATE NOCASE);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

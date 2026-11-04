@@ -3,7 +3,6 @@ import { PLAY_MODES, type PlayMode, type PlaylistDetail, type PlaylistItem, type
 import { makesLoop } from "../playlistGraph";
 import type { EffectChain } from "../effects";
 import { useStoredString } from "../storage";
-import { NameInput } from "./TreeParts";
 import { itemContent } from "../playlistItem";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 
@@ -15,8 +14,6 @@ type Props = {
   filterTagIds: number[];
   busy: boolean;
   onClose: () => void;
-  onRename: (name: string) => Promise<boolean>;
-  onDelete: () => void;
   /** 項目1つだけを再生する */
   onPlayItem: (item: PlaylistItem) => void;
   onRemoveItem: (item: PlaylistItem) => void;
@@ -72,8 +69,6 @@ export function PlaylistEditor({
   filterTagIds,
   busy,
   onClose,
-  onRename,
-  onDelete,
   onPlayItem,
   onRemoveItem,
   onMoveItem,
@@ -91,7 +86,6 @@ export function PlaylistEditor({
   onExport,
   onBrowseFolder,
 }: Props) {
-  const [renaming, setRenaming] = useState(false);
   /** チェックした項目（ファイルの一覧と同じく、まとめて操作する対象）。開いているプレイリストの中だけ */
   const [checked, setChecked] = useState<Set<number>>(new Set());
   // 外した項目は、チェックからも外す
@@ -178,29 +172,9 @@ export function PlaylistEditor({
         >
           ＜
         </button>
-        {renaming ? (
-          <NameInput
-            label="プレイリストの名前"
-            initial={detail.name}
-            onCommit={async (name) => {
-              if (name.trim() === detail.name || (await onRename(name))) setRenaming(false);
-            }}
-            onCancel={() => setRenaming(false)}
-          />
-        ) : (
-          <h2 className="editor-title" data-testid="playlist-title" title={detail.name}>
-            {detail.name}
-          </h2>
-        )}
-        <button
-          className="icon"
-          onClick={() => setRenaming(true)}
-          disabled={busy || renaming}
-          title="名前を変える"
-          aria-label="プレイリストの名前を変える"
-        >
-          ✎
-        </button>
+        <h2 className="editor-title" data-testid="playlist-title" title={detail.name}>
+          {detail.name}
+        </h2>
       </div>
 
       <div className="editor-body">
@@ -411,16 +385,6 @@ export function PlaylistEditor({
       <div className="toolbar editor-foot">
         <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
           書出
-        </button>
-        <span style={{ flex: 1 }} />
-        <button
-          className="icon"
-          onClick={onDelete}
-          disabled={busy}
-          title="このプレイリストを削除"
-          aria-label="このプレイリストを削除"
-        >
-          🗑
         </button>
       </div>
     </div>

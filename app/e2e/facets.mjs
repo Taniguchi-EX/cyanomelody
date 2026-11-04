@@ -64,7 +64,7 @@ await step("F03", "絞り込むと0件になる項目はグレーアウトし、
 
 await step("F05", "選んでいる項目は、0件になってもグレーアウトせず、押して選択を外せる", async () => {
   await ui.filtered(() => tagItem("雨").click());
-  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill("flac"));
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill("flac"));
   expect((await fileCount()) === 0, `件数 ${await fileCount()}`);
   expect((await countOf(tagItem("雨"))) === 0, "雨の件数");
   expect(!(await disabled(tagItem("雨"))), "選んでいる項目がグレーアウトした");

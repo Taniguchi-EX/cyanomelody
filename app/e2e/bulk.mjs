@@ -14,7 +14,7 @@ const { page, step, shot, status, fileCount, row, tagItem, waitIdle, addFolder, 
 const detailPath = async () => path.win32.basename(await page.getByTestId("detail-path").innerText());
 const isChecked = (rel) => row(rel).getByTestId("file-check").isChecked();
 const filterText = async (text) => {
-  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill(text));
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill(text));
 };
 const checkedOnly = () => page.getByLabel("チェックしたファイルだけ表示");
 const checkToolbar = () => page.locator("main .toolbar:not(.library-head)");
@@ -77,6 +77,10 @@ await step("B05", "「チェックしたファイルだけ表示」はほかの�
   expect((await fileCount()) === 3, `チェックしたファイルだけ ${await fileCount()}`);
   await filterText("wav");
   expect((await fileCount()) === 1, `ファイル名とAND ${await fileCount()}`);
+  // ファイル名の検索欄はライブラリの見出しの行にあり、「×」で消せる
+  expect((await page.locator(".library-head [aria-label=\"ファイル名で検索\"]").count()) === 1, "ライブラリの見出しにない");
+  await ui.filtered(() => page.getByRole("button", { name: "ファイル名で検索の文字を消す" }).click());
+  expect((await fileCount()) === 3, `×で消した後 ${await fileCount()}`);
   await clearFilter();
   // チェックがなくなると「チェックしたファイルだけ表示」自体が消える
   expect((await checkedOnly().count()) === 0, "チェックしたファイルだけが残っている");

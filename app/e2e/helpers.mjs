@@ -144,7 +144,7 @@ export async function connect(shotDir) {
     },
     /** 絞り込みの条件（検索の文字、条件のチップ、チェックしたファイルだけ表示）とチェックを外す */
     async clearFilter() {
-      const search = page.getByLabel("検索", { exact: true });
+      const search = page.getByLabel("ファイル名で検索", { exact: true });
       if ((await search.count()) && (await search.inputValue())) await ui.filtered(() => search.fill(""));
       // 条件のチップが2つ以上なら名前のない「✕」でまとめて、1つならそのチップを押して外す
       const all = page.getByRole("button", { name: "絞り込みの条件をすべて外す" });

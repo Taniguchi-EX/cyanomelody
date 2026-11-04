@@ -11,17 +11,19 @@ type Options = {
   /** 行に付ける data-tree の値。別の木の行には落とさない */
   tree: string;
   busy: boolean;
+  /** 階層のない一覧（出典・ライセンス）。子には落とさず、行の上半分は前、下半分は後ろ */
+  flat?: boolean;
   /** dragged を target の位置（前・後ろ・子）に落とせるか */
   canDrop: (dragged: number, target: number, pos: "before" | "after" | "child") => boolean;
   onMove: (dragged: number, target: MoveTarget) => void;
 };
 
 /**
- * 木（タグ・プレイリスト）の行を、取っ手のドラッグアンドドロップで並べ替える。
+ * 木（タグ・プレイリスト）と一覧（出典・ライセンス）の行を、取っ手のドラッグアンドドロップで並べ替える。
  * HTMLのドラッグアンドドロップはTauri（Windows）で動かないことがあるので、pointerイベントで作る。
  * 行には data-tree と data-node-id を、一覧の下の空いた所には data-tree-root を付ける。
  */
-export function useTreeDrag({ tree, busy, canDrop, onMove }: Options) {
+export function useTreeDrag({ tree, busy, flat = false, canDrop, onMove }: Options) {
   const [dragId, setDragId] = useState<number | null>(null);
   const [drop, setDrop] = useState<Drop | null>(null);
   const start = useRef<{ id: number; x: number; y: number; moving: boolean } | null>(null);
@@ -35,8 +37,8 @@ export function useTreeDrag({ tree, busy, canDrop, onMove }: Options) {
     const id = Number(row.dataset.nodeId);
     const rect = row.getBoundingClientRect();
     const ratio = (y - rect.top) / rect.height;
-    // 上の端は前、下の端は後ろ、真ん中は子の最後
-    const pos = ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "child";
+    // 上の端は前、下の端は後ろ、真ん中は子の最後（階層のない一覧は、上半分が前、下半分が後ろ）
+    const pos = flat ? (ratio < 0.5 ? "before" : "after") : ratio < 0.25 ? "before" : ratio > 0.75 ? "after" : "child";
     return canDrop(dragged, id, pos) ? { id, pos } : null;
   };
 

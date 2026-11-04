@@ -484,12 +484,28 @@ h2:first-child {
   flex: 1;
 }
 
+/* 開閉の印。押せる範囲は、縦を行の高さいっぱいにする（行の上下の余白の分も広げる） */
 .twisty {
   width: 12px;
   flex: none;
+  align-self: stretch;
+  margin: -2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 9px;
   color: var(--fg-sub);
-  text-align: center;
+}
+
+/* 左の欄の検索で、あてはまる行の親（あてはまらないもの）は薄く出す。押して絞り込みには使える */
+.tag-list li.search-parent > .tag-name {
+  opacity: 0.5;
+}
+
+/* 取っ手のない行で、件数の位置をそろえるための空き */
+.handle-space {
+  visibility: hidden;
+  cursor: default;
 }
 
 /* 行の「✎」「🗑」。行にマウスを乗せたとき（行の中にフォーカスがあるとき）だけ出す。場所は常に取っておく */
@@ -1047,9 +1063,40 @@ button.filter-chip:hover .chip-x {
   padding: 0;
 }
 
-.filter-bar input[type="text"] {
+/* 検索欄。文字があるときは、中の右端に「×」を出す */
+.search-box {
+  position: relative;
+  display: flex;
   flex: 1;
   min-width: 0;
+}
+
+.search-box input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding-right: 22px;
+}
+
+.search-clear {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: none;
+  padding: 0 4px;
+  color: var(--fg-sub);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.search-clear:hover {
+  color: var(--fg);
+}
+
+/* ライブラリの見出しの右端の、ファイル名の検索欄 */
+.library-head .search-box {
+  flex: 0 1 240px;
 }
 
 .item-count {

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{ids_json, now};
 use crate::error::{Error, Result};
 use crate::names::{ensure_unique_name, find_by_name, normalize_name, not_found};
+use crate::tree::MoveTarget;
 
 /// 出典かライセンスか
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,7 +127,7 @@ pub fn list_credits(conn: &Connection, kind: CreditKind) -> Result<Vec<Credit>> 
     let sql = format!(
         "SELECT c.id, c.name, c.url, c.note, {extra},
                 (SELECT count(*) FROM audio_files a WHERE a.{col} = c.id)
-         FROM {table} c ORDER BY c.name COLLATE NOCASE",
+         FROM {table} c ORDER BY c.position, c.id",
         col = kind.column(),
         table = kind.table(),
     );
@@ -184,13 +185,13 @@ fn normalize(kind: CreditKind, input: &CreditInput) -> Result<CreditInput> {
 fn insert(conn: &Connection, kind: CreditKind, c: &CreditInput) -> Result<i64> {
     match kind {
         CreditKind::Source => conn.execute(
-            "INSERT INTO sources (name, url, note, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![c.name, c.url, c.note, now()],
+            "INSERT INTO sources (name, url, note, created_at, position) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![c.name, c.url, c.note, now(), next_position(conn, kind)?],
         )?,
         CreditKind::License => conn.execute(
             "INSERT INTO licenses (name, url, note, license_type, commercial, credit, modify,
-                                   redistribute, share_alike, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                                   redistribute, share_alike, created_at, position)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 c.name,
                 c.url,
@@ -201,11 +202,50 @@ fn insert(conn: &Connection, kind: CreditKind, c: &CreditInput) -> Result<i64> {
                 c.terms.modify,
                 c.terms.redistribute,
                 c.terms.share_alike,
-                now()
+                now(),
+                next_position(conn, kind)?
             ],
         )?,
     };
     Ok(conn.last_insert_rowid())
+}
+
+/// 新しく作ったものを入れる順番（最後）
+fn next_position(conn: &Connection, kind: CreditKind) -> Result<i64> {
+    Ok(conn.query_row(&format!("SELECT coalesce(max(position) + 1, 0) FROM {}", kind.table()), [], |r| r.get(0))?)
+}
+
+/// 出典・ライセンスの並び順を変える。階層はないので、前・後ろと最後（Root）にだけ移せる
+pub fn move_credit(conn: &mut Connection, kind: CreditKind, id: i64, target: MoveTarget) -> Result<()> {
+    let tx = conn.transaction()?;
+    let table = kind.table();
+    let mut ids: Vec<i64> = tx
+        .prepare(&format!("SELECT id FROM {table} ORDER BY position, id"))?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let Some(from) = ids.iter().position(|&x| x == id) else {
+        return Err(not_found(kind.label()));
+    };
+    ids.remove(from);
+    let index = match target {
+        MoveTarget::Root => ids.len(),
+        MoveTarget::Before(a) | MoveTarget::After(a) => {
+            let Some(i) = ids.iter().position(|&x| x == a) else {
+                return Err(not_found(kind.label()));
+            };
+            if matches!(target, MoveTarget::After(_)) { i + 1 } else { i }
+        }
+        MoveTarget::Child(_) => return Err(Error::invalid(format!("{}には階層がありません", kind.label()))),
+    };
+    ids.insert(index, id);
+    {
+        let mut stmt = tx.prepare(&format!("UPDATE {table} SET position = ?2 WHERE id = ?1"))?;
+        for (pos, id) in ids.iter().enumerate() {
+            stmt.execute(params![id, pos as i64])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// 出典・ライセンスを作る。同じ名前があればエラー。
@@ -355,6 +395,27 @@ mod tests {
                 file_count: 0,
             }
         );
+    }
+
+    #[test]
+    fn credits_keep_created_order_and_can_be_moved() {
+        let mut conn = setup();
+        let names = |conn: &Connection| list_credits(conn, CreditKind::Source).unwrap().into_iter().map(|c| c.name).collect::<Vec<_>>();
+        let c = create_credit(&conn, CreditKind::Source, &input("C")).unwrap();
+        let a = create_credit(&conn, CreditKind::Source, &input("A")).unwrap();
+        let b = create_credit(&conn, CreditKind::Source, &input("B")).unwrap();
+        // 新しく作ったものは最後に入る（名前の順ではない）
+        assert_eq!(names(&conn), ["C", "A", "B"]);
+        move_credit(&mut conn, CreditKind::Source, b, MoveTarget::Before(c)).unwrap();
+        assert_eq!(names(&conn), ["B", "C", "A"]);
+        move_credit(&mut conn, CreditKind::Source, b, MoveTarget::After(a)).unwrap();
+        assert_eq!(names(&conn), ["C", "A", "B"]);
+        move_credit(&mut conn, CreditKind::Source, c, MoveTarget::Root).unwrap();
+        assert_eq!(names(&conn), ["A", "B", "C"]);
+        // 階層はない。ない id の前後には移せない
+        assert!(move_credit(&mut conn, CreditKind::Source, a, MoveTarget::Child(b)).is_err());
+        assert!(move_credit(&mut conn, CreditKind::Source, a, MoveTarget::Before(999)).is_err());
+        assert_eq!(names(&conn), ["A", "B", "C"]);
     }
 
     #[test]

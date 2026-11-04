@@ -336,6 +336,11 @@ async fn list_credits(state: State<'_, AppState>, kind: CreditKind) -> Result<Ve
 }
 
 #[tauri::command]
+async fn move_credit(state: State<'_, AppState>, kind: CreditKind, id: i64, target: MoveTarget) -> Result<()> {
+    credits::move_credit(&mut state.conn(), kind, id, target)
+}
+
+#[tauri::command]
 async fn create_credit(state: State<'_, AppState>, kind: CreditKind, input: CreditInput) -> Result<i64> {
     credits::create_credit(&state.conn(), kind, &input)
 }
@@ -630,6 +635,7 @@ pub fn run() {
             relink_files,
             license_types,
             list_credits,
+            move_credit,
             create_credit,
             update_credit,
             delete_credit,

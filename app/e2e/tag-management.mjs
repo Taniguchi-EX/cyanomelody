@@ -314,8 +314,10 @@ await step("T25", "左の欄の並び（ライブラリ・タグ・プレイリ�
   for (const name of ["ライブラリの外のファイルと同じ音声を探す", "重複しているファイルだけ", "見つからないファイルだけ"]) {
     expect((await page.getByRole("button", { name }).count()) === 0, `${name}が残っている`);
   }
+  // 左の欄の一番上は、左の欄の検索。ファイル名の検索は中央の見出しの行にある
   expect((await bar.getByLabel("検索", { exact: true }).count()) === 1, "検索が左の欄にない");
-  expect((await page.locator("main").getByLabel("検索", { exact: true }).count()) === 0, "検索が中央に残っている");
+  expect((await bar.getByLabel("ファイル名で検索", { exact: true }).count()) === 0, "ファイル名の検索が左の欄にある");
+  expect((await page.locator("main .library-head").getByLabel("ファイル名で検索", { exact: true }).count()) === 1, "ファイル名の検索が中央の見出しにない");
   await ui.clearChecks();
   // 一覧の件数とチェックしている件数は、一番下の行に出す
   expect((await page.locator("main").getByTestId("file-count").count()) === 0, "件数が中央に残っている");
@@ -352,7 +354,7 @@ await step("T27", "絞り込みの条件のチップが2つ以上になると、
   await ui.filtered(() => page.getByTestId("folder").first().click());
   expect((await clearChip.count()) === 0, "条件が1つなのに出ている");
   await ui.filtered(() => tagItem("ドラッグ先").locator(".tag-name").click());
-  await ui.filtered(() => page.getByLabel("検索", { exact: true }).fill("chime"));
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill("chime"));
   expect((await clearChip.count()) === 1, "条件が2つなのに出ない");
   expect((await clearChip.innerText()).trim() === "✕", `名前がある: ${await clearChip.innerText()}`);
   await row("chime.flac").click();
@@ -360,7 +362,7 @@ await step("T27", "絞り込みの条件のチップが2つ以上になると、
   await shot("T27_すべての条件を外す");
   await ui.filtered(() => clearChip.click());
   expect((await page.getByTestId("filter-chips").count()) === 0, "条件が残っている");
-  expect((await page.getByLabel("検索", { exact: true }).inputValue()) === "", "検索の文字が残っている");
+  expect((await page.getByLabel("ファイル名で検索", { exact: true }).inputValue()) === "", "検索の文字が残っている");
   expect((await ui.checkedCount()).startsWith("チェック 1件"), "チェックが外れた");
   expect((await page.getByTestId("detail-path").innerText()).endsWith("chime.flac"), "右の欄が変わった");
   await clearFilter();
