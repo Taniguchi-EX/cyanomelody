@@ -192,4 +192,37 @@ await step("E11", "「新しいエフェクトセット」がすでにあると�
   await close();
 });
 
+await step("E12", "再生の欄のエフェクトセット：項目のエフェクトがない曲にかかり、選び直すと鳴らしている曲にすぐかかる。項目のエフェクトがかかる曲ではグレーアウト。選んだものは再読み込み後も残る", async () => {
+  const playerFx = page.getByTestId("player-fx");
+  expect((await playerFx.inputValue()) === "", `最初の選択 ${await playerFx.inputValue()}`);
+  const options = await playerFx.locator("option").allInnerTexts();
+  expect(options.join(",") === "fx なし,新しいエフェクトセット", options.join(","));
+  // wav の項目にだけエフェクトセットを付ける（項目の並びは mp3、wav）
+  await fx("chime.wav").selectOption({ label: "新しいエフェクトセット" });
+  await waitIdle();
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  expect(!(await audioSrc()).includes("effects-cache"), `選ぶ前: ${await audioSrc()}`);
+  // 鳴らしている間に選ぶと、その曲にすぐかかる
+  await playerFx.selectOption({ label: "新しいエフェクトセット" });
+  await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
+  expect((await page.getByTestId("player-position").innerText()) === "1/2", await page.getByTestId("player-position").innerText());
+  expect((await playerFx.getAttribute("data-overridden")) === "false", "項目のエフェクトのない曲でグレーアウトしている");
+  // 項目のエフェクトがかかる曲ではグレーアウトする
+  await page.getByRole("button", { name: "次へ" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-testid=player-fx]").dataset.overridden === "true", null, { timeout: 5000 });
+  expect((await playerFx.evaluate((e) => getComputedStyle(e).opacity)) !== "1", "薄くない");
+  await shot("E12_再生の欄のエフェクト");
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  // 再読み込み後も残る。「fx なし」に戻すと、項目のエフェクトのない曲にはかからない
+  await ui.reload();
+  expect((await playerFx.locator("option:checked").innerText()) === "新しいエフェクトセット", "再読み込みで消えた");
+  await playerFx.selectOption({ label: "fx なし" });
+  await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
+  await page.getByRole("button", { name: "順に再生" }).click();
+  await ui.waitPlaying();
+  expect(!(await audioSrc()).includes("effects-cache"), `fx なし: ${await audioSrc()}`);
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+});
+
 await ui.finish();

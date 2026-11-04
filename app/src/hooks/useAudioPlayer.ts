@@ -5,7 +5,7 @@ import type { AudioFile, PlayEntry } from "../api";
 /** 試聴するファイル（エフェクトの管理画面の試聴）。ファイルの一覧のファイルでも、プレイリストの項目の曲でもよい */
 export type PreviewTarget = Pick<AudioFile, "id" | "relPath" | "path">;
 import { chainApi } from "../effects";
-import { useStoredNumber } from "../storage";
+import { useStoredNumber, useStoredString } from "../storage";
 
 /** プレイリストの再生の状態 */
 export type Player = {
@@ -24,13 +24,15 @@ type Options = {
   onError: (text: string) => void;
   /** ファイルを鳴らし始めたとき（試聴とプレイリストの1曲ごと。「直近で再生したもの」に記録する） */
   onPlayed: (fileId: number) => void;
+  /** 今あるエフェクトセットのid（削除されたエフェクトセットを、再生の欄で選んだままにしない） */
+  chainIds: number[];
 };
 
 /**
  * 1つの audio 要素で、試聴（1件）とプレイリストの連続再生を行う。
  * どちらかを始めると、もう一方は止まる。
  */
-export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
+export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options) {
   const audioRef = useRef<HTMLAudioElement>(null);
   /** 試聴中のファイル */
   const [previewFile, setPreviewFile] = useState<PreviewTarget | null>(null);
@@ -46,6 +48,19 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
   const playerRef = useRef<Player | null>(null);
   /** 再生中の位置と長さ（秒） */
   const [time, setTime] = useState({ current: 0, duration: 0 });
+  /** 再生の欄で選んだエフェクトセット。プレイリストの項目のエフェクトがかからない曲にかける。アプリを閉じても覚えておく */
+  const [storedChain, storeChain] = useStoredString("cyanomelody.playerChain");
+  // 削除されたエフェクトセットは、選んでいないことにする
+  const baseChain = storedChain && chainIds.includes(Number(storedChain)) ? Number(storedChain) : null;
+  // audio のイベントや、エフェクトをかけ終えたときに今の選択を見るため、ref にも持つ
+  const baseChainRef = useRef(baseChain);
+  useEffect(() => {
+    baseChainRef.current = baseChain;
+  }, [baseChain]);
+
+  /** 曲にかけるエフェクトセット。プレイリストの項目のものがあればそれだけ、なければ再生の欄で選んだもの */
+  const chainsOf = (entry: PlayEntry, base: number | null) =>
+    entry.chains.length > 0 ? entry.chains : base !== null ? [base] : [];
 
   const setPlayer = (p: Player | null) => {
     playerRef.current = p;
@@ -72,8 +87,8 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     });
   };
 
-  /** 再生順の index 番目を再生する。範囲の外なら終わる */
-  const playAt = (p: Player, index: number) => {
+  /** 再生順の index 番目を再生する。範囲の外なら終わる。startAt（秒）があれば、同じ曲をその位置から鳴らし直す */
+  const playAt = (p: Player, index: number, startAt: number | null = null, base = baseChainRef.current) => {
     const audio = audioRef.current;
     if (!audio) return;
     if (index < 0 || index >= p.queue.length) {
@@ -83,25 +98,31 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
       return;
     }
     const entry = p.queue[index];
-    onPlayed(entry.fileId);
-    const next = { ...p, index, paused: false, preparing: entry.chains.length > 0 };
+    // 鳴らし直すときは、同じ曲を2回再生したことにしない
+    if (startAt === null) onPlayed(entry.fileId);
+    const chains = chainsOf(entry, base);
+    const next = { ...p, index, paused: false, preparing: chains.length > 0 };
     setPlayer(next);
     setPreviewFile(null);
+    /** 音の場所を決めて鳴らす */
+    const start = (ready: Player, path: string) => {
+      audio.src = convertFileSrc(path);
+      if (startAt) audio.currentTime = startAt;
+      audio.play().catch((e) => skip(ready, String(e)));
+    };
     if (!next.preparing) {
-      audio.src = convertFileSrc(entry.path);
-      audio.play().catch((e) => skip(next, String(e)));
+      start(next, entry.path);
       return;
     }
     // エフェクトをかけた音を用意してから鳴らす。用意している間に別の曲へ移ったら鳴らさない
     audio.pause();
     chainApi
-      .render(entry.fileId, entry.chains)
+      .render(entry.fileId, chains)
       .then((path) => {
         if (playerRef.current !== next) return;
         const ready = { ...next, preparing: false };
         setPlayer(ready);
-        audio.src = convertFileSrc(path);
-        audio.play().catch((e) => skip(ready, String(e)));
+        start(ready, path);
       })
       .catch((e) => skip(next, String(e)));
   };
@@ -127,6 +148,19 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
   const stop = () => {
     audioRef.current?.pause();
     setPlayer(null);
+  };
+
+  /**
+   * 再生の欄のエフェクトセットを選ぶ（null は「fx なし」）。
+   * 鳴らしている曲にプレイリストの項目のエフェクトがかからなければ、その曲を新しいエフェクトで同じ位置から鳴らし直す
+   */
+  const setBaseChain = (chainId: number | null) => {
+    storeChain(chainId === null ? "" : String(chainId));
+    baseChainRef.current = chainId;
+    const p = playerRef.current;
+    const audio = audioRef.current;
+    if (!p || !audio || p.queue[p.index].chains.length > 0) return;
+    playAt(p, p.index, p.preparing ? 0 : audio.currentTime, chainId);
   };
 
   /** 0〜1 の位置へ移る */
@@ -177,6 +211,8 @@ export function useAudioPlayer({ onInfo, onError, onPlayed }: Options) {
     volume,
     setVolume,
     commitVolume,
+    baseChain,
+    setBaseChain,
     audioProps,
   };
 }

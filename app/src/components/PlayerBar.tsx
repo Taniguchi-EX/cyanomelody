@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, PLAY_MODES, type PlayMode } from "../api";
+import type { EffectChain } from "../effects";
 import { stem } from "../paths";
 import type { Player, PreviewTarget } from "../hooks/useAudioPlayer";
 
@@ -24,6 +25,10 @@ type Props = {
   onVolume: (volume: number) => void;
   /** 音量のバーを動かし終えたとき（保存する） */
   onVolumeCommit: () => void;
+  chains: EffectChain[];
+  /** 再生の欄で選んだエフェクトセット（null は「fx なし」） */
+  baseChain: number | null;
+  onBaseChain: (chainId: number | null) => void;
 };
 
 const clock = (s: number) =>
@@ -60,6 +65,9 @@ export function PlayerBar({
   volume,
   onVolume,
   onVolumeCommit,
+  chains,
+  baseChain,
+  onBaseChain,
 }: Props) {
   const entry = player?.queue[player.index];
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
@@ -81,6 +89,8 @@ export function PlayerBar({
   /** 曲の名前：プレイリスト上での名前 → 曲名 → 拡張子を除いたファイル名 */
   const name = playing ? (entry?.alias ?? trackTitle ?? stem(playing.relPath)) : "";
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
+  // 鳴らしている曲にプレイリストの項目のエフェクトがかかるときは、再生の欄のエフェクトセットはかけない
+  const itemFx = (entry?.chains.length ?? 0) > 0;
   const shuffle = modeOf("shuffle");
   const random = modeOf("random");
 
@@ -202,6 +212,27 @@ export function PlayerBar({
       </div>
 
       <div className="play-side">
+        {/* 再生する曲にかけるエフェクトセット。項目のエフェクトがかかる曲ではグレーアウトする（選び直すことはできる） */}
+        <select
+          className={`player-fx${itemFx ? " overridden" : ""}`}
+          value={baseChain ?? ""}
+          onChange={(e) => onBaseChain(e.target.value ? Number(e.target.value) : null)}
+          aria-label="再生する曲にかけるエフェクト"
+          title={
+            itemFx
+              ? "この曲には、プレイリストの項目のエフェクトをかけています"
+              : "再生する曲にかけるエフェクトセット（プレイリストの項目のエフェクトがあれば、そちらをかけます）"
+          }
+          data-testid="player-fx"
+          data-overridden={itemFx}
+        >
+          <option value="">fx なし</option>
+          {chains.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
         <span className="sub" aria-hidden="true">
           🔈
         </span>

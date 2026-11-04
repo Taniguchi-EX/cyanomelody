@@ -1277,3 +1277,13 @@ button.add-button {
 button.add-button:hover:not(:disabled) {
   color: var(--accent);
 }
+
+/* 再生の欄のエフェクトセット。プレイリストの項目のエフェクトがかかる曲ではグレーアウトする */
+.player-fx {
+  max-width: 160px;
+  margin-right: 8px;
+}
+
+.player-fx.overridden {
+  opacity: 0.45;
+}

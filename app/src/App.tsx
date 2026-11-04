@@ -152,6 +152,7 @@ export default function App() {
         .recordPlay(fileId)
         .then(() => reloadFilesRef.current())
         .catch(showError),
+    chainIds: chains.map((c) => c.id),
   });
 
   // 「チェックしたファイルだけ表示」のときだけ、チェックが変わったら読み直す
@@ -1030,6 +1031,9 @@ export default function App() {
         volume={audio.volume}
         onVolume={audio.setVolume}
         onVolumeCommit={audio.commitVolume}
+        chains={chains}
+        baseChain={audio.baseChain}
+        onBaseChain={audio.setBaseChain}
       />
       <StatusBar
         status={status}
