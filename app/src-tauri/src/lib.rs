@@ -15,6 +15,7 @@ mod metadata;
 mod names;
 mod playlists;
 mod recent;
+mod romaji;
 mod tags;
 mod tree;
 
@@ -36,7 +37,7 @@ use files::{AudioFile, FileFilter};
 use hashing::RelinkResult;
 use library::{LibraryFolder, ScanResult};
 use playlists::{PlayEntry, PlayMode, PlaylistDetail, PlaylistNode};
-use tags::{RenameResult, Tag};
+use tags::{RenameResult, Tag, TagSettings};
 use tree::MoveTarget;
 
 struct AppState {
@@ -287,6 +288,11 @@ async fn rename_tag(
     merge: bool,
 ) -> Result<RenameResult> {
     tags::rename_tag(&mut state.conn(), tag_id, &name, merge)
+}
+
+#[tauri::command]
+async fn set_tag_settings(state: State<'_, AppState>, tag_id: i64, settings: TagSettings) -> Result<()> {
+    tags::set_tag_settings(&state.conn(), tag_id, &settings)
 }
 
 #[tauri::command]
@@ -623,6 +629,7 @@ pub fn run() {
             list_tags,
             create_tag,
             rename_tag,
+            set_tag_settings,
             delete_tag,
             move_tag,
             add_tag,

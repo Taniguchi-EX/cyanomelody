@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 export type FilterChip = {
   key: string;
   /** 条件の種類を表す記号 */
@@ -21,10 +23,12 @@ type ChipProps = {
   testId?: string;
   /** タグのチップのとき、タグの名前（data-tag-name。画面テストが使う） */
   tagName?: string;
+  /** タグの色など */
+  style?: CSSProperties;
 };
 
 /** 「記号 名前（数） ✕」のチップ。押すと外す（絞り込みの条件、付いているタグなど） */
-export function Chip({ icon, label, count, title, ariaLabel, onClick, disabled, testId, tagName }: ChipProps) {
+export function Chip({ icon, label, count, title, ariaLabel, onClick, disabled, testId, tagName, style }: ChipProps) {
   return (
     <button
       className="chip filter-chip"
@@ -34,6 +38,7 @@ export function Chip({ icon, label, count, title, ariaLabel, onClick, disabled, 
       aria-label={ariaLabel}
       data-testid={testId}
       data-tag-name={tagName}
+      style={style}
     >
       <span className="chip-icon">{icon}</span>
       {label}

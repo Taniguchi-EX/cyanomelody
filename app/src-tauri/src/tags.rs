@@ -3,11 +3,12 @@
 use std::collections::{HashMap, HashSet};
 
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::db::now;
 use crate::names::{ensure_unique_name, find_by_name, normalize_name};
 use crate::error::{Error, Result};
+use crate::romaji::romaji_key;
 use crate::tree::MoveTarget;
 
 /// タグ名を区切るための文字（タグ名には入らない制御文字）
@@ -24,6 +25,54 @@ pub struct Tag {
     pub depth: i64,
     /// そのタグか子孫のタグが付いたファイルの数
     pub file_count: i64,
+    /// 子のタグの並び順と色（詳細画面で設定するもの）
+    #[serde(flatten)]
+    pub settings: TagSettings,
+    /// 表示に使う色。自分の色がなければ、親（その親…）の色を引き継ぐ
+    pub shown_bg_color: Option<String>,
+    pub shown_fg_color: Option<String>,
+}
+
+/// 子のタグの並び順。None はドラッグで決めた順
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ChildSort {
+    /// 登録順（作った順）
+    Created,
+    /// ファイル数順（子孫を含む総数）
+    Files,
+    /// ローマ字順
+    Romaji,
+}
+
+impl ChildSort {
+    fn as_str(self) -> &'static str {
+        match self {
+            ChildSort::Created => "created",
+            ChildSort::Files => "files",
+            ChildSort::Romaji => "romaji",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "created" => Some(ChildSort::Created),
+            "files" => Some(ChildSort::Files),
+            "romaji" => Some(ChildSort::Romaji),
+            _ => None,
+        }
+    }
+}
+
+/// タグの詳細画面で設定するもの（名前を除く）
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TagSettings {
+    pub child_sort: Option<ChildSort>,
+    pub child_sort_desc: bool,
+    /// 背景色・文字色（#rrggbb）。None は親の色を引き継ぐ
+    pub bg_color: Option<String>,
+    pub fg_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -39,21 +88,75 @@ struct Row {
     id: i64,
     name: String,
     parent_id: Option<i64>,
+    settings: TagSettings,
 }
 
-/// すべてのタグを、兄弟の順番どおりに親ごとにまとめる
+/// タグごとの、そのタグか子孫のタグが付いたファイルの数（同じファイルは1回だけ数える）
+fn file_counts(conn: &Connection) -> Result<HashMap<i64, i64>> {
+    Ok(conn
+        .prepare(
+            "WITH RECURSIVE sub(root, id) AS (
+               SELECT id, id FROM tags
+               UNION SELECT sub.root, t.id FROM tags t JOIN sub ON t.parent_id = sub.id)
+             SELECT sub.root, count(DISTINCT ft.file_id)
+             FROM sub JOIN file_tags ft ON ft.tag_id = sub.id GROUP BY sub.root",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// すべてのタグを、兄弟の順番どおりに親ごとにまとめる。
+/// 親が子の並び順を決めていれば、その順にする（同じ値どうしはドラッグで決めた順）
 fn children_map(conn: &Connection) -> Result<(Vec<Row>, HashMap<Option<i64>, Vec<usize>>)> {
-    let mut stmt =
-        conn.prepare("SELECT id, name, parent_id FROM tags ORDER BY position, name COLLATE NOCASE")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, parent_id, child_sort, child_sort_desc, bg_color, fg_color
+         FROM tags ORDER BY position, name COLLATE NOCASE",
+    )?;
     let rows: Vec<Row> = stmt
-        .query_map([], |r| Ok(Row { id: r.get(0)?, name: r.get(1)?, parent_id: r.get(2)? }))?
+        .query_map([], |r| {
+            let sort: Option<String> = r.get(3)?;
+            Ok(Row {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                parent_id: r.get(2)?,
+                settings: TagSettings {
+                    child_sort: sort.as_deref().and_then(ChildSort::parse),
+                    child_sort_desc: r.get(4)?,
+                    bg_color: r.get(5)?,
+                    fg_color: r.get(6)?,
+                },
+            })
+        })?
         .collect::<rusqlite::Result<_>>()?;
-    let ids: HashSet<i64> = rows.iter().map(|r| r.id).collect();
+    let index: HashMap<i64, usize> = rows.iter().enumerate().map(|(i, r)| (r.id, i)).collect();
     let mut children: HashMap<Option<i64>, Vec<usize>> = HashMap::new();
     for (i, r) in rows.iter().enumerate() {
         // 親が見つからない行は最上位として扱う
-        let parent = r.parent_id.filter(|p| ids.contains(p));
+        let parent = r.parent_id.filter(|p| index.contains_key(p));
         children.entry(parent).or_default().push(i);
+    }
+    let counts = if rows.iter().any(|r| r.settings.child_sort == Some(ChildSort::Files)) {
+        file_counts(conn)?
+    } else {
+        HashMap::new()
+    };
+    for (parent, list) in children.iter_mut() {
+        let Some(p) = parent.and_then(|p| index.get(&p)).map(|&i| &rows[i].settings) else { continue };
+        let Some(sort) = p.child_sort else { continue };
+        let key = |i: usize| -> (i64, String) {
+            let r = &rows[i];
+            match sort {
+                ChildSort::Created => (r.id, String::new()),
+                ChildSort::Files => (counts.get(&r.id).copied().unwrap_or(0), String::new()),
+                ChildSort::Romaji => (0, romaji_key(&r.name)),
+            }
+        };
+        // 安定な並べ替えなので、同じ値どうしはドラッグで決めた順のまま
+        if p.child_sort_desc {
+            list.sort_by_cached_key(|&i| std::cmp::Reverse(key(i)));
+        } else {
+            list.sort_by_cached_key(|&i| key(i));
+        }
     }
     Ok((rows, children))
 }
@@ -91,29 +194,56 @@ fn tree_order(conn: &Connection) -> Result<(Vec<Row>, Vec<(usize, i64)>)> {
 /// タグを階層の順に返す
 pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let (rows, order) = tree_order(conn)?;
-    let counts: HashMap<i64, i64> = conn
-        .prepare(
-            "WITH RECURSIVE sub(root, id) AS (
-               SELECT id, id FROM tags
-               UNION SELECT sub.root, t.id FROM tags t JOIN sub ON t.parent_id = sub.id)
-             SELECT sub.root, count(DISTINCT ft.file_id)
-             FROM sub JOIN file_tags ft ON ft.tag_id = sub.id GROUP BY sub.root",
-        )?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
+    let counts = file_counts(conn)?;
+    // 親は子より先に出てくるので、表示の色は前から順に引き継げる
+    let mut shown: HashMap<i64, (Option<String>, Option<String>)> = HashMap::new();
     Ok(order
         .into_iter()
         .map(|(i, depth)| {
             let r = &rows[i];
+            let inherited = r.parent_id.and_then(|p| shown.get(&p)).cloned().unwrap_or_default();
+            let bg = r.settings.bg_color.clone().or(inherited.0);
+            let fg = r.settings.fg_color.clone().or(inherited.1);
+            shown.insert(r.id, (bg.clone(), fg.clone()));
             Tag {
                 id: r.id,
                 name: r.name.clone(),
                 parent_id: r.parent_id,
                 depth,
                 file_count: counts.get(&r.id).copied().unwrap_or(0),
+                settings: r.settings.clone(),
+                shown_bg_color: bg,
+                shown_fg_color: fg,
             }
         })
         .collect())
+}
+
+/// 色の形式（#rrggbb）を確かめ、小文字にそろえる
+fn normalize_color(color: Option<&str>) -> Result<Option<String>> {
+    let Some(c) = color else { return Ok(None) };
+    let c = c.trim().to_ascii_lowercase();
+    let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+    if !ok {
+        return Err(Error::invalid(format!("色の形式が正しくありません: {c}")));
+    }
+    Ok(Some(c))
+}
+
+/// タグの詳細画面の設定（並び順と色）を保存する
+pub fn set_tag_settings(conn: &Connection, tag_id: i64, settings: &TagSettings) -> Result<()> {
+    ensure_exists(conn, tag_id)?;
+    conn.execute(
+        "UPDATE tags SET child_sort = ?2, child_sort_desc = ?3, bg_color = ?4, fg_color = ?5 WHERE id = ?1",
+        params![
+            tag_id,
+            settings.child_sort.map(ChildSort::as_str),
+            settings.child_sort_desc,
+            normalize_color(settings.bg_color.as_deref())?,
+            normalize_color(settings.fg_color.as_deref())?,
+        ],
+    )?;
+    Ok(())
 }
 
 /// タグのidから、階層の順での位置を引く表（ファイルやプレイリストの項目に付いたタグを並べるのに使う）
@@ -466,6 +596,86 @@ mod tests {
         assert_eq!(tree(&conn), vec![t("環境音", 0), t("雨", 1), t("強風", 1), t("爆発", 0)]);
         delete_tag(&mut conn, env).unwrap();
         assert_eq!(tree(&conn), vec![t("雨", 0), t("強風", 0), t("爆発", 0)]);
+    }
+
+    fn sort(conn: &Connection, id: i64, child_sort: Option<ChildSort>, desc: bool) {
+        let settings = TagSettings { child_sort, child_sort_desc: desc, ..Default::default() };
+        set_tag_settings(conn, id, &settings).unwrap();
+    }
+
+    #[test]
+    fn child_sort_orders_only_direct_children() {
+        let mut conn = setup();
+        let root = create_tag(&conn, "親").unwrap();
+        let ids: Vec<i64> = ["かぜ", "Ame", "ゆき", "雷"].iter().map(|n| create_tag(&conn, n).unwrap()).collect();
+        for &id in &ids {
+            move_tag(&mut conn, id, MoveTarget::Child(root)).unwrap();
+        }
+        // 孫は親の設定の影響を受けない
+        let grand_b = create_tag(&conn, "b").unwrap();
+        let grand_a = create_tag(&conn, "a").unwrap();
+        move_tag(&mut conn, grand_b, MoveTarget::Child(ids[0])).unwrap();
+        move_tag(&mut conn, grand_a, MoveTarget::Child(ids[0])).unwrap();
+        // ドラッグで「雷」を先頭にしておく
+        move_tag(&mut conn, ids[3], MoveTarget::Before(ids[0])).unwrap();
+        let children = |conn: &Connection| -> Vec<String> {
+            list_tags(conn).unwrap().into_iter().filter(|t| t.depth == 1).map(|t| t.name).collect()
+        };
+        assert_eq!(children(&conn), vec!["雷", "かぜ", "Ame", "ゆき"]);
+
+        sort(&conn, root, Some(ChildSort::Romaji), false);
+        assert_eq!(children(&conn), vec!["Ame", "かぜ", "ゆき", "雷"]);
+        assert_eq!(&tree(&conn)[3..5], &[t("b", 2), t("a", 2)]);
+        sort(&conn, root, Some(ChildSort::Romaji), true);
+        assert_eq!(children(&conn), vec!["雷", "ゆき", "かぜ", "Ame"]);
+
+        sort(&conn, root, Some(ChildSort::Created), false);
+        assert_eq!(children(&conn), vec!["かぜ", "Ame", "ゆき", "雷"]);
+        sort(&conn, root, Some(ChildSort::Created), true);
+        assert_eq!(children(&conn), vec!["雷", "ゆき", "Ame", "かぜ"]);
+
+        // ファイル数は子孫を含む。同じ数どうしはドラッグで決めた順
+        attach(&conn, 1, ids[2]);
+        attach(&conn, 2, ids[2]);
+        attach(&conn, 3, grand_a);
+        sort(&conn, root, Some(ChildSort::Files), true);
+        assert_eq!(children(&conn), vec!["ゆき", "かぜ", "雷", "Ame"]);
+        sort(&conn, root, Some(ChildSort::Files), false);
+        assert_eq!(children(&conn), vec!["雷", "Ame", "かぜ", "ゆき"]);
+
+        // ドラッグで決めた順に戻す
+        sort(&conn, root, None, false);
+        assert_eq!(children(&conn), vec!["雷", "かぜ", "Ame", "ゆき"]);
+    }
+
+    #[test]
+    fn colors_are_inherited_separately_and_child_wins() {
+        let (conn, [env, rain, wind, gale, boom]) = setup_tree();
+        let set = |id, bg: Option<&str>, fg: Option<&str>| {
+            let settings = TagSettings {
+                bg_color: bg.map(str::to_owned),
+                fg_color: fg.map(str::to_owned),
+                ..Default::default()
+            };
+            set_tag_settings(&conn, id, &settings).unwrap();
+        };
+        set(env, Some("#112233"), Some("#FFFFFF"));
+        set(wind, Some("#445566"), None);
+        let tags = list_tags(&conn).unwrap();
+        let shown = |id| {
+            let t = tags.iter().find(|t| t.id == id).unwrap();
+            (t.shown_bg_color.as_deref(), t.shown_fg_color.as_deref())
+        };
+        assert_eq!(shown(rain), (Some("#112233"), Some("#ffffff")));
+        assert_eq!(shown(wind), (Some("#445566"), Some("#ffffff")));
+        assert_eq!(shown(gale), (Some("#445566"), Some("#ffffff")));
+        assert_eq!(shown(boom), (None, None));
+        let w = tags.iter().find(|t| t.id == wind).unwrap();
+        assert_eq!(w.settings.fg_color, None);
+
+        let bad = TagSettings { bg_color: Some("red".into()), ..Default::default() };
+        assert!(set_tag_settings(&conn, env, &bad).is_err());
+        assert!(set_tag_settings(&conn, 99, &TagSettings::default()).is_err());
     }
 
     #[test]

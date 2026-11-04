@@ -23,6 +23,7 @@ import {
   type PlaylistItem,
   type PlaylistNode,
   type Tag,
+  type TagSettings,
   type TagCount,
 } from "./api";
 import { CREDIT_LABEL } from "./credits";
@@ -47,6 +48,8 @@ import { AliasField, ItemDetail } from "./components/ItemDetail";
 import { CreditPanel } from "./components/CreditPanel";
 import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
+import { TagDetail } from "./components/TagDetail";
+import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { SearchBox } from "./components/SearchBox";
@@ -77,6 +80,7 @@ export default function App() {
   const [detailWidth, setDetailWidth, commitDetailWidth] = useStoredNumber("cyanomelody.width.detail", 300);
   const [folders, setFolders] = useState<LibraryFolder[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const tagStyles = useMemo(() => tagStyleMap(tags), [tags]);
   const [files, setFiles] = useState<AudioFile[]>([]);
   /** 絞り込みの条件 */
   const fileFilter = useFileFilter();
@@ -98,6 +102,10 @@ export default function App() {
   const [licenses, setLicenses] = useState<Credit[]>([]);
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
   const [creditForm, setCreditForm] = useState<{ kind: CreditKind; credit: Credit | null } | null>(null);
+  /** 詳細画面を開いているタグのid */
+  const [tagDetailId, setTagDetailId] = useState<number | null>(null);
+  // 削除・統合で消えたタグなら、詳細画面は出さない
+  const tagDetail = tags.find((t) => t.id === tagDetailId) ?? null;
   const [chains, setChains] = useState<EffectChain[]>([]);
   /**
    * エフェクトセットの管理画面。開いた元の項目（作ったエフェクトセットを設定する項目）と、試聴するファイル。
@@ -377,7 +385,8 @@ export default function App() {
       showInfo(`タグ「${name.trim()}」を作成しました`);
     });
 
-  const renameTag = async (tag: Tag, name: string) => {
+  /** タグの詳細画面の保存。名前が別のタグと同じなら統合を確認する（統合したときは、並び順と色は保存しない） */
+  const saveTagDetail = async (tag: Tag, name: string, settings: TagSettings) => {
     const newName = name.trim();
     const other = tags.find((t) => t.id !== tag.id && t.name.toLowerCase() === newName.toLowerCase());
     if (
@@ -385,19 +394,21 @@ export default function App() {
       !(await confirmDialog(
         `タグ「${other.name}」が既にあります。\n「${tag.name}」を「${other.name}」に統合しますか？\n` +
           `「${tag.name}」が付いたファイルに「${other.name}」が付き、「${tag.name}」は削除されます。` +
-          "\n子のタグがあれば、統合先の子の最後に移ります。",
+          "\n子のタグがあれば、統合先の子の最後に移ります。この画面で決めた並び順と色は保存しません。",
       ))
     ) {
       return false;
     }
     return run(async () => {
-      const r = await api.renameTag(tag.id, newName, other !== undefined);
-      if (r.merged) {
+      if (other) {
+        const r = await api.renameTag(tag.id, newName, true);
         fileFilter.replaceTag(tag.id, r.tagId);
-        showInfo(`タグ「${tag.name}」を「${other?.name}」に統合しました`);
-      } else {
-        showInfo(`タグ「${tag.name}」の名前を「${newName}」に変えました`);
+        showInfo(`タグ「${tag.name}」を「${other.name}」に統合しました`);
+        return;
       }
+      await api.setTagSettings(tag.id, settings);
+      if (newName !== tag.name) await api.renameTag(tag.id, newName, false);
+      showInfo(`タグ「${newName}」の詳細を保存しました`);
     });
   };
 
@@ -819,7 +830,7 @@ export default function App() {
           onToggleTag={toggleTag}
           onToggleUntagged={toggleUntagged}
           onCreate={createTag}
-          onRename={renameTag}
+          onEdit={(tag) => setTagDetailId(tag.id)}
           onDelete={deleteTag}
           facets={facets}
           busy={busy}
@@ -934,6 +945,7 @@ export default function App() {
               onPlay={toggleRowPlay}
               showHash={filter.duplicatesOnly || filter.hash !== null}
               onDrop={dropFiles}
+              tagStyles={tagStyles}
             />
           </>
         )}
@@ -1048,6 +1060,15 @@ export default function App() {
           previewing={audio.previewId !== null && audio.previewId === effectDialog.target?.id}
           onStopPreview={audio.stopPreview}
           onClose={() => setEffectDialog(null)}
+        />
+      )}
+      {tagDetail && (
+        <TagDetail
+          tag={tagDetail}
+          parent={tags.find((t) => t.id === tagDetail.parentId) ?? null}
+          busy={busy}
+          onSubmit={(name, settings) => saveTagDetail(tagDetail, name, settings)}
+          onClose={() => setTagDetailId(null)}
         />
       )}
       {creditForm && (

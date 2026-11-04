@@ -81,6 +81,21 @@ export type Tag = {
   depth: number;
   /** そのタグか子孫のタグが付いたファイルの数 */
   fileCount: number;
+  /** 表示に使う色。自分の色がなければ、親（その親…）の色を引き継いだもの */
+  shownBgColor: string | null;
+  shownFgColor: string | null;
+} & TagSettings;
+
+/** 子のタグの並び順。null はドラッグで決めた順 */
+export type ChildSort = "created" | "files" | "romaji";
+
+/** タグの詳細画面で決めるもの（名前を除く） */
+export type TagSettings = {
+  childSort: ChildSort | null;
+  childSortDesc: boolean;
+  /** 背景色・文字色（#rrggbb）。null は親の色を引き継ぐ */
+  bgColor: string | null;
+  fgColor: string | null;
 };
 
 /** 木（タグ・プレイリスト）の並べ替えで、移す先 */
@@ -108,6 +123,8 @@ export const api = {
   createTag: (name: string) => invoke<number>("create_tag", { name }),
   renameTag: (tagId: number, name: string, merge: boolean) =>
     invoke<RenameResult>("rename_tag", { tagId, name, merge }),
+  setTagSettings: (tagId: number, settings: TagSettings) =>
+    invoke<void>("set_tag_settings", { tagId, settings }),
   deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),
   moveTag: (tagId: number, target: MoveTarget) => invoke<void>("move_tag", { tagId, target }),
   startHashing: () => invoke<void>("start_hashing"),

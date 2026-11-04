@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
 import { stem } from "../paths";
+import { tagStyle } from "../tagColors";
 import { Collapsible } from "./Collapsible";
 import { Chip } from "./FilterChips";
 import { PlaylistPicker } from "./PlaylistPicker";
@@ -91,6 +92,7 @@ export function SelectionPanel({
 
   // 候補に出すのは、まだ付いていないタグ
   const attached = new Set(file.tags.map((t) => t.id));
+  const tagById = new Map(tags.map((t) => [t.id, t]));
   const candidates = tags.filter((t) => !attached.has(t.id));
   /** 付ける。既にあるタグ名（大文字・小文字は区別しない）ならそのタグを、なければ新しいタグを作って付ける */
   const add = async (input: string) => {
@@ -168,6 +170,7 @@ export function SelectionPanel({
                 ariaLabel={`${t.name}を外す`}
                 testId="selected-tag"
                 tagName={t.name}
+                style={tagStyle(tagById.get(t.id))}
               />
             ))}
           </div>

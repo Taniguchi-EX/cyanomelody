@@ -13,8 +13,8 @@ type Props = {
   onToggleTag: (tagId: number) => void;
   onToggleUntagged: () => void;
   onCreate: (name: string) => Promise<boolean>;
-  /** 名前を変える。別のタグと同じ名前なら統合を確認する。終わったら true */
-  onRename: (tag: Tag, name: string) => Promise<boolean>;
+  /** 「✎」を押したとき（タグの詳細画面を開く） */
+  onEdit: (tag: Tag) => void;
   onDelete: (tag: Tag) => void;
   onMove: (tag: Tag, target: MoveTarget) => void;
   /** 各項目を選んだときの件数。まだ求めていなければ null（タグの総数を出す） */
@@ -23,7 +23,7 @@ type Props = {
   query: string;
 };
 
-/** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト、作成・名前変更・削除 */
+/** 左の欄の「タグ」。階層表示、開く・たたむ、取っ手での並べ替え、選んだときの件数とグレーアウト、作成・詳細画面を開く・削除 */
 export function TagPanel({
   tags,
   filter,
@@ -31,7 +31,7 @@ export function TagPanel({
   onToggleTag,
   onToggleUntagged,
   onCreate,
-  onRename,
+  onEdit,
   onDelete,
   onMove,
   facets,
@@ -39,7 +39,6 @@ export function TagPanel({
 }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.tagTree.collapsed");
   const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
 
   const parents = useMemo(() => parentIds(tags), [tags]);
   // 選んだときの件数。0件になる項目はグレーアウトし、選べないようにする（選んでいる項目は外せる）
@@ -140,23 +139,12 @@ export function TagPanel({
                 collapsed={collapsed.has(t.id)}
                 onToggle={() => toggleCollapsed(t.id)}
               />
-              {editingId === t.id ? (
-                <NameInput
-                  label="タグの新しい名前"
-                  initial={t.name}
-                  onCommit={async (name) => {
-                    if (name.trim() === t.name || (await onRename(t, name))) setEditingId(null);
-                  }}
-                  onCancel={() => setEditingId(null)}
-                />
-              ) : (
-                <span className="tag-name">{t.name}</span>
-              )}
+              <span className="tag-name">{t.name}</span>
               <RowActions
                 name={t.name}
                 busy={busy}
-                editLabel="名前を変える"
-                onEdit={() => setEditingId(t.id)}
+                editLabel="詳細を設定する"
+                onEdit={() => onEdit(t)}
                 onDelete={() => onDelete(t)}
               />
               <span className="sub">{countOf(t)}</span>

@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
 import { baseName } from "../paths";
@@ -29,6 +29,8 @@ type Props = {
   /** 行を左の欄のプレイリストへドラッグしたとき。チェックした行をつかんだら、チェックしたファイルすべて */
   /** 行を左の欄のプレイリスト・タグに落としたとき */
   onDrop: (fileIds: number[], target: FileDropTarget) => void;
+  /** タグのidから、チップの色を引く表（色のないタグは入らない） */
+  tagStyles: Map<number, CSSProperties>;
 };
 
 export function FileList({
@@ -43,6 +45,7 @@ export function FileList({
   onPlay,
   showHash,
   onDrop,
+  tagStyles,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -135,7 +138,7 @@ export function FileList({
                   </span>
                   <span>
                     {f.tags.map((t) => (
-                      <span className="chip" key={t.id}>
+                      <span className="chip" key={t.id} style={tagStyles.get(t.id)}>
                         {t.name}
                       </span>
                     ))}

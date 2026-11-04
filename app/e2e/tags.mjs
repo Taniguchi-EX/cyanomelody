@@ -9,11 +9,21 @@ const { dataDir, shotDir } = parseArgs("tags.mjs");
 const formats = path.join(dataDir, "formats");
 
 const ui = await connect(shotDir);
-const { page, step, shot, status, fileCount, row, tagItem, tagNames, waitIdle, addFolder, addTag, rowAction, createTags, renameTag } = ui;
+const { page, step, shot, status, fileCount, row, tagItem, tagNames, waitIdle, addFolder, addTag, rowAction, createTags, renameTag, openTagDetail } = ui;
 
 const countOf = (name) => tagItem(name).locator(".sub").innerText();
 const newName = () => page.getByLabel("新しいタグの名前");
-const editName = () => page.getByLabel("タグの新しい名前");
+const detail = () => page.getByTestId("tag-detail");
+const editName = () => page.getByLabel("タグ名", { exact: true });
+/** 詳細画面を開いて設定を変え、保存する */
+const saveDetail = async (name, change) => {
+  await openTagDetail(name);
+  await change();
+  await detail().getByRole("button", { name: "保存" }).click();
+  await waitIdle();
+};
+/** 要素の背景色・文字色（rgb） */
+const colors = (locator) => locator.evaluate((e) => `${getComputedStyle(e).backgroundColor} / ${getComputedStyle(e).color}`);
 /** 左の欄のタグを「名前:深さ」で表示順に */
 const tree = () =>
   page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => `${r.dataset.tagName}:${r.dataset.depth}`).join(" "));
@@ -60,27 +70,31 @@ await step("A03", "見出しの「＋」で、ファイルに付けずにタグ�
   expect(!(await tagNames()).includes("やめる"), "作られた");
 });
 
-await step("A05", "「✎」でタグの名前を変えられる（0件でグレーアウトした行でも押せる）。空の名前では変わらず、Esc・入力欄の外を押すとやめる", async () => {
+await step("A05", "「✎」でタグの詳細画面が開き、名前を変えられる（0件でグレーアウトした行でも押せる）。空の名前では保存できず、Esc・「やめる」で閉じる。作成の入力欄は外を押すとやめる", async () => {
   expect((await tagItem("未使用").getAttribute("class")).includes("disabled"), "0件のタグがグレーアウトしていない");
   const opacity = await tagItem("未使用").evaluate((li) => [li, li.querySelector(".row-actions")].map((e) => getComputedStyle(e).opacity).join(","));
   expect(opacity === "1,1", `記号が薄い: ${opacity}`);
-  await rowAction(tagItem("未使用"), "未使用の名前を変える");
-  await editName().click();
-  expect((await page.getByTestId("selected-count").count()) === 0, "名前の欄を押して絞り込んだ");
+  await openTagDetail("未使用");
+  expect((await page.getByTestId("selected-count").count()) === 0, "「✎」を押して絞り込んだ");
+  expect((await editName().inputValue()) === "未使用", `名前の欄 ${await editName().inputValue()}`);
+  await shot("A05_タグの詳細画面");
   await editName().fill("未使用タグ");
   await editName().press("Enter");
   await waitIdle();
   const names = await tagNames();
   expect(names.includes("未使用タグ") && !names.includes("未使用"), names.join(","));
-  expect((await editName().count()) === 0, "入力欄が残っている");
-  // 空の名前では変わらない。Esc でやめる
-  await rowAction(tagItem("未使用タグ"), "未使用タグの名前を変える");
+  expect((await detail().count()) === 0, "詳細画面が残っている");
+  // 空の名前では保存できない。Esc・「やめる」で閉じる
+  await openTagDetail("未使用タグ");
   await editName().fill("  ");
-  await editName().press("Enter");
-  await waitIdle();
+  expect(await detail().getByRole("button", { name: "保存" }).isDisabled(), "空の名前で保存できる");
   await editName().fill("別名");
   await editName().press("Escape");
-  expect((await editName().count()) === 0, "Escで入力欄が閉じない");
+  expect((await detail().count()) === 0, "Escで閉じない");
+  await openTagDetail("未使用タグ");
+  await editName().fill("別名");
+  await detail().getByRole("button", { name: "やめる" }).click();
+  expect((await detail().count()) === 0, "「やめる」で閉じない");
   expect((await tagNames()).includes("未使用タグ"), "名前が変わった");
   // 入力欄の外を押すとやめる
   await page.getByRole("button", { name: "タグを作る" }).click();
@@ -235,6 +249,98 @@ await step("G14", "左の欄の検索：あてはまるタグだけを出す（�
   expect((await page.getByRole("button", { name: "検索の文字を消す", exact: true }).count()) === 0, "空なのに×が出ている");
   expect((await tree()) === "雨:0 爆発:0 風:0", `消した後 ${await tree()}`);
   await page.getByRole("button", { name: "風を開く" }).click();
+});
+
+// ===== タグの詳細設定（子のタグの並び順、色） =====
+
+/** 親タグの子を表示順に */
+const childrenOf = async (parent) => {
+  const rows = await page.getByTestId("tag").evaluateAll((rs) => rs.map((r) => [r.dataset.tagName, r.dataset.depth]));
+  const i = rows.findIndex(([n]) => n === parent);
+  const depth = Number(rows[i][1]);
+  const out = [];
+  for (const [n, d] of rows.slice(i + 1)) {
+    if (Number(d) <= depth) break;
+    if (Number(d) === depth + 1) out.push(n);
+  }
+  return out.join(",");
+};
+
+await step("T01", "子のタグの並び順：ローマ字順・登録順・ファイル数順（昇順・降順）は直下の子だけに効く。ドラッグで決めた順に戻せる", async () => {
+  await createTags(["動物", "うさぎ", "Cat", "いぬ", "ぽち"]);
+  for (const n of ["うさぎ", "Cat", "いぬ"]) await dragTo(n, tagItem("動物"), 0.5);
+  await dragTo("ぽち", tagItem("いぬ"), 0.5);
+  // ドラッグで「いぬ」を先頭に
+  await dragTo("いぬ", tagItem("うさぎ"), 0.1);
+  expect((await childrenOf("動物")) === "いぬ,うさぎ,Cat", `ドラッグの順 ${await childrenOf("動物")}`);
+  await saveDetail("動物", () => page.getByLabel("子のタグの並び順").selectOption({ label: "ローマ字順" }));
+  expect((await childrenOf("動物")) === "Cat,いぬ,うさぎ", `ローマ字順 ${await childrenOf("動物")}`);
+  // 孫も一緒に並ぶ（いぬの下）
+  expect((await childrenOf("いぬ")) === "ぽち", `孫 ${await childrenOf("いぬ")}`);
+  await saveDetail("動物", () => page.getByLabel("昇順・降順").selectOption({ label: "降順" }));
+  expect((await childrenOf("動物")) === "うさぎ,いぬ,Cat", `ローマ字順の降順 ${await childrenOf("動物")}`);
+  await shot("T01_ローマ字順の降順");
+  await saveDetail("動物", async () => {
+    await page.getByLabel("子のタグの並び順").selectOption({ label: "登録順" });
+    await page.getByLabel("昇順・降順").selectOption({ label: "昇順" });
+  });
+  expect((await childrenOf("動物")) === "うさぎ,Cat,いぬ", `登録順 ${await childrenOf("動物")}`);
+  // ファイル数順：Cat に2件、いぬ（の子のぽち）に1件
+  await row("chime.wav").click();
+  await addTag("Cat");
+  await row("chime.mp3").click();
+  await addTag("Cat");
+  await addTag("ぽち");
+  await saveDetail("動物", async () => {
+    await page.getByLabel("子のタグの並び順").selectOption({ label: "ファイル数順" });
+    await page.getByLabel("昇順・降順").selectOption({ label: "降順" });
+  });
+  expect((await childrenOf("動物")) === "Cat,いぬ,うさぎ", `ファイル数順の降順 ${await childrenOf("動物")}`);
+  // 並び順を決めた親の子は、ドラッグで後ろに落としても並びは変わらない（ドラッグで決めた順は うさぎ,Cat,いぬ になる）
+  await dragTo("いぬ", tagItem("Cat"), 0.9);
+  expect((await childrenOf("動物")) === "Cat,いぬ,うさぎ", `ドラッグ後 ${await childrenOf("動物")}`);
+  // 「ドラッグで決めた順」では昇順・降順を選べない。戻すとドラッグで決めた順になる
+  await openTagDetail("動物");
+  await page.getByLabel("子のタグの並び順").selectOption({ label: "ドラッグで決めた順" });
+  expect(await page.getByLabel("昇順・降順").isDisabled(), "昇順・降順を選べる");
+  await detail().getByRole("button", { name: "保存" }).click();
+  await waitIdle();
+  expect((await childrenOf("動物")) === "うさぎ,Cat,いぬ", `戻した後 ${await childrenOf("動物")}`);
+});
+
+await step("T02", "色：ライブラリの行と右の欄のタグのチップに付く。色のないタグは親の色を引き継ぎ、子の色が優先する（背景色と文字色は別々）", async () => {
+  const rowChip = (file, tag) => row(file).locator(".chip", { hasText: tag });
+  const detailChip = (tag) => page.locator(`[data-testid="selected-tag"][data-tag-name="${tag}"]`);
+  const before = await colors(rowChip("chime.mp3", "ぽち"));
+  await saveDetail("動物", async () => {
+    await page.getByLabel("背景色を付ける").check();
+    await page.getByLabel("背景色", { exact: true }).fill("#ff0000");
+    await page.getByLabel("文字色を付ける").check();
+    await page.getByLabel("文字色", { exact: true }).fill("#ffffff");
+  });
+  // 孫（ぽち）まで引き継ぐ
+  expect((await colors(rowChip("chime.mp3", "ぽち"))) === "rgb(255, 0, 0) / rgb(255, 255, 255)", `引き継ぎ ${await colors(rowChip("chime.mp3", "ぽち"))} (前 ${before})`);
+  // 子の背景色が優先し、文字色は親から引き継ぐ。詳細画面の見本にも出る
+  await openTagDetail("いぬ");
+  expect((await page.getByText("親の色を引き継ぐ").count()) === 2, "引き継ぐことが出ていない");
+  await page.getByLabel("背景色を付ける").check();
+  await page.getByLabel("背景色", { exact: true }).fill("#0000ff");
+  expect((await colors(page.getByTestId("tag-sample"))) === "rgb(0, 0, 255) / rgb(255, 255, 255)", `見本 ${await colors(page.getByTestId("tag-sample"))}`);
+  await shot("T02_色の設定");
+  await detail().getByRole("button", { name: "保存" }).click();
+  await waitIdle();
+  expect((await colors(rowChip("chime.mp3", "ぽち"))) === "rgb(0, 0, 255) / rgb(255, 255, 255)", `子の色 ${await colors(rowChip("chime.mp3", "ぽち"))}`);
+  expect((await colors(rowChip("chime.mp3", "Cat"))) === "rgb(255, 0, 0) / rgb(255, 255, 255)", `Cat ${await colors(rowChip("chime.mp3", "Cat"))}`);
+  // 右の欄のファイルの詳細のチップにも付く
+  await row("chime.mp3").click();
+  expect((await colors(detailChip("ぽち"))) === "rgb(0, 0, 255) / rgb(255, 255, 255)", `右の欄 ${await colors(detailChip("ぽち"))}`);
+  await shot("T02_タグの色");
+  // 色を外すと、もとの色に戻る
+  await saveDetail("動物", async () => {
+    await page.getByLabel("背景色を付ける").uncheck();
+    await page.getByLabel("文字色を付ける").uncheck();
+  });
+  expect((await colors(rowChip("chime.mp3", "Cat"))) === before, `外した後 ${await colors(rowChip("chime.mp3", "Cat"))}`);
 });
 
 await ui.finish();

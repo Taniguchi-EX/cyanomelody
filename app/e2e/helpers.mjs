@@ -224,11 +224,16 @@ export async function connect(shotDir) {
         await ui.waitIdle();
       }
     },
-    /** 左の欄のタグの「✎」で名前を変える（Enterで決める） */
+    /** 左の欄のタグの「✎」で詳細画面を開く */
+    async openTagDetail(name) {
+      await ui.rowAction(ui.tagItem(name), `${name}の詳細を設定する`);
+      await page.getByTestId("tag-detail").waitFor();
+    },
+    /** タグの詳細画面で名前を変える（Enterで保存する） */
     async renameTag(from, to) {
-      await ui.rowAction(ui.tagItem(from), `${from}の名前を変える`);
-      await page.getByLabel("タグの新しい名前").fill(to);
-      await page.getByLabel("タグの新しい名前").press("Enter");
+      await ui.openTagDetail(from);
+      await page.getByLabel("タグ名", { exact: true }).fill(to);
+      await page.getByLabel("タグ名", { exact: true }).press("Enter");
       await ui.waitIdle();
     },
     /** 右の欄で、表示中のファイルにタグを付ける（名前を入れてEnter。まだないタグは作って付く） */

@@ -142,6 +142,13 @@ const MIGRATIONS: &[&str] = &[
     UPDATE sources SET position = (SELECT count(*) FROM sources s2 WHERE s2.name < sources.name COLLATE NOCASE);
     UPDATE licenses SET position = (SELECT count(*) FROM licenses l2 WHERE l2.name < licenses.name COLLATE NOCASE);
     "#,
+    // 10: タグの詳細設定。子のタグの並び順（NULL はドラッグで決めた順）と、表示の色（#rrggbb）
+    r#"
+    ALTER TABLE tags ADD COLUMN child_sort TEXT;
+    ALTER TABLE tags ADD COLUMN child_sort_desc INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE tags ADD COLUMN bg_color TEXT;
+    ALTER TABLE tags ADD COLUMN fg_color TEXT;
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {
