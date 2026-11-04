@@ -137,7 +137,7 @@ export function PlayerBar({
             tabIndex={0}
             onClick={onJump}
             onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onJump())}
-            title={`${playingPath}（押すと、この曲を出します）`}
+            title={playingPath ?? undefined}
             data-testid="player-file"
           >
             {name}
@@ -200,7 +200,7 @@ export function PlayerBar({
             <button
               className="icon play-mode"
               onClick={() => onPlayMode(nextMode.mode)}
-              title={`再生方法：${mode.label}（押すと「${nextMode.label}」）`}
+              title={`再生方法：${mode.label}`}
               aria-label="再生方法"
               data-testid="play-mode"
               data-mode={mode.mode}

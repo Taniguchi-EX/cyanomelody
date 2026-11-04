@@ -329,7 +329,7 @@ await step("P21", "再生方法のボタン：押すたびに 一曲だけ→順
   const first = (await items())[0].split(":")[1];
   // 最初は順に連続。押すたびに変わり、マウスを乗せると今と次が出る
   expect((await mode()) === "order", `最初 ${await mode()}`);
-  expect((await modeButton().getAttribute("title")) === "再生方法：順に連続再生（押すと「ランダム再生」）", await modeButton().getAttribute("title"));
+  expect((await modeButton().getAttribute("title")) === "再生方法：順に連続再生", await modeButton().getAttribute("title"));
   const icons = [];
   for (let i = 0; i < 4; i++) {
     icons.push(`${await mode()}:${await modeButton().innerText()}`);

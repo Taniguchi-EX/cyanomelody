@@ -65,7 +65,7 @@ export function FilterChips({ chips, onClearAll }: Props) {
           icon={c.icon}
           label={c.label}
           onClick={c.onRemove}
-          title={c.title ? `${c.title}（押すと外す）` : "押すと外す"}
+          title={c.title ?? "押すと外す"}
           ariaLabel={`${c.label}の条件を外す`}
           testId={c.testId}
         />
