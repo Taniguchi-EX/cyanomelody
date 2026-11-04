@@ -16,6 +16,7 @@ mod names;
 mod playlists;
 mod recent;
 mod romaji;
+mod settings;
 mod tags;
 mod tree;
 mod update;
@@ -306,6 +307,17 @@ async fn rename_tag(
 #[tauri::command]
 async fn set_tag_settings(state: State<'_, AppState>, tag_id: i64, settings: TagSettings) -> Result<()> {
     tags::set_tag_settings(&state.conn(), tag_id, &settings)
+}
+
+/// 新しく作るタグの既定値（設定画面の「一般」）
+#[tauri::command]
+async fn new_tag_settings(state: State<'_, AppState>) -> Result<TagSettings> {
+    tags::new_tag_settings(&state.conn())
+}
+
+#[tauri::command]
+async fn set_new_tag_settings(state: State<'_, AppState>, settings: TagSettings) -> Result<()> {
+    tags::set_new_tag_settings(&state.conn(), &settings)
 }
 
 #[tauri::command]
@@ -644,6 +656,8 @@ pub fn run() {
             create_tag,
             rename_tag,
             set_tag_settings,
+            new_tag_settings,
+            set_new_tag_settings,
             delete_tag,
             move_tag,
             add_tag,

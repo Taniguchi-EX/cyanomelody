@@ -156,6 +156,9 @@ export const api = {
   hashingProgress: () => invoke<HashProgress>("hashing_progress"),
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
+  /** 新しく作るタグの既定値（設定画面の「一般」） */
+  newTagSettings: () => invoke<TagSettings>("new_tag_settings"),
+  setNewTagSettings: (settings: TagSettings) => invoke<void>("set_new_tag_settings", { settings }),
   /** 新しい版があれば、その版（開発用のビルドや、探せなかったときは null） */
   checkUpdate: () => invoke<string | null>("check_update"),
   /** 新しい版をダウンロードしてインストールし、アプリを再起動する */

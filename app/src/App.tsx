@@ -51,6 +51,7 @@ import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
 import { TagDetail } from "./components/TagDetail";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
@@ -217,6 +218,11 @@ export default function App() {
   useEffect(() => {
     api.licenseTypes().then(setLicenseTypes).catch(showError);
   }, []);
+
+  /** 設定画面を開いているか */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // 設定画面のエラーを出す（設定画面は読み込みの useEffect で使うので、毎回同じ関数にする）
+  const showSettingsError = useCallback((e: unknown) => setStatus({ text: String(e), error: true }), []);
 
   /** 起動したときに見つかった新しい版。「このバージョンをスキップ」した版は出さない */
   const [update, setUpdate] = useState<string | null>(null);
@@ -1119,6 +1125,7 @@ export default function App() {
         onBaseChain={audio.setBaseChain}
         onOpenEffects={openPlayerEffects}
         onJump={jumpToPlaying}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       <StatusBar
         status={status}
@@ -1151,6 +1158,7 @@ export default function App() {
           onClose={() => setEffectDialog(null)}
         />
       )}
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} onError={showSettingsError} />}
       {update && update !== skippedUpdate && (
         <UpdateDialog
           version={update}

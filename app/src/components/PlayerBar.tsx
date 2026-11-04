@@ -36,6 +36,8 @@ type Props = {
   onOpenEffects: (chainId: number | null) => void;
   /** 曲名を押したとき：鳴らしている曲を中央の欄に出す */
   onJump: () => void;
+  /** 右端の歯車：設定画面を開く */
+  onOpenSettings: () => void;
 };
 
 /** fx のプルダウンの、管理画面を開く選び肢 */
@@ -82,6 +84,7 @@ export function PlayerBar({
   onBaseChain,
   onOpenEffects,
   onJump,
+  onOpenSettings,
 }: Props) {
   const entry = player?.queue[player.index];
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
@@ -277,6 +280,9 @@ export function PlayerBar({
           aria-label="音量"
           data-testid="player-volume"
         />
+        <button className="icon settings-button" onClick={onOpenSettings} title="設定" aria-label="設定">
+          ⚙
+        </button>
       </div>
     </div>
   );

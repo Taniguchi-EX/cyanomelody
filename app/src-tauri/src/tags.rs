@@ -9,6 +9,7 @@ use crate::db::now;
 use crate::names::{ensure_unique_name, find_by_name, normalize_name};
 use crate::error::{Error, Result};
 use crate::romaji::romaji_key;
+use crate::settings;
 use crate::tree::MoveTarget;
 
 /// タグ名を区切るための文字（タグ名には入らない制御文字）
@@ -318,13 +319,33 @@ fn next_position(conn: &Connection, parent: Option<i64>) -> Result<i64> {
     )?)
 }
 
-/// 新しいタグは最上位の最後に入れる
+/// 新しいタグは最上位の最後に入れる。並び順と色は、設定画面で決めた既定値にする
 fn insert_tag(conn: &Connection, name: &str) -> Result<i64> {
     conn.execute(
         "INSERT INTO tags (name, created_at, parent_id, position) VALUES (?1, ?2, NULL, ?3)",
         params![name, now(), next_position(conn, None)?],
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+    let defaults: TagSettings = settings::get(conn, settings::NEW_TAG)?;
+    if defaults != TagSettings::default() {
+        set_tag_settings(conn, id, &defaults)?;
+    }
+    Ok(id)
+}
+
+/// 新しく作るタグの既定値
+pub fn new_tag_settings(conn: &Connection) -> Result<TagSettings> {
+    settings::get(conn, settings::NEW_TAG)
+}
+
+/// 新しく作るタグの既定値を保存する（色の形式を確かめ、小文字にそろえる）
+pub fn set_new_tag_settings(conn: &Connection, value: &TagSettings) -> Result<()> {
+    let value = TagSettings {
+        bg_color: normalize_color(value.bg_color.as_deref())?,
+        fg_color: normalize_color(value.fg_color.as_deref())?,
+        ..value.clone()
+    };
+    settings::set(conn, settings::NEW_TAG, &value)
 }
 
 /// 名前でタグを探し、なければ作る。
@@ -682,6 +703,36 @@ mod tests {
         // ドラッグで決めた順に戻す
         sort(&conn, root, Some(ChildSort::Manual), false);
         assert_eq!(children(&conn), vec!["雷", "かぜ", "Ame", "ゆき"]);
+    }
+
+    #[test]
+    fn new_tags_use_default_settings() {
+        let mut conn = setup();
+        // 既定値を決めていなければ、今までどおり（引き継ぐ・色なし）
+        assert_eq!(new_tag_settings(&conn).unwrap(), TagSettings::default());
+        let before = create_tag(&conn, "前").unwrap();
+        let defaults = TagSettings {
+            child_sort: Some(ChildSort::Romaji),
+            child_sort_desc: true,
+            bg_color: Some("#FFEEDD".into()),
+            fg_color: None,
+        };
+        set_new_tag_settings(&conn, &defaults).unwrap();
+        // 色は小文字にそろえて保存する
+        let saved = new_tag_settings(&conn).unwrap();
+        assert_eq!(saved.bg_color.as_deref(), Some("#ffeedd"));
+        // どこで作っても既定値になる（左の欄の「＋」、ファイルに付けるときに作る）
+        let a = create_tag(&conn, "後").unwrap();
+        let b = crate::files::add_tag(&mut conn, &[1], "付けて作る").unwrap();
+        let settings_of = |id: i64| list_tags(&conn).unwrap().into_iter().find(|t| t.id == id).unwrap().settings;
+        assert_eq!(settings_of(a), saved);
+        assert_eq!(settings_of(b), saved);
+        // 今あるタグは変わらない
+        assert_eq!(settings_of(before), TagSettings::default());
+        // 形式の違う色は保存しない
+        let bad = TagSettings { fg_color: Some("red".into()), ..TagSettings::default() };
+        assert!(set_new_tag_settings(&conn, &bad).is_err());
+        assert_eq!(new_tag_settings(&conn).unwrap(), saved);
     }
 
     #[test]

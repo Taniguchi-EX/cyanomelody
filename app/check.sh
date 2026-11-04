@@ -24,6 +24,8 @@ quick() {
   echo "--- 単体テスト（cargo test）"
   (cd src-tauri && cargo test) >"$test_dir/cargo-test.log" 2>&1 || failed=1
   grep -E "^(error|warning)|-->|test result: .* [1-9][0-9]* passed|FAILED|panicked" "$test_dir/cargo-test.log"
+  # 型チェックが読む、ライセンスの一覧（ビルドの前に作るもの）を作っておく
+  node scripts/licenses.mjs >/dev/null || failed=1
   echo "--- 型チェック（tsc）"
   npx tsc -b >"$test_dir/tsc.log" 2>&1 || failed=1
   head -30 "$test_dir/tsc.log"

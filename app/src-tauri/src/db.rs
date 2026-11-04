@@ -154,6 +154,13 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE audio_files ADD COLUMN duration REAL;
     ALTER TABLE audio_files ADD COLUMN duration_done INTEGER NOT NULL DEFAULT 0;
     "#,
+    // 12: アプリの設定（新しく作るタグの既定値など）。値は key ごとに JSON
+    r#"
+    CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

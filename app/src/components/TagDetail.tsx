@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ChildSort, Tag, TagSettings } from "../api";
+import { DEFAULT_BG, DEFAULT_FG, SORTS } from "../tagSettings";
 import { useEscape } from "../hooks/useEscape";
 
 type Props = {
@@ -12,17 +13,7 @@ type Props = {
   onClose: () => void;
 };
 
-const SORTS: { value: ChildSort | ""; label: string }[] = [
-  { value: "", label: "親の設定を引き継ぐ" },
-  { value: "manual", label: "ドラッグで決めた順" },
-  { value: "created", label: "登録順" },
-  { value: "files", label: "ファイル数順" },
-  { value: "romaji", label: "ローマ字順" },
-];
 
-/** 色を付けていないときに、色の選択の欄に出しておく色 */
-const DEFAULT_BG = "#e0e0e0";
-const DEFAULT_FG = "#202020";
 
 type ColorRowProps = {
   id: string;
@@ -34,7 +25,7 @@ type ColorRowProps = {
 };
 
 /** 「色を付ける」のチェックと、色の選択 */
-function ColorRow({ id, label, value, fallback, onChange }: ColorRowProps) {
+export function ColorRow({ id, label, value, fallback, onChange }: ColorRowProps) {
   return (
     <>
       <label htmlFor={id}>{label}</label>

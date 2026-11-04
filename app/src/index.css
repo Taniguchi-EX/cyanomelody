@@ -1334,3 +1334,85 @@ button.add-button:hover:not(:disabled) {
 .player-file.jump:hover {
   text-decoration: underline;
 }
+
+/* 再生の欄の右端の歯車（設定画面を開く） */
+.play-side .settings-button {
+  border: none;
+  background: none;
+  font-size: 17px;
+  margin-left: 4px;
+}
+
+/* 設定画面：上にタブ、下に選んだタブの中身 */
+.settings-dialog {
+  width: min(720px, calc(100% - 32px));
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.tabs button {
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  padding: 5px 12px;
+  margin-bottom: -1px;
+}
+
+.tabs button.active {
+  border-color: var(--border);
+  background: var(--bg);
+  font-weight: bold;
+}
+
+.tab-body h3 {
+  margin: 4px 0 6px;
+  font-size: 14px;
+}
+
+/* バージョンとライセンス：ライブラリの一覧（押すとライセンスの文章を出す） */
+.license-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.license-list li {
+  border-bottom: 1px solid var(--border);
+}
+
+.license-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  text-align: left;
+}
+
+.license-kind {
+  flex: none;
+  text-align: right;
+}
+
+.license-body {
+  padding: 0 4px 8px 18px;
+  overflow-wrap: anywhere;
+}
+
+.license-text {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  background: var(--bg-sub, rgba(127, 127, 127, 0.08));
+  padding: 6px;
+  border-radius: 4px;
+}

@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ビルドの前に作るライセンスの一覧（scripts/licenses.mjs）
+src/generated
