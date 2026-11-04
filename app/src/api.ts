@@ -177,6 +177,14 @@ export const api = {
   /** 見つからないファイルと同じ音声のファイルをフォルダの中から探してひも付ける。見つからなければ null */
   findMissingInFolder: (fileId: number, folder: string) =>
     invoke<LinkOutcome | null>("find_missing_in_folder", { fileId, folder }),
+  /** 見つからないファイルそれぞれと同じ音声のファイルを、フォルダの中からまとめて探してひも付ける */
+  findMissingInFolderMany: (fileIds: number[], folder: string) =>
+    invoke<{ linked: number; notFound: number; noHash: number; addedFolder: string | null }>("find_missing_in_folder_many", {
+      fileIds,
+      folder,
+    }),
+  /** ids のうち、見つからない印のあるファイルの数 */
+  countMissing: (fileIds: number[]) => invoke<number>("count_missing", { fileIds }),
   recordPlay: (fileId: number) => invoke<void>("record_play", { fileId }),
   licenseTypes: () => invoke<LicenseType[]>("license_types"),
   listCredits: (kind: CreditKind) => invoke<Credit[]>("list_credits", { kind }),

@@ -1446,3 +1446,11 @@ button.add-button:hover:not(:disabled) {
   margin: 8px 0 0;
   padding-left: 18px;
 }
+
+/* チェックしたファイルがすべてリンク切れのときの操作（チェックの操作の行の右端） */
+.missing-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}

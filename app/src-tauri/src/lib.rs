@@ -258,6 +258,47 @@ async fn find_missing_in_folder(
     }
 }
 
+/// まとめて探した結果
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FindManyOutcome {
+    linked: usize,
+    not_found: usize,
+    no_hash: usize,
+    /// ライブラリに登録したフォルダ（ライブラリの外のフォルダから見つかったとき）
+    added_folder: Option<String>,
+}
+
+/// 見つからないファイル（file_ids）それぞれと同じ音声のファイルを folder の中からまとめて探し、見つかったものをひも付ける
+#[tauri::command]
+async fn find_missing_in_folder_many(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    file_ids: Vec<i64>,
+    folder: String,
+) -> Result<FindManyOutcome> {
+    let mut conn = state.conn();
+    let folder = PathBuf::from(folder);
+    let found = linking::find_many_in_folder(&conn, &file_ids, &folder)?;
+    let mut outcome = FindManyOutcome { linked: 0, not_found: found.not_found, no_hash: found.no_hash, added_folder: None };
+    for (id, path) in found.found {
+        let r = link_missing(&app, &mut conn, id, &path, &folder)?;
+        outcome.added_folder = outcome.added_folder.or(r.added_folder);
+        outcome.linked += 1;
+    }
+    Ok(outcome)
+}
+
+/// ids のうち、見つからない印のあるファイルの数（チェックしたファイルがすべてリンク切れかを見る）
+#[tauri::command]
+async fn count_missing(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<i64> {
+    Ok(state.conn().query_row(
+        "SELECT count(*) FROM audio_files WHERE missing = 1 AND id IN (SELECT value FROM json_each(?1))",
+        [db::ids_json(&file_ids)],
+        |r| r.get(0),
+    )?)
+}
+
 /// ファイルを再生したことを記録する（「直近で再生したもの」）
 #[tauri::command]
 async fn record_play(state: State<'_, AppState>, file_id: i64) -> Result<()> {
@@ -789,6 +830,8 @@ pub fn run() {
             checked_tag_counts,
             link_missing_file,
             find_missing_in_folder,
+            find_missing_in_folder_many,
+            count_missing,
             record_play,
             remove_file_from_playlist,
             playlist_item_files,

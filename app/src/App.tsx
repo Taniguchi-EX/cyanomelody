@@ -394,6 +394,21 @@ export default function App() {
       showInfo(parts.join("、"));
     });
 
+  /** チェックしたリンク切れのファイルそれぞれと同じ音声のファイルを、選んだフォルダからまとめて探してひも付ける */
+  const findCheckedInFolder = async () => {
+    const folder = await pickPath({ directory: true }).catch(showError);
+    if (typeof folder !== "string") return;
+    run(async () => {
+      const r = await api.findMissingInFolderMany([...checked], folder);
+      const parts = [`ひも付けた ${r.linked}件`];
+      if (r.notFound) parts.push(`見つからなかった ${r.notFound}件`);
+      if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
+      if (r.addedFolder) parts.push(`フォルダ「${r.addedFolder}」をライブラリに登録しました`);
+      showInfo(parts.join("、"));
+      if (r.addedFolder) startHashing();
+    });
+  };
+
   /** 絞り込み・チェック・右の欄の表示を、すべて解除する */
   const clearAll = () => {
     fileFilter.reset();
@@ -1016,6 +1031,9 @@ export default function App() {
                 onClear={checks.clear}
                 onCheckedOnly={setCheckedOnly}
                 onRemoveTag={removeTagFromChecked}
+                onRelink={() => relink([...checked])}
+                onFindInFolder={findCheckedInFolder}
+                onRemoveMissing={() => removeMissing([...checked], checked.size)}
                 onError={showError}
               />
             )}

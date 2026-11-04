@@ -15,6 +15,10 @@ type Props = {
   onCheckedOnly: (on: boolean) => void;
   /** タグのチップを押したとき（チェックしたファイルすべてから外す） */
   onRemoveTag: (tag: TagCount) => void;
+  /** チェックしたファイルがすべてリンク切れのときの操作（右端のボタン） */
+  onRelink: () => void;
+  onFindInFolder: () => void;
+  onRemoveMissing: () => void;
   onError: (e: unknown) => void;
 };
 
@@ -29,9 +33,14 @@ export function CheckBar({
   onClear,
   onCheckedOnly,
   onRemoveTag,
+  onRelink,
+  onFindInFolder,
+  onRemoveMissing,
   onError,
 }: Props) {
   const [tags, setTags] = useState<TagCount[]>([]);
+  /** チェックしたファイルのうち、リンク切れの数（表示していないファイルも含めて数える） */
+  const [missing, setMissing] = useState<{ ids: Set<number>; count: number } | null>(null);
   // onError は描くたびに作り直されるので、読み直しのきっかけにしないよう ref で持つ
   const onErrorRef = useRef(onError);
   useEffect(() => {
@@ -44,11 +53,17 @@ export function CheckBar({
       .checkedTagCounts([...checked])
       .then((list) => alive && setTags(list))
       .catch((e) => onErrorRef.current(e));
+    api
+      .countMissing([...checked])
+      .then((count) => alive && setMissing({ ids: checked, count }))
+      .catch((e) => onErrorRef.current(e));
     return () => {
       alive = false;
     };
   }, [checked, dataVersion]);
 
+  // 数え終えたチェックが今のチェックと同じで、すべてがリンク切れのときだけ、リンク切れの操作を出す
+  const allMissing = missing !== null && missing.ids === checked && checked.size > 0 && missing.count === checked.size;
   return (
     <div className="toolbar">
       <button onClick={onCheckShown} disabled={allShownChecked}>
@@ -78,6 +93,20 @@ export function CheckBar({
               tagName={t.name}
             />
           ))}
+        </div>
+      )}
+      {allMissing && (
+        <div className="missing-actions" data-testid="missing-actions">
+          <span className="warn">⚠ リンク切れ {checked.size}件</span>
+          <button onClick={onRelink} disabled={busy} title="ライブラリの中から同じ音声のファイルを探して、タグなどを移す">
+            ひも付け直す
+          </button>
+          <button onClick={onFindInFolder} disabled={busy} title="フォルダを選んで、その中から同じ音声のファイルを探す">
+            指定フォルダから自動で探す
+          </button>
+          <button onClick={onRemoveMissing} disabled={busy} title="ファイルの情報と、付けたタグなどの設定を消す">
+            ライブラリから外す
+          </button>
         </div>
       )}
     </div>

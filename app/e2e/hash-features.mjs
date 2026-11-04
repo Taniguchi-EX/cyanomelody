@@ -11,7 +11,10 @@ const outside = path.join(dataDir, "outside");
 const linkDir = path.join(hashDir, "link");
 const searchDir = path.join(dataDir, "link_search");
 const emptyDir = path.join(dataDir, "link_empty");
-for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });
+// まとめての操作のテスト（H16）で作るフォルダ
+const bulkDir = path.join(dataDir, "link_bulk");
+const bulkSearch = path.join(dataDir, "link_bulk_search");
+for (const dir of [linkDir, searchDir, emptyDir, bulkDir, bulkSearch]) fs.rmSync(dir, { recursive: true, force: true });
 
 const ui = await connect(shotDir);
 const { page, step, shot, status, fileCount, row, waitIdle, addFolder, clearFilter, addTag } = ui;
@@ -213,6 +216,65 @@ await step("H15", "再生の欄の曲の名前は、曲名がなければ拡張�
   await row("no_title.wav").getByRole("button", { name: "停止", exact: true }).click();
   await search("");
   for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+await step("H16", "チェックしたファイルがすべてリンク切れのときだけ、チェックの操作の行の右端にリンク切れの操作が出る。「指定フォルダから自動で探す」はまとめて探してひも付け、「ライブラリから外す」はまとめて外す", async () => {
+  // 3つの音声（b1・b2 は探す先に移す、b3 は消す）にタグを付けてから、リンク切れにする
+  fs.mkdirSync(bulkDir, { recursive: true });
+  fs.copyFileSync(path.join(hashDir, "se1.mp3"), path.join(bulkDir, "b1.mp3"));
+  fs.copyFileSync(path.join(hashDir, "se2.wav"), path.join(bulkDir, "b2.wav"));
+  fs.copyFileSync(path.join(dataDir, "formats", "chime.wav"), path.join(bulkDir, "b3.wav"));
+  await hashingAfter(() => addFolder(bulkDir));
+  const actions = page.getByTestId("missing-actions");
+  await search("b");
+  for (const rel of ["b1.mp3", "b2.wav", "b3.wav"]) {
+    await row(rel).click();
+    await addTag("まとめ");
+  }
+  fs.mkdirSync(path.join(bulkSearch, "deep"), { recursive: true });
+  fs.renameSync(path.join(bulkDir, "b1.mp3"), path.join(bulkSearch, "deep", "moved1.mp3"));
+  fs.renameSync(path.join(bulkDir, "b2.wav"), path.join(bulkSearch, "moved2.wav"));
+  fs.rmSync(path.join(bulkDir, "b3.wav"));
+  await scanFolder("link_bulk");
+  // リンク切れの3件をチェックすると出る
+  await search("");
+  await ui.filtered(() => ui.otherItem("missingOnly").click());
+  await search("b");
+  for (const rel of ["b1.mp3", "b2.wav", "b3.wav"]) await ui.check(rel);
+  await actions.waitFor({ timeout: 3000 });
+  expect((await actions.innerText()).includes("リンク切れ 3件"), await actions.innerText());
+  // 行の右端にある
+  const [bar, box] = await Promise.all([actions.locator("..").boundingBox(), actions.boundingBox()]);
+  expect(Math.abs(bar.x + bar.width - (box.x + box.width)) < 16, `右端にない ${bar.x + bar.width} / ${box.x + box.width}`);
+  await shot("H16_リンク切れの操作");
+  // リンク切れでないファイルが混ざると出ない
+  await ui.filtered(() => ui.otherItem("missingOnly").click());
+  await search("se1.mp3");
+  await ui.check("se1.mp3");
+  await page.waitForTimeout(300);
+  expect((await actions.count()) === 0, "リンク切れでないファイルが混ざっても出る");
+  await ui.check("se1.mp3");
+  await actions.waitFor({ timeout: 3000 });
+  // 指定フォルダから自動で探す：フォルダを1回選び、まとめてひも付ける（ライブラリの外なので登録する）
+  await ui.setDialogReply(bulkSearch);
+  await page.getByTestId("missing-actions").getByRole("button", { name: "指定フォルダから自動で探す" }).click();
+  await waitIdle();
+  expect((await status()).includes("ひも付けた 2件、見つからなかった 1件"), await status());
+  await search("moved");
+  expect((await tagsOf("deep/moved1.mp3")).includes("まとめ") && (await tagsOf("moved2.wav")).includes("まとめ"), "タグが移らない");
+  // 残った1件（b3）だけがチェックに残り、まとめて外せる
+  await actions.waitFor({ timeout: 3000 });
+  expect((await actions.innerText()).includes("リンク切れ 1件"), await actions.innerText());
+  await ui.setConfirmReply(true);
+  await ui.confirmed(() => page.getByTestId("missing-actions").getByRole("button", { name: "ライブラリから外す" }).click());
+  await waitIdle();
+  expect((await ui.lastConfirm()).includes("見つからないファイル1件"), await ui.lastConfirm());
+  expect((await status()).includes("1件をライブラリから外しました"), await status());
+  await search("b3");
+  expect((await fileCount()) === 0, "外れていない");
+  await search("");
+  await ui.setDialogReply(undefined);
+  for (const dir of [bulkDir, bulkSearch]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
 await ui.finish();

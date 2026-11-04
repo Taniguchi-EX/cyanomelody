@@ -1,5 +1,6 @@
 //! リンク切れ（見つからない）ファイルを、ユーザーが選んだファイル・フォルダからひも付け直す
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -112,6 +113,84 @@ pub fn find_in_folder(conn: &Connection, missing: i64, folder: &Path) -> Result<
     Ok(None)
 }
 
+/// まとめて探した結果
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct FoundMany {
+    /// 見つかったもの（見つからないファイルの id と、同じ音声のファイル）
+    pub found: Vec<(i64, PathBuf)>,
+    pub not_found: usize,
+    /// ハッシュ値がないため探せなかった数
+    pub no_hash: usize,
+}
+
+/// 見つからないファイル（ids のうち見つからない印のあるもの）それぞれと同じ音声のファイルを、folder の中からまとめて探す。
+/// ライブラリにあって計算済みのファイルを先に調べ、残りはフォルダの中のファイルのハッシュ値を1回だけ計算して探す
+/// （すべて見つかったら、そこで止める）
+pub fn find_many_in_folder(conn: &Connection, ids: &[i64], folder: &Path) -> Result<FoundMany> {
+    if !folder.is_dir() {
+        return Err(Error::invalid(format!("フォルダが見つかりません: {}", folder.display())));
+    }
+    let folder = dunce::canonicalize(folder)?;
+    let key = comparable(&folder);
+    let mut result = FoundMany::default();
+    // ハッシュ値ごとに、探している見つからないファイル
+    let mut wanted: HashMap<String, Vec<i64>> = HashMap::new();
+    for &id in ids {
+        let hash: Option<Option<String>> = conn
+            .query_row("SELECT hash FROM audio_files WHERE id = ?1 AND missing = 1", [id], |r| r.get(0))
+            .optional()?;
+        match hash {
+            None => {}
+            Some(None) => result.no_hash += 1,
+            Some(Some(h)) => wanted.entry(h).or_default().push(id),
+        }
+    }
+    // ライブラリにあって計算済みのファイル
+    let mut found_for = |hash: &str, path: PathBuf, wanted: &mut HashMap<String, Vec<i64>>| {
+        if let Some(list) = wanted.remove(hash) {
+            for id in list {
+                result.found.push((id, path.clone()));
+            }
+        }
+    };
+    let known: Vec<(String, PathBuf)> = conn
+        .prepare(
+            "SELECT a.hash, f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+             WHERE a.hash IS NOT NULL AND a.missing = 0",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, absolute_path(&r.get::<_, String>(1)?, &r.get::<_, String>(2)?))))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (hash, path) in known {
+        if wanted.contains_key(&hash) && comparable(&path).starts_with(&key) && path.is_file() {
+            found_for(&hash, path, &mut wanted);
+        }
+    }
+    // フォルダの中のファイルのハッシュ値を計算して探す
+    if !wanted.is_empty() {
+        let files: Vec<PendingFile> = library::audio_files_under(&folder)
+            .into_iter()
+            .enumerate()
+            .map(|(i, path)| PendingFile { id: i as i64, path })
+            .collect();
+        let cancel = AtomicBool::new(false);
+        for batch in files.chunks(SEARCH_BATCH) {
+            for (i, outcome) in compute_parallel(batch, &cancel, audio_hash) {
+                if let Some(Ok(h)) = outcome {
+                    if wanted.contains_key(&h) {
+                        found_for(&h, files[i as usize].path.clone(), &mut wanted);
+                    }
+                }
+            }
+            if wanted.is_empty() {
+                break;
+            }
+        }
+    }
+    result.not_found = wanted.values().map(Vec::len).sum();
+    result.found.sort();
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +270,41 @@ mod tests {
         // ハッシュ値がなければ探せない
         conn.execute("UPDATE audio_files SET hash = NULL WHERE id = ?1", [missing]).unwrap();
         assert!(find_in_folder(&conn, missing, &search).is_err());
+    }
+
+    #[test]
+    fn find_many_in_folder_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut conn, a) = setup(dir.path());
+        // 見つからないファイルをもう2つ：b（mp3 と同じ音声）、c（どこにもない音声）、d（ハッシュ値なし）
+        let lib = dir.path().join("lib");
+        let folder: i64 = conn.query_row("SELECT id FROM library_folders", [], |r| r.get(0)).unwrap();
+        let mp3_hash = crate::audio_hash::audio_hash(&fixture("base.mp3")).unwrap();
+        let add = |rel: &str, hash: Option<&str>| -> i64 {
+            conn.execute(
+                "INSERT INTO audio_files (folder_id, rel_path, size, modified_at, added_at, missing, hash) VALUES (?1, ?2, 0, 0, 0, 1, ?3)",
+                params![folder, rel, hash],
+            )
+            .unwrap();
+            conn.last_insert_rowid()
+        };
+        let b = add("b.mp3", Some(&mp3_hash));
+        let c = add("c.wav", Some("nothing"));
+        let d = add("d.wav", None);
+        let search = dir.path().join("search");
+        fs::create_dir_all(search.join("deep")).unwrap();
+        fs::copy(fixture("base.wav"), search.join("deep").join("renamed.wav")).unwrap();
+        fs::copy(fixture("base.mp3"), search.join("b2.mp3")).unwrap();
+        fs::copy(fixture("other.flac"), search.join("other.flac")).unwrap();
+        // 見つからない印のないファイル（ライブラリにあるもの）は数えない
+        fs::copy(fixture("base.wav"), lib.join("here.wav")).unwrap();
+        scan_folder(&mut conn, folder).unwrap();
+        let here = id_of(&conn, "here.wav");
+        let r = find_many_in_folder(&conn, &[a, b, c, d, here], &search).unwrap();
+        let names: Vec<(i64, String)> =
+            r.found.iter().map(|(id, p)| (*id, p.file_name().unwrap().to_string_lossy().into_owned())).collect();
+        assert_eq!(names, vec![(a, "renamed.wav".to_string()), (b, "b2.mp3".to_string())]);
+        assert_eq!((r.not_found, r.no_hash), (1, 1));
+        assert!(find_many_in_folder(&conn, &[a], &dir.path().join("none")).is_err());
     }
 }
