@@ -161,6 +161,11 @@ const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL
     );
     "#,
+    // 13: リリース年。長さと一緒に調べる。release_year_done は調べたら1（読めなかったときも）
+    r#"
+    ALTER TABLE audio_files ADD COLUMN release_year INTEGER;
+    ALTER TABLE audio_files ADD COLUMN release_year_done INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

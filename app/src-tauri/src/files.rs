@@ -55,6 +55,9 @@ pub struct FileFilter {
     /// 長さ（秒）がこれ以上・以下のファイルに絞り込む。長さのないファイルは出さない
     pub min_duration: Option<f64>,
     pub max_duration: Option<f64>,
+    /// リリース年がこれ以上・以下のファイルに絞り込む。年のないファイルは出さない
+    pub min_year: Option<i32>,
+    pub max_year: Option<i32>,
     /// 一覧の並び順（絞り込みには使わない）。同じ値どうしはパス順
     pub sort: FileSort,
     pub sort_desc: bool,
@@ -241,6 +244,14 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     if let Some(min) = filter.min_duration {
         sql.push_str(" AND a.duration >= ?");
         args.push(Value::Real(min));
+    }
+    if let Some(min) = filter.min_year {
+        sql.push_str(" AND a.release_year >= ?");
+        args.push(Value::Integer(min as i64));
+    }
+    if let Some(max) = filter.max_year {
+        sql.push_str(" AND a.release_year <= ?");
+        args.push(Value::Integer(max as i64));
     }
     if let Some(max) = filter.max_duration {
         sql.push_str(" AND a.duration <= ?");
@@ -587,6 +598,25 @@ mod tests {
         // プレイリストからまとめて外す（ファイルの項目だけ）
         assert_eq!(crate::playlists::remove_files_from_playlist(&conn, 2, &[a, b]).unwrap(), 3);
         assert!(bulk_summary(&conn, &[a, b]).unwrap().playlists.is_empty());
+    }
+
+    #[test]
+    fn filter_by_release_year() {
+        let (_dir, conn) = setup();
+        // a.wav は 2006年、b.mp3 は 2019年、c は年なし
+        conn.execute("UPDATE audio_files SET release_year = 2006 WHERE rel_path = 'a.wav'", []).unwrap();
+        conn.execute("UPDATE audio_files SET release_year = 2019 WHERE rel_path = 'b.mp3'", []).unwrap();
+        let list = |min: Option<i32>, max: Option<i32>| -> Vec<String> {
+            let f = FileFilter { min_year: min, max_year: max, ..Default::default() };
+            list_files(&conn, &f).unwrap().into_iter().map(|f| f.rel_path).collect()
+        };
+        assert_eq!(list(None, None).len(), 3);
+        // その年を含む
+        assert_eq!(list(Some(2006), None), vec!["a.wav", "b.mp3"]);
+        assert_eq!(list(Some(2007), None), vec!["b.mp3"]);
+        assert_eq!(list(None, Some(2019)), vec!["a.wav", "b.mp3"]);
+        assert_eq!(list(None, Some(2018)), vec!["a.wav"]);
+        assert_eq!(list(Some(2010), Some(2020)), vec!["b.mp3"]);
     }
 
     #[test]

@@ -127,10 +127,59 @@ fn genre_name(text: &str) -> String {
     by_number(text).unwrap_or_else(|| text.to_string())
 }
 
+/// 裏で調べて保存する情報（長さとリリース年）
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct AudioInfo {
+    /// 長さ（秒）
+    pub duration: Option<f64>,
+    /// リリース年
+    pub year: Option<i32>,
+}
+
+/// 長さとリリース年を、ファイルを1回開いて調べる。読めないファイルでは両方とも None
+pub fn audio_info(path: &Path) -> AudioInfo {
+    let Some(mut probed) = probe(path) else { return AudioInfo::default() };
+    // 形式の外側のタグ（MP3 の先頭の ID3v2 など）と、形式の中のタグの両方から、項目の順に探す
+    let mut dates: Vec<(StandardTagKey, String)> = Vec::new();
+    let mut collect = |revision: &MetadataRevision| {
+        for tag in revision.tags() {
+            if let Some(key @ (StandardTagKey::Date | StandardTagKey::ReleaseDate | StandardTagKey::OriginalDate)) = tag.std_key {
+                dates.push((key, tag.value.to_string()));
+            }
+        }
+    };
+    if let Some(revision) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
+        collect(revision);
+    }
+    if let Some(revision) = probed.format.metadata().current() {
+        collect(revision);
+    }
+    let year = [StandardTagKey::Date, StandardTagKey::ReleaseDate, StandardTagKey::OriginalDate]
+        .iter()
+        .find_map(|key| dates.iter().filter(|(k, _)| k == key).find_map(|(_, v)| parse_year(v)))
+        // WAV の INFO の日付（ICRD）は、ファイルから直接読む
+        .or_else(|| riff_info(path).and_then(|info| riff_text(&info, b"ICRD")).and_then(|v| parse_year(&v)));
+    AudioInfo { duration: duration_of(probed.format), year }
+}
+
+/// 日付の値から年を取り出す（「2006」「2026-04-14」「20160219」など、先頭の4桁の数字。1000〜2999 のときだけ）
+fn parse_year(text: &str) -> Option<i32> {
+    let t = text.trim();
+    let digits: String = t.chars().take(4).collect();
+    if digits.len() != 4 || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let year: i32 = digits.parse().ok()?;
+    (1000..=2999).contains(&year).then_some(year)
+}
+
 /// 長さ（秒）。音声ファイルの情報（全体のフレーム数）から求め、情報にないとき（一部の MP3 など）は
 /// 音声データのパケットを最後までたどって（デコードはせずに）足し合わせる。読めないファイルでは None
 pub fn duration(path: &Path) -> Option<f64> {
-    let mut format = probe(path)?.format;
+    duration_of(probe(path)?.format)
+}
+
+fn duration_of(mut format: Box<dyn symphonia::core::formats::FormatReader>) -> Option<f64> {
     let track = format.default_track()?;
     let track_id = track.id;
     let params = &track.codec_params;
@@ -328,6 +377,33 @@ mod tests {
 
     fn mp3_with_latin1_title(dir: &Path, name: &str, title: &[u8]) -> std::path::PathBuf {
         mp3_with_frames(dir, name, &[(b"TIT2", title)])
+    }
+
+    #[test]
+    fn reads_release_year() {
+        let dir = tempfile::tempdir().unwrap();
+        // MP3：TYER（日付）。リリース日（TDRL）より日付が先
+        let mp3 = mp3_with_frames(dir.path(), "a.mp3", &[(b"TDRL", b"1999"), (b"TYER", b"2006")]);
+        let info = audio_info(&mp3);
+        assert_eq!(info.year, Some(2006));
+        assert!(info.duration.is_some_and(|d| d > 0.1), "{:?}", info.duration);
+        // 日付がなければリリース日
+        let mp3 = mp3_with_frames(dir.path(), "b.mp3", &[(b"TDRL", b"2016-02-19")]);
+        assert_eq!(audio_info(&mp3).year, Some(2016));
+        // WAV の INFO（ICRD）
+        let wav = wav_with_info(dir.path(), "c.wav", &[(b"ICRD", b"20160219")]);
+        assert_eq!(audio_info(&wav).year, Some(2016));
+        // 年のないファイル・読めないファイル
+        assert_eq!(audio_info(&fixture("base.flac")).year, None);
+        let text = dir.path().join("text.mp3");
+        fs::write(&text, "not audio").unwrap();
+        assert_eq!(audio_info(&text), AudioInfo::default());
+        // 年の取り出し方
+        assert_eq!(parse_year("2026-04-14"), Some(2026));
+        assert_eq!(parse_year(" 2016/02/19"), Some(2016));
+        assert_eq!(parse_year("06"), None);
+        assert_eq!(parse_year("0999"), None);
+        assert_eq!(parse_year("abcd"), None);
     }
 
     #[test]

@@ -6,6 +6,7 @@ import { connect, expect, parseArgs } from "./helpers.mjs";
 const { dataDir, shotDir } = parseArgs("facets.mjs");
 const formats = path.join(dataDir, "formats");
 const durations = path.join(dataDir, "durations");
+const meta = path.join(dataDir, "meta");
 
 const ui = await connect(shotDir);
 const { page, step, shot, fileCount, row, tagItem, waitIdle, addFolder, clearFilter, addTag } = ui;
@@ -189,6 +190,47 @@ await step("F12", "ライブラリの並び順：検索の欄の右のプルダ�
   await clearFilter();
   expect((await sort().locator("option:checked").innerText()) === "長さ順（短い順）", "すべて外すと戻った");
   await choose("パス順");
+});
+
+await step("F13", "「その他」のリリース年：4桁の年を入れて「以上」「以下」（その年を含む）で条件を加える。年のないファイルは出ない。4桁の年でないときは押せない", async () => {
+  const field = () => page.getByLabel("リリース年", { exact: true });
+  const button = (label) => page.getByTestId("year-input").getByRole("button", { name: label, exact: true });
+  const yearChips = () => page.getByTestId("year-filter").allInnerTexts().then((t) => t.map((s) => s.replace(/\s+/g, "")).join(","));
+  const shown = () => page.getByTestId("file-row").locator(".file-name").allInnerTexts().then((t) => t.join(","));
+  // 年を入れた3つ（2006・2019・2023）と年のない1つを加え、調べ終わるのを待つ
+  const before = await page.evaluate(() => document.querySelector("[data-testid=hash-status]")?.textContent ?? "");
+  await addFolder(meta);
+  await page.waitForFunction(
+    (b) => {
+      const t = document.querySelector("[data-testid=hash-status]")?.textContent ?? "";
+      return t !== b && t.includes("計算しました");
+    },
+    before,
+    { timeout: 30000 },
+  );
+  await clearFilter();
+  // 最初は空で押せない。4桁でないと押せない（枠が赤い）
+  expect((await field().inputValue()) === "", "最初が空でない");
+  expect(await button("以上").isDisabled(), "空なのに押せる");
+  await field().fill("201");
+  expect(await button("以下").isDisabled(), "3桁で押せる");
+  expect((await field().getAttribute("class")) === "invalid", "枠が赤くない");
+  // その年を含む
+  await field().fill("2019");
+  await ui.filtered(() => button("以上").click());
+  expect((await shown()) === "m2.mp3,m3.flac", `2019年以上 ${await shown()}`);
+  await field().fill("２０１９");
+  await ui.filtered(() => button("以下").click());
+  expect((await shown()) === "m2.mp3", `2019年ちょうど ${await shown()}`);
+  expect((await yearChips()) === "📅2019年以上✕,📅2019年以下✕", await yearChips());
+  const otherCount = await page.getByTestId("selected-count").allInnerTexts();
+  expect(otherCount.join(",") === "2", `選んでいる数 ${otherCount.join(",")}`);
+  await shot("F13_リリース年の条件");
+  // 以下だけにすると、年のないファイル（m4.wav ほか）は出ない
+  await ui.filtered(() => page.getByTestId("year-filter").first().click());
+  expect((await shown()) === "m1.mp3,m2.mp3", `2019年以下 ${await shown()}`);
+  await clearFilter();
+  expect((await yearChips()) === "", "すべて解除で消えない");
 });
 
 await ui.finish();

@@ -51,6 +51,9 @@ export type FileFilter = {
   /** 長さ（秒）がこれ以上・以下のファイルだけ（長さのないファイルは出ない）。null なら絞り込まない */
   minDuration: number | null;
   maxDuration: number | null;
+  /** リリース年がこれ以上・以下のファイルだけ（年のないファイルは出ない）。null なら絞り込まない */
+  minYear: number | null;
+  maxYear: number | null;
   /** 一覧の並び順（絞り込みには使わない）。なければパス順 */
   sort?: FileSort;
   sortDesc?: boolean;

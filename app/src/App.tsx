@@ -1038,7 +1038,7 @@ export default function App() {
             query={sideQuery}
           />
         ))}
-        <OtherPanel filter={filter} onToggle={toggleOther} onDuration={fileFilter.setDuration} facets={facets} />
+        <OtherPanel filter={filter} onToggle={toggleOther} onDuration={fileFilter.setDuration} onYear={fileFilter.setYear} facets={facets} />
       </aside>
       <Splitter
         label="左の欄の幅"

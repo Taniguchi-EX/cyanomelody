@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import type { Credit, CreditKind, FileFilter, LibraryFolder, Tag } from "../api";
 import { CREDIT_LABEL } from "../credits";
 import { baseName } from "../paths";
-import { DURATION_LIMITS, formatDuration, OTHER_ITEMS, type DurationKey, type OtherKey } from "../otherFilters";
+import {
+  DURATION_LIMITS,
+  formatDuration,
+  OTHER_ITEMS,
+  YEAR_LIMITS,
+  type DurationKey,
+  type OtherKey,
+  type YearKey,
+} from "../otherFilters";
 import type { FilterChip } from "../components/FilterChips";
 
 export const EMPTY_FILTER: FileFilter = {
@@ -21,6 +29,8 @@ export const EMPTY_FILTER: FileFilter = {
   recentOnly: false,
   minDuration: null,
   maxDuration: null,
+  minYear: null,
+  maxYear: null,
 };
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
@@ -102,6 +112,9 @@ export function useFileFilter() {
   /** 長さの条件（以上・以下）を決める。null で外す */
   const setDuration = (key: DurationKey, seconds: number | null) => setFilter((f) => ({ ...f, [key]: seconds }));
 
+  /** リリース年の条件（以上・以下）を決める。null で外す */
+  const setYear = (key: YearKey, year: number | null) => setFilter((f) => ({ ...f, [key]: year }));
+
   /** 選んでいる条件のチップ（検索の欄の下に出す。押すとその条件だけ外す） */
   const chips = ({ folders, tags, credits }: ChipNames): FilterChip[] => {
     const nameOf = (list: { id: number; name: string }[], id: number) => list.find((x) => x.id === id)?.name ?? "?";
@@ -154,6 +167,19 @@ export function useFileFilter() {
         });
       }
     }
+    for (const limit of YEAR_LIMITS) {
+      const year = filter[limit.key];
+      if (year !== null) {
+        out.push({
+          key: limit.key,
+          icon: "📅",
+          label: `${year}年${limit.label}`,
+          title: `リリース年が${year}年${limit.label}（${year}年を含む）`,
+          onRemove: () => setYear(limit.key, null),
+          testId: "year-filter",
+        });
+      }
+    }
     if (filter.hash) {
       out.push({
         key: "hash",
@@ -182,6 +208,7 @@ export function useFileFilter() {
     dropCredit,
     toggleOther,
     setDuration,
+    setYear,
     chips,
   };
 }

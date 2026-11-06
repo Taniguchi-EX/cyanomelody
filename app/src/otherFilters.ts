@@ -15,6 +15,22 @@ export const DURATION_LIMITS = [
 
 export type DurationKey = (typeof DURATION_LIMITS)[number]["key"];
 
+/** リリース年の条件（以上・以下。その年を含む）。key は FileFilter の条件 */
+export const YEAR_LIMITS = [
+  { key: "minYear", label: "以上" },
+  { key: "maxYear", label: "以下" },
+] as const;
+
+export type YearKey = (typeof YEAR_LIMITS)[number]["key"];
+
+/** リリース年の入力欄の文字を年にする（4桁の数字、1000〜2999。全角の数字も可）。正しくなければ null */
+export function parseYear(text: string): number | null {
+  const t = text.normalize("NFKC").trim();
+  if (!/^\d{4}$/.test(t)) return null;
+  const year = Number(t);
+  return year >= 1000 && year <= 2999 ? year : null;
+}
+
 /**
  * 長さの入力欄の文字を秒にする。「時:分:秒」「分:秒」「秒」の形（全角の数字・コロンも可。分・秒は60以上でもよい）。
  * 形が正しくなければ null

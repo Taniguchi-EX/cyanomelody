@@ -213,12 +213,14 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
              VALUES (?1, ?2, ?3, ?4, 0, ?5)",
         )?;
         let mut update = tx.prepare(
-            // サイズか更新日時が変わったら、ハッシュ値と長さを消して計算し直させる
+            // サイズか更新日時が変わったら、ハッシュ値と長さ・リリース年を消して計算し直させる
             "UPDATE audio_files SET
                 hash = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash END,
                 hash_error = CASE WHEN size = ?2 AND modified_at = ?3 THEN hash_error END,
                 duration = CASE WHEN size = ?2 AND modified_at = ?3 THEN duration END,
                 duration_done = CASE WHEN size = ?2 AND modified_at = ?3 THEN duration_done ELSE 0 END,
+                release_year = CASE WHEN size = ?2 AND modified_at = ?3 THEN release_year END,
+                release_year_done = CASE WHEN size = ?2 AND modified_at = ?3 THEN release_year_done ELSE 0 END,
                 size = ?2, modified_at = ?3, missing = 0
              WHERE id = ?1",
         )?;

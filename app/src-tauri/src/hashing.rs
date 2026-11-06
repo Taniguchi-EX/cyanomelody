@@ -25,19 +25,22 @@ pub struct Analysis {
     pub hash: HashOutcome,
     /// 長さ（秒）。読めなかったときは None
     pub duration: Option<f64>,
+    /// リリース年。読めなかったときは None
+    pub year: Option<i32>,
 }
 
-/// ファイルのハッシュ値と長さを調べる
+/// ファイルのハッシュ値と、長さ・リリース年を調べる
 pub fn analyze(path: &Path) -> Analysis {
-    Analysis { hash: audio_hash(path), duration: metadata::duration(path) }
+    let info = metadata::audio_info(path);
+    Analysis { hash: audio_hash(path), duration: info.duration, year: info.year }
 }
 
-/// 見つかっているファイルのうち、ハッシュ値がまだなく計算できなかった記録もないもの、または長さをまだ調べていないもの
+/// 見つかっているファイルのうち、ハッシュ値がまだなく計算できなかった記録もないもの、または長さ・リリース年をまだ調べていないもの
 pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
     let mut stmt = conn.prepare(
         "SELECT a.id, f.path, a.rel_path FROM audio_files a
          JOIN library_folders f ON f.id = a.folder_id
-         WHERE ((a.hash IS NULL AND a.hash_error IS NULL) OR a.duration_done = 0) AND a.missing = 0
+         WHERE ((a.hash IS NULL AND a.hash_error IS NULL) OR a.duration_done = 0 OR a.release_year_done = 0) AND a.missing = 0
          ORDER BY a.id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -55,12 +58,13 @@ pub fn save_analyses(conn: &mut Connection, results: &[(i64, Analysis)]) -> Resu
     let tx = conn.transaction()?;
     {
         let mut stmt = tx.prepare(
-            "UPDATE audio_files SET hash = ?2, hash_error = ?3, duration = ?4, duration_done = 1 WHERE id = ?1",
+            "UPDATE audio_files SET hash = ?2, hash_error = ?3, duration = ?4, duration_done = 1,
+                release_year = ?5, release_year_done = 1 WHERE id = ?1",
         )?;
         for (id, a) in results {
             match &a.hash {
-                Ok(hash) => stmt.execute(params![id, hash, None::<String>, a.duration])?,
-                Err(e) => stmt.execute(params![id, None::<String>, e.to_string(), a.duration])?,
+                Ok(hash) => stmt.execute(params![id, hash, None::<String>, a.duration, a.year])?,
+                Err(e) => stmt.execute(params![id, None::<String>, e.to_string(), a.duration, a.year])?,
             };
         }
     }
@@ -262,6 +266,11 @@ mod tests {
         assert_eq!(duration("broken.wav"), None);
         // ハッシュ値があっても、長さを調べていなければ計算待ちになる
         conn.execute("UPDATE audio_files SET duration_done = 0 WHERE rel_path = 'b.mp3'", []).unwrap();
+        // リリース年も一緒に調べる（テスト用の素材には年がない）。調べた印は付く
+        let year: (Option<i64>, i64) = conn
+            .query_row("SELECT release_year, release_year_done FROM audio_files WHERE rel_path = 'a.mp3'", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(year, (None, 1));
         assert_eq!(pending_files(&conn).unwrap().len(), 1);
     }
 

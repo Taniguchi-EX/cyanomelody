@@ -20,13 +20,13 @@ ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a libvorbis "$forma
 ff -i "$formats/chime.wav" -metadata title="チャイム" -c:a aac "$formats/サブフォルダ/チャイム.m4a"
 
 # meta/ … 自動タグ付けの確認用。ファイルの中の情報（アーティスト・アルバム・ジャンル・作曲者）を入れた音声と、
-#          無視する値（Unknown・Other）を入れた音声、情報のない音声
+#          無視する値（Unknown・Other）を入れた音声、情報のない音声。リリース年の絞り込みの確認にも使う（2006・2019・2023年、年なし）
 meta="$out/meta"
 rm -rf "$meta"
 mkdir -p "$meta"
-ff -f lavfi -i "sine=frequency=330:duration=0.5" -metadata artist="テストアーティスト" -metadata album="テストアルバム"   -metadata genre="Rock" -metadata composer="作曲家A" -c:a libmp3lame "$meta/m1.mp3"
-ff -f lavfi -i "sine=frequency=350:duration=0.5" -metadata artist="Unknown" -metadata album="テストアルバム" -c:a libmp3lame "$meta/m2.mp3"
-ff -f lavfi -i "sine=frequency=370:duration=0.5" -metadata genre="Other" -metadata composer="作曲家A" "$meta/m3.flac"
+ff -f lavfi -i "sine=frequency=330:duration=0.5" -metadata artist="テストアーティスト" -metadata album="テストアルバム"   -metadata genre="Rock" -metadata composer="作曲家A" -metadata date="2006" -c:a libmp3lame "$meta/m1.mp3"
+ff -f lavfi -i "sine=frequency=350:duration=0.5" -metadata artist="Unknown" -metadata album="テストアルバム" -metadata date="2019" -c:a libmp3lame "$meta/m2.mp3"
+ff -f lavfi -i "sine=frequency=370:duration=0.5" -metadata genre="Other" -metadata composer="作曲家A" -metadata date="2023-04-14" "$meta/m3.flac"
 ff -f lavfi -i "sine=frequency=390:duration=0.5" "$meta/m4.wav"
 
 # hash/ … ハッシュ値の機能の確認用。重複（そのままのコピーと、タグだけ書き換えたもの）と、壊れたファイルを含む
