@@ -16,7 +16,7 @@ pub const DEFAULT_IGNORE: [&str; 3] = ["Unknown", "アーティスト情報な�
 /// 区切り文字の一覧（設定）
 pub const SEPARATORS_KEY: &str = "meta_separators";
 /// 区切り文字の一覧の初期値（「・」はカタカナの外国の名前を分けてしまうので入れない）
-pub const DEFAULT_SEPARATORS: [&str; 5] = [",", "/", "／", "feat.", "with"];
+pub const DEFAULT_SEPARATORS: [&str; 6] = [",", "/", "／", "feat.", "with", "&"];
 
 /// 項目の名前（親のタグの名前）、ファイルの中の情報での値、区切り文字で分けるか（アーティスト・作曲者だけ）
 fn fields(meta: &FileMeta) -> [(&'static str, Option<&str>, bool); 4] {
@@ -261,6 +261,7 @@ mod tests {
         let split = |v: &str| split_value(v, &seps());
         assert_eq!(split("清水依与吏/back number"), vec!["清水依与吏", "back number"]);
         assert_eq!(split("A, B ／ C"), vec!["A", "B", "C"]);
+        assert_eq!(split("Simon & Garfunkel"), vec!["Simon", "Garfunkel"]);
         // 大文字・小文字は区別しない。英字の区切り文字は単語としてだけ
         assert_eq!(split("DJ X Feat. MC Y"), vec!["DJ X", "MC Y"]);
         assert_eq!(split("Band WITH Orchestra"), vec!["Band", "Orchestra"]);

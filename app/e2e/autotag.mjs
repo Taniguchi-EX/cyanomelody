@@ -111,21 +111,21 @@ await step("A04", "「以下の値は無視する」を外すと、一覧の値�
   expect((await tagItem("Unknown").getAttribute("data-depth")) === "1", "アーティストの下にない");
 });
 
-await step("A05", "アーティスト・作曲者は区切り文字（最初は , / ／ feat. with）で分けてタグにする。区切り文字の一覧は無視する値と同じく編集できる。「以下の文字で区切る」を外すと分けない", async () => {
+await step("A05", "アーティスト・作曲者は区切り文字（最初は , / ／ feat. with &）で分けてタグにする。区切り文字の一覧は無視する値と同じく編集できる。「以下の文字で区切る」を外すと分けない", async () => {
   const separators = () => dialog().getByTestId("separator-values").locator("li").evaluateAll((ls) => ls.map((l) => l.dataset.value));
   const box = () => dialog().getByTestId("separator-values-box");
   await openFromDetail("m5.mp3");
-  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 5, null, { timeout: 3000 });
-  expect((await separators()).join(" ") === ", / ／ feat. with", (await separators()).join(" "));
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 6, null, { timeout: 3000 });
+  expect((await separators()).join(" ") === ", / ／ feat. with &", (await separators()).join(" "));
   expect(await dialog().getByLabel("以下の文字で区切る（アーティスト・作曲者）").isChecked(), "最初が ON でない");
   // 一覧に加えて消す（無視する値と同じ）
   await box().getByRole("button", { name: "区切り文字を加える" }).click();
-  await dialog().getByLabel("加える区切り文字").fill("&");
+  await dialog().getByLabel("加える区切り文字").fill("×");
   await dialog().getByLabel("加える区切り文字").press("Enter");
-  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 6, null, { timeout: 3000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 7, null, { timeout: 3000 });
   await shot("A05_区切り文字の一覧");
-  await box().getByRole("button", { name: "&を消す", exact: true }).click();
-  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 5, null, { timeout: 3000 });
+  await box().getByRole("button", { name: "×を消す", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 6, null, { timeout: 3000 });
   await dialog().getByRole("button", { name: "タグを付ける" }).click();
   await waitIdle();
   // 作曲家A は今あるタグを付ける
