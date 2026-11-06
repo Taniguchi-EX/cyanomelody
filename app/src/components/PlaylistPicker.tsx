@@ -5,17 +5,19 @@ type Props = {
   busy: boolean;
   /** 選んだプレイリストに加える */
   onAdd: (playlistId: number) => void;
+  /** プルダウンの名前（aria-label） */
+  label?: string;
 };
 
 /** 右の欄の、ファイルを加えるプレイリストのプルダウン。選ぶとすぐ加え、「（プレイリストを選ぶ）」に戻る */
-export function PlaylistPicker({ playlists, busy, onAdd }: Props) {
+export function PlaylistPicker({ playlists, busy, onAdd, label = "このファイルを加えるプレイリスト" }: Props) {
   if (playlists.length === 0) return <span className="sub">プレイリストはまだありません</span>;
   return (
     <select
       value=""
       onChange={(e) => e.target.value !== "" && onAdd(Number(e.target.value))}
       disabled={busy}
-      aria-label="このファイルを加えるプレイリスト"
+      aria-label={label}
     >
       <option value="">（プレイリストを選ぶ）</option>
       {playlists.map((p) => (

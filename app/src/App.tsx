@@ -51,6 +51,7 @@ import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
 import { TagDetail } from "./components/TagDetail";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { BulkPanel } from "./components/BulkPanel";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
@@ -129,6 +130,10 @@ export default function App() {
   const [playlistDetail, setPlaylistDetail] = useState<PlaylistDetail | null>(null);
   /** 詳細画面で押して、右の欄に出している項目 */
   const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
+  /** 詳細画面でチェックした項目（一括操作の対象を求めるので、ここで持つ） */
+  const [itemChecks, setItemChecks] = useState<Set<number>>(new Set());
+  /** 右の欄に一括操作を出しているか（出していなければファイルの詳細） */
+  const [bulkOpen, setBulkOpen] = useState(false);
   /** 右の欄に出している項目のファイル（ファイルの一覧に出ていないこともあるので、別に読む） */
   const [itemFile, setItemFile] = useState<AudioFile | null>(null);
   /** データを読み直すたびに増える（右の欄の項目のファイルを読み直すのに使う） */
@@ -292,6 +297,29 @@ export default function App() {
     return ok;
   };
 
+  /** 詳細画面でチェックした項目に入る曲（一括操作の対象）。タグの組み合わせなどの項目は、当てはまる曲すべて */
+  const [itemCheckFiles, setItemCheckFiles] = useState<{ key: string; ids: number[] } | null>(null);
+  const checkedItemIds = playlistDetail ? playlistDetail.items.filter((i) => itemChecks.has(i.id)).map((i) => i.id) : [];
+  const checkedItemKey = checkedItemIds.join(",");
+  useEffect(() => {
+    if (!bulkOpen || checkedItemKey === "") return;
+    let alive = true;
+    Promise.all(checkedItemKey.split(",").map((id) => playlistApi.itemFiles(Number(id))))
+      .then((lists) => alive && setItemCheckFiles({ key: checkedItemKey, ids: [...new Set(lists.flat().map((e) => e.fileId))] }))
+      .catch(showSettingsError);
+    return () => {
+      alive = false;
+    };
+  }, [bulkOpen, checkedItemKey, dataVersion, showSettingsError]);
+  const bulkFileIds = playlistDetail
+    ? itemCheckFiles && itemCheckFiles.key === checkedItemKey
+      ? itemCheckFiles.ids
+      : []
+    : [...checked];
+  // チェックがなくなったら、ファイルの詳細に戻る
+  const bulkTargetCount = playlistDetail ? checkedItemIds.length : checked.size;
+  if (bulkOpen && bulkTargetCount === 0) setBulkOpen(false);
+
   const listFocusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
   const focusedItem = playlistDetail?.items.find((i) => i.id === focusedItemId) ?? null;
   const itemFileId = focusedItem?.kind === "file" ? (focusedItem.file?.id ?? null) : null;
@@ -358,14 +386,41 @@ export default function App() {
       showInfo(`タグ「${name.trim()}」を付けました`);
     });
 
-  /** チェックしたファイルすべてから、タグを外す（確認してから） */
-  const removeTagFromChecked = async (tag: TagCount) => {
-    if (!(await confirmDialog(`チェックした${tag.count}件から、タグ「${tag.name}」を外しますか？`))) return;
+  /** 一括操作：対象のファイルすべてから、タグを外す（確認してから） */
+  const bulkRemoveTag = async (tag: TagCount) => {
+    if (!(await confirmDialog(`対象の${tag.count}件から、タグ「${tag.name}」を外しますか？`))) return;
     run(async () => {
-      await api.removeTag(checks.ids(), tag.id);
+      await api.removeTag(bulkFileIds, tag.id);
       showInfo(`${tag.count}件からタグ「${tag.name}」を外しました`);
     });
   };
+
+  /** 一括操作：対象のファイルすべてに、タグを付ける（まだない名前なら作る） */
+  const bulkAddTag = async (name: string) =>
+    run(async () => {
+      await api.addTag(bulkFileIds, name);
+      showInfo(`${bulkFileIds.length}件にタグ「${name.trim()}」を付けました`);
+    });
+
+  /** 一括操作：プレイリストから、対象のファイルの項目を外す（確認してから） */
+  const bulkRemoveFromPlaylist = async (p: TagCount) => {
+    if (!(await confirmDialog(`プレイリスト「${p.name}」から、対象の${p.count}件を外しますか？`))) return;
+    run(async () => {
+      await playlistApi.removeFiles(p.id, bulkFileIds);
+      showInfo(`プレイリスト「${p.name}」から${p.count}件を外しました`);
+    });
+  };
+
+  /** 一括操作：対象のファイルすべてに出典・ライセンスを設定する（null なら外す） */
+  const bulkSetCredit = (kind: CreditKind, name: string | null) =>
+    run(async () => {
+      await api.setFileCredit(kind, bulkFileIds, name);
+      showInfo(
+        name
+          ? `${bulkFileIds.length}件に${CREDIT_LABEL[kind]}「${name.trim()}」を設定しました`
+          : `${bulkFileIds.length}件の${CREDIT_LABEL[kind]}を外しました`,
+      );
+    });
 
   const removeTag = (tagId: number) =>
     run(async () => {
@@ -395,11 +450,11 @@ export default function App() {
     });
 
   /** チェックしたリンク切れのファイルそれぞれと同じ音声のファイルを、選んだフォルダからまとめて探してひも付ける */
-  const findCheckedInFolder = async () => {
+  const findManyInFolder = async (ids: number[]) => {
     const folder = await pickPath({ directory: true }).catch(showError);
     if (typeof folder !== "string") return;
     run(async () => {
-      const r = await api.findMissingInFolderMany([...checked], folder);
+      const r = await api.findMissingInFolderMany(ids, folder);
       const parts = [`ひも付けた ${r.linked}件`];
       if (r.notFound) parts.push(`見つからなかった ${r.notFound}件`);
       if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
@@ -531,12 +586,16 @@ export default function App() {
 
   // プレイリスト
   const openPlaylist = (id: number) => {
+    if (id !== openPlaylistId) setItemChecks(new Set());
+    setBulkOpen(false);
     setOpenPlaylistId(id);
     setFocusedItemId(null);
     playlistApi.get(id).then(setPlaylistDetail).catch(showError);
   };
 
   const closePlaylist = () => {
+    setItemChecks(new Set());
+    setBulkOpen(false);
     setOpenPlaylistId(null);
     setFocusedItemId(null);
     setPlaylistDetail(null);
@@ -980,7 +1039,14 @@ export default function App() {
                 ? (audio.player.queue[audio.player.index]?.itemId ?? null)
                 : null
             }
-            onFocusItem={(item) => setFocusedItemId(item.id)}
+            onFocusItem={(item) => {
+              setFocusedItemId(item.id);
+              setBulkOpen(false);
+            }}
+            checked={itemChecks}
+            setChecked={setItemChecks}
+            bulkOpen={bulkOpen}
+            onToggleBulk={() => setBulkOpen((v) => !v)}
             reveal={revealItem}
             onRevealed={() => setRevealItem(null)}
             chains={chains}
@@ -1025,16 +1091,11 @@ export default function App() {
                 checked={checked}
                 allShownChecked={checks.shownChecked === files.length}
                 checkedOnly={checkedOnly}
-                busy={busy}
-                dataVersion={dataVersion}
                 onCheckShown={() => checks.checkShown(true)}
                 onClear={checks.clear}
                 onCheckedOnly={setCheckedOnly}
-                onRemoveTag={removeTagFromChecked}
-                onRelink={() => relink([...checked])}
-                onFindInFolder={findCheckedInFolder}
-                onRemoveMissing={() => removeMissing([...checked], checked.size)}
-                onError={showError}
+                bulkOpen={bulkOpen}
+                onToggleBulk={() => setBulkOpen((v) => !v)}
               />
             )}
             <FileList
@@ -1043,7 +1104,10 @@ export default function App() {
               checked={checked}
               playingId={playingFileId}
               progress={audio.time.duration > 0 ? audio.time.current / audio.time.duration : 0}
-              onFocus={(f) => setFocusedId(f.id)}
+              onFocus={(f) => {
+                setFocusedId(f.id);
+                setBulkOpen(false);
+              }}
               onCheck={checks.checkRow}
               onCheckShown={checks.checkShown}
               onPlay={toggleRowPlay}
@@ -1067,8 +1131,29 @@ export default function App() {
       />
 
       <aside className="detail">
+        {bulkOpen && (
+          <BulkPanel
+            fileIds={bulkFileIds}
+            targetLabel={playlistDetail ? "チェックした項目の曲" : "チェックしたファイル"}
+            tags={tags}
+            playlists={playlists}
+            creditsOf={creditsOf}
+            busy={busy}
+            dataVersion={dataVersion}
+            onAddTag={bulkAddTag}
+            onRemoveTag={bulkRemoveTag}
+            onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
+            onOpenPlaylist={openPlaylist}
+            onRemoveFromPlaylist={bulkRemoveFromPlaylist}
+            onSetCredit={bulkSetCredit}
+            onRelink={relink}
+            onFindInFolder={findManyInFolder}
+            onRemoveMissing={(ids) => removeMissing(ids, ids.length)}
+            onError={showError}
+          />
+        )}
         {/* ファイルの項目は、ファイルを読み終えてから右の欄に出す（読む間に別の欄を出すと、入力が消えるため） */}
-        {focusedItem && itemFileId === null && (
+        {!bulkOpen && focusedItem && itemFileId === null && (
           <ItemDetail
             key={focusedItem.id}
             item={focusedItem}
@@ -1078,7 +1163,7 @@ export default function App() {
           />
         )}
         <SelectionPanel
-          file={focusedFile}
+          file={bulkOpen ? null : focusedFile}
           top={
             focusedItem &&
             focusedFile && (

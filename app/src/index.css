@@ -668,11 +668,6 @@ span.filter-chip {
   margin-right: 3px;
 }
 
-/* チェックの操作の行の、チェックしたファイルのタグ。件数は名前と色を変える */
-.checked-tags {
-  padding: 0;
-}
-
 .filter-chip .chip-count {
   margin-left: 4px;
   color: var(--accent);
@@ -1447,10 +1442,13 @@ button.add-button:hover:not(:disabled) {
   padding-left: 18px;
 }
 
-/* チェックしたファイルがすべてリンク切れのときの操作（チェックの操作の行の右端） */
-.missing-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* 「一括操作」のボタン（チェックの操作の行の右端）。右の欄に一括操作を出している間は押した状態にする */
+.bulk-button {
   margin-left: auto;
+}
+
+.bulk-button.active {
+  background: var(--accent, #2b6cb0);
+  border-color: var(--accent, #2b6cb0);
+  color: #fff;
 }

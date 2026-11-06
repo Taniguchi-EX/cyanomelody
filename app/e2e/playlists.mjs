@@ -709,4 +709,36 @@ await step("P33", "再生の欄の曲名を押すと、鳴らしている曲へ�
   expect(!(await page.getByTestId("file-sort").isDisabled()), "並び順を選べない");
 });
 
+await step("P34", "詳細画面の「一括操作」：チェックした項目に入る曲すべて（タグの組み合わせは当てはまる曲すべて）が対象になる。項目の行を押すと項目の詳細に戻る", async () => {
+  await back();
+  await ui.clearFilter();
+  await createPlaylist("一括の項目");
+  await ui.check("chime.flac");
+  await ui.dragChecked(playlistItem("一括の項目"));
+  await ui.clearChecks();
+  await open("一括の項目");
+  // タグ「雨」の組み合わせ（wav・mp3）を加える
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
+  await waitIdle();
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  const check = (content) => itemRow(content).getByTestId("item-check");
+  await check("chime.flac").check();
+  await check("雨").check();
+  const panel = page.getByTestId("bulk-panel");
+  await page.getByTestId("item-checks").getByRole("button", { name: "一括操作" }).click();
+  await panel.waitFor({ timeout: 3000 });
+  await page.waitForFunction(() => document.querySelector("[data-testid=bulk-count]")?.textContent.includes("チェックした項目の曲 3件"), null, { timeout: 3000 }).catch(() => {});
+  expect((await page.getByTestId("bulk-count").innerText()).includes("チェックした項目の曲 3件"), await page.getByTestId("bulk-count").innerText());
+  await panel.getByLabel("付けるタグ名").fill("項目まとめ");
+  await panel.getByLabel("付けるタグ名").press("Enter");
+  await waitIdle();
+  expect((await status()).includes("3件にタグ「項目まとめ」を付けました"), await status());
+  await shot("P34_項目の一括操作");
+  // 項目の行を押すと、項目の詳細に戻る
+  await itemRow("chime.flac").locator(".item-content").click();
+  await panel.waitFor({ state: "detached", timeout: 3000 });
+  await back();
+});
+
 await ui.finish();

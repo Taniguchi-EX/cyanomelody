@@ -218,14 +218,15 @@ await step("H15", "再生の欄の曲の名前は、曲名がなければ拡張�
   for (const dir of [linkDir, searchDir, emptyDir]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-await step("H16", "チェックしたファイルがすべてリンク切れのときだけ、チェックの操作の行の右端にリンク切れの操作が出る。「指定フォルダから自動で探す」はまとめて探してひも付け、「ライブラリから外す」はまとめて外す", async () => {
+await step("H16", "一括操作の欄：チェックの中にリンク切れのファイルがあると「⚠ リンク切れ N件」と操作が出て、リンク切れのファイルだけが対象になる。「指定フォルダから自動で探す」はまとめて探してひも付け、「ライブラリから外す」はまとめて外す", async () => {
   // 3つの音声（b1・b2 は探す先に移す、b3 は消す）にタグを付けてから、リンク切れにする
   fs.mkdirSync(bulkDir, { recursive: true });
   fs.copyFileSync(path.join(hashDir, "se1.mp3"), path.join(bulkDir, "b1.mp3"));
   fs.copyFileSync(path.join(hashDir, "se2.wav"), path.join(bulkDir, "b2.wav"));
   fs.copyFileSync(path.join(dataDir, "formats", "chime.wav"), path.join(bulkDir, "b3.wav"));
   await hashingAfter(() => addFolder(bulkDir));
-  const actions = page.getByTestId("missing-actions");
+  const panel = page.getByTestId("bulk-panel");
+  const missing = panel.getByTestId("bulk-missing");
   await search("b");
   for (const rel of ["b1.mp3", "b2.wav", "b3.wav"]) {
     await row(rel).click();
@@ -236,42 +237,38 @@ await step("H16", "チェックしたファイルがすべてリンク切れの�
   fs.renameSync(path.join(bulkDir, "b2.wav"), path.join(bulkSearch, "moved2.wav"));
   fs.rmSync(path.join(bulkDir, "b3.wav"));
   await scanFolder("link_bulk");
-  // リンク切れの3件をチェックすると出る
-  await search("");
-  await ui.filtered(() => ui.otherItem("missingOnly").click());
+  // リンク切れの3件と、リンク切れでない1件をチェックして一括操作を開く
   await search("b");
   for (const rel of ["b1.mp3", "b2.wav", "b3.wav"]) await ui.check(rel);
-  await actions.waitFor({ timeout: 3000 });
-  expect((await actions.innerText()).includes("リンク切れ 3件"), await actions.innerText());
-  // 行の右端にある
-  const [bar, box] = await Promise.all([actions.locator("..").boundingBox(), actions.boundingBox()]);
-  expect(Math.abs(bar.x + bar.width - (box.x + box.width)) < 16, `右端にない ${bar.x + bar.width} / ${box.x + box.width}`);
-  await shot("H16_リンク切れの操作");
-  // リンク切れでないファイルが混ざると出ない
-  await ui.filtered(() => ui.otherItem("missingOnly").click());
   await search("se1.mp3");
   await ui.check("se1.mp3");
-  await page.waitForTimeout(300);
-  expect((await actions.count()) === 0, "リンク切れでないファイルが混ざっても出る");
-  await ui.check("se1.mp3");
-  await actions.waitFor({ timeout: 3000 });
-  // 指定フォルダから自動で探す：フォルダを1回選び、まとめてひも付ける（ライブラリの外なので登録する）
+  await page.getByRole("button", { name: "一括操作" }).click();
+  await missing.waitFor({ timeout: 3000 });
+  expect((await page.getByTestId("bulk-count").innerText()).includes("4件"), await page.getByTestId("bulk-count").innerText());
+  expect((await missing.innerText()).includes("リンク切れ 3件"), await missing.innerText());
+  // 「ファイルを紐づける」（1件ずつの操作）は出さない
+  expect((await panel.getByRole("button", { name: "ファイルを紐づける" }).count()) === 0, "紐づけるが出ている");
+  await shot("H16_リンク切れの操作");
+  // 指定フォルダから自動で探す：リンク切れの3件だけを、フォルダを1回選んでまとめてひも付ける（ライブラリの外なので登録する）
   await ui.setDialogReply(bulkSearch);
-  await page.getByTestId("missing-actions").getByRole("button", { name: "指定フォルダから自動で探す" }).click();
+  await missing.getByRole("button", { name: "指定フォルダから自動で探す" }).click();
   await waitIdle();
   expect((await status()).includes("ひも付けた 2件、見つからなかった 1件"), await status());
   await search("moved");
   expect((await tagsOf("deep/moved1.mp3")).includes("まとめ") && (await tagsOf("moved2.wav")).includes("まとめ"), "タグが移らない");
-  // 残った1件（b3）だけがチェックに残り、まとめて外せる
-  await actions.waitFor({ timeout: 3000 });
-  expect((await actions.innerText()).includes("リンク切れ 1件"), await actions.innerText());
+  // 残ったリンク切れ（b3）だけを、まとめて外せる（se1.mp3 は外れない）
+  await page.waitForFunction(() => document.querySelector("[data-testid=bulk-missing]")?.textContent.includes("リンク切れ 1件"), null, { timeout: 3000 });
   await ui.setConfirmReply(true);
-  await ui.confirmed(() => page.getByTestId("missing-actions").getByRole("button", { name: "ライブラリから外す" }).click());
+  await ui.confirmed(() => missing.getByRole("button", { name: "ライブラリから外す" }).click());
   await waitIdle();
   expect((await ui.lastConfirm()).includes("見つからないファイル1件"), await ui.lastConfirm());
   expect((await status()).includes("1件をライブラリから外しました"), await status());
   await search("b3");
   expect((await fileCount()) === 0, "外れていない");
+  await search("se1.mp3");
+  expect((await fileCount()) >= 1, "リンク切れでないファイルが外れた");
+  await missing.waitFor({ state: "detached", timeout: 3000 });
+  await page.getByRole("button", { name: "チェックをすべて外す" }).click();
   await search("");
   await ui.setDialogReply(undefined);
   for (const dir of [bulkDir, bulkSearch]) fs.rmSync(dir, { recursive: true, force: true });

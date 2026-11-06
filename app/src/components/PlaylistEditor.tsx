@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { BulkButton } from "./CheckBar";
 import { PLAY_MODES, type PlayMode, type PlaylistDetail, type PlaylistItem, type PlaylistNode, type Tag } from "../api";
 import { makesLoop } from "../playlistGraph";
 import type { EffectChain } from "../effects";
@@ -25,6 +26,12 @@ type Props = {
   playingItemId: number | null;
   /** 項目の行を押したとき（右の欄にその項目を出す） */
   onFocusItem: (item: PlaylistItem) => void;
+  /** チェックした項目（ファイルの一覧と同じく、まとめて操作する対象）。一括操作の対象を求めるので App で持つ */
+  checked: Set<number>;
+  setChecked: Dispatch<SetStateAction<Set<number>>>;
+  /** 右の欄に一括操作を出しているか */
+  bulkOpen: boolean;
+  onToggleBulk: () => void;
   /** この項目の行までスクロールする（seq が変わるたびに）。スクロールしたら onRevealed を呼ぶ */
   reveal: { id: number; seq: number } | null;
   onRevealed: () => void;
@@ -79,6 +86,10 @@ export function PlaylistEditor({
   focusedItemId,
   playingItemId,
   onFocusItem,
+  checked,
+  setChecked,
+  bulkOpen,
+  onToggleBulk,
   reveal,
   onRevealed,
   chains,
@@ -91,8 +102,6 @@ export function PlaylistEditor({
   onExport,
   onBrowseFolder,
 }: Props) {
-  /** チェックした項目（ファイルの一覧と同じく、まとめて操作する対象）。開いているプレイリストの中だけ */
-  const [checked, setChecked] = useState<Set<number>>(new Set());
   // 外した項目は、チェックからも外す
   const checkedItems = detail.items.filter((i) => checked.has(i.id));
   const toggleCheck = (id: number) =>
@@ -212,6 +221,7 @@ export function PlaylistEditor({
             >
               まとめて外す
             </button>
+            <BulkButton open={bulkOpen} disabled={checkedItems.length === 0} onToggle={onToggleBulk} />
           </div>
         )}
         <div className="playlist-items" ref={itemsRef}>

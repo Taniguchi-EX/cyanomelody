@@ -5,6 +5,7 @@ import { tagStyle } from "../tagColors";
 import { Collapsible } from "./Collapsible";
 import { Chip } from "./FilterChips";
 import { PlaylistPicker } from "./PlaylistPicker";
+import { TagInput } from "./TagInput";
 
 type Props = {
   /** 一覧でクリックしたファイル。なければ null */
@@ -54,7 +55,6 @@ export function SelectionPanel({
   onOpenPlaylist,
   onRemoveFromPlaylist,
 }: Props) {
-  const [name, setName] = useState("");
   // このファイルを直接入れているプレイリスト。プレイリストが変わったら（項目の数が変わる）求め直す
   const [usedIn, setUsedIn] = useState<{ fileId: number; ids: number[] } | null>(null);
   // トラック名はデータベースに持たないので、出すときにファイルから読む
@@ -94,18 +94,6 @@ export function SelectionPanel({
   const attached = new Set(file.tags.map((t) => t.id));
   const tagById = new Map(tags.map((t) => [t.id, t]));
   const candidates = tags.filter((t) => !attached.has(t.id));
-  /** 付ける。既にあるタグ名（大文字・小文字は区別しない）ならそのタグを、なければ新しいタグを作って付ける */
-  const add = async (input: string) => {
-    const key = input.trim().toLowerCase();
-    if (!key || busy) return;
-    // 既に付いているタグなら何もしない
-    if (file.tags.some((t) => t.name.toLowerCase() === key)) {
-      setName("");
-      return;
-    }
-    const existing = tags.find((t) => t.name.toLowerCase() === key);
-    if (await onAddTag(existing?.name ?? input)) setName("");
-  };
 
   return (
     <section data-testid="detail-panel">
@@ -134,28 +122,12 @@ export function SelectionPanel({
       )}
 
       <Collapsible id="detail-tags" title="タグ" count={file.tags.length}>
-        <div className="row">
-          <input
-            type="text"
-            list="tag-names"
-            placeholder="名前（Enterで付ける）"
-            value={name}
-            onChange={(e) => {
-              // 候補の一覧から選んだとき（打ち込みではなく置き換え）は、すぐに付ける
-              const picked = (e.nativeEvent as InputEvent).inputType === "insertReplacementText";
-              const tag = picked ? candidates.find((t) => t.name === e.target.value) : undefined;
-              if (tag) add(tag.name);
-              else setName(e.target.value);
-            }}
-            onKeyDown={(e) => e.key === "Enter" && add(name)}
-            aria-label="付けるタグ名"
-          />
-          <datalist id="tag-names">
-            {candidates.map((t) => (
-              <option key={t.id} value={t.name} />
-            ))}
-          </datalist>
-        </div>
+        <TagInput
+          candidates={candidates}
+          attachedNames={file.tags.map((t) => t.name)}
+          busy={busy}
+          onAdd={onAddTag}
+        />
         {/* 付いているタグ。左の欄の絞り込みの条件と同じ形のチップで、押すと外す */}
         {file.tags.length > 0 && (
           <div className="filter-chips detail-chips">

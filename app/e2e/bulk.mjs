@@ -28,7 +28,7 @@ await step("B01", "準備：チェックの件数は0件でも下の行に常に
   const c = await ui.checkedCount();
   expect(c === "チェック 0件（表示中 0件）", c);
   expect((await checkToolbar().count()) === 0, "チェックの操作の行が出ている");
-  expect((await page.getByTestId("bulk-bar").count()) === 0, "一括操作の欄がある");
+  expect((await page.getByTestId("bulk-panel").count()) === 0, "一括操作の欄がある");
   expect((await page.getByLabel("表示中のファイルをすべてチェック").count()) === 0, "見出しのチェックボックスが残っている");
   await row("chime.wav").click();
   await addTag("雨");
@@ -53,8 +53,8 @@ await step("B03", "チェックボックスを押しても右の欄は変わら�
   expect((await detailPath()) === "chime.wav", await detailPath());
   expect(await isChecked("chime.mp3"), "チェックされていない");
   const labels = (await checkToolbar().innerText()).replace(/\s+/g, " ").trim();
-  expect(labels === "全てチェック チェックをすべて外す チェックしたファイルだけ表示", labels);
-  expect((await page.getByTestId("bulk-bar").count()) === 0, "一括操作の欄が出ている");
+  expect(labels === "全てチェック チェックをすべて外す チェックしたファイルだけ表示 一括操作", labels);
+  expect((await page.getByTestId("bulk-panel").count()) === 0, "一括操作の欄が出ている");
   await shot("B03_チェックの操作");
 });
 
@@ -138,43 +138,108 @@ await step("B10", "チェックしていない行をつかんだときは、そ�
   expect((await ui.checkedCount()).startsWith("チェック 2件"), await ui.checkedCount());
 });
 
-await step("B12", "チェックしたファイルのタグを、チェックの操作の行に「名前 件数 ✕」で出す（件数は色を変える）。✕で、確かめてからチェックしたファイルすべてから外す", async () => {
+await step("B12", "「一括操作」で右の欄が一括操作に変わり、チェックしたファイルのタグを「名前 件数 ✕」で出す。✕で確かめてから外す。もう一度押すか行を押すとファイルの詳細に戻る", async () => {
   await ui.check("chime.mp3");
-  const chips = page.getByTestId("checked-tags");
-  const chip = (name) => chips.locator(`[data-tag-name="${name}"]`);
-  // チェックを変えると読み直す（mp3 をチェックしたので、雨が2件になるのを待つ）
-  await page.waitForFunction(
-    () => document.querySelector('[data-testid=checked-tag][data-tag-name="雨"] .chip-count')?.textContent === "2",
-    null,
-    { timeout: 3000 },
-  );
-  // チェックの操作の行（「全てチェック」と同じ行）の中に出る
-  expect((await checkToolbar().getByTestId("checked-tags").count()) === 1, "チェックの操作の行にない");
+  const bulkButton = () => checkToolbar().getByRole("button", { name: "一括操作" });
+  const panel = page.getByTestId("bulk-panel");
+  // 「一括操作」は、チェックの操作の行の右端
+  const [bar, button] = await Promise.all([checkToolbar().boundingBox(), bulkButton().boundingBox()]);
+  expect(Math.abs(bar.x + bar.width - (button.x + button.width)) < 16, "右端にない");
+  await bulkButton().click();
+  await panel.waitFor({ timeout: 3000 });
+  expect((await page.getByTestId("detail-panel").count()) === 0, "ファイルの詳細が残っている");
+  expect((await bulkButton().getAttribute("aria-pressed")) === "true", "押した状態でない");
+  expect((await page.getByTestId("bulk-count").innerText()).includes("チェックしたファイル 3件"), await page.getByTestId("bulk-count").innerText());
+  const chip = (name) => panel.getByTestId("bulk-tags").locator(`[data-tag-name="${name}"]`);
+  await chip("雨").waitFor({ timeout: 3000 });
   // wav・mp3 に雨、flac に風
   const count = (name) => chip(name).locator(".chip-count").innerText();
   expect((await count("雨")) === "2", `雨: ${await count("雨")}`);
   expect((await count("風")) === "1", `風: ${await count("風")}`);
   const colors = await chip("雨").evaluate((b) => [getComputedStyle(b).color, getComputedStyle(b.querySelector(".chip-count")).color]);
   expect(colors[0] !== colors[1], `件数の色が同じ: ${colors.join(" / ")}`);
-  await shot("B12_チェックしたファイルのタグ");
+  await shot("B12_一括操作の欄");
   // キャンセルすると外れない
   await ui.setConfirmReply(false);
   await ui.confirmed(() => chip("雨").click());
-  expect((await ui.lastConfirm()).includes("チェックした2件から、タグ「雨」を外しますか"), await ui.lastConfirm());
+  expect((await ui.lastConfirm()).includes("対象の2件から、タグ「雨」を外しますか"), await ui.lastConfirm());
   expect((await chip("雨").count()) === 1, "キャンセルしたのに外れた");
   await ui.setConfirmReply(true);
   await chip("雨").click();
   await waitIdle();
   expect((await status()).includes("2件からタグ「雨」を外しました"), await status());
-  await page.waitForFunction(() => document.querySelectorAll("[data-testid=checked-tag]").length === 1, null, { timeout: 3000 });
+  await chip("雨").waitFor({ state: "detached", timeout: 3000 });
   expect(!(await row("chime.wav").locator(".chip").allInnerTexts()).includes("雨"), "wavから外れていない");
-  expect(!(await row("chime.mp3").locator(".chip").allInnerTexts()).includes("雨"), "mp3から外れていない");
-  // チェックしていないファイルのタグは出さない（チェックを外すとその分減る）
-  await row("chime.flac").getByTestId("file-check").uncheck();
-  await page.waitForFunction(() => document.querySelectorAll("[data-testid=checked-tag]").length === 0, null, { timeout: 3000 });
-  await row("chime.flac").getByTestId("file-check").check();
+  // 付ける：入力欄から、チェックしたファイルすべてに（まだない名前なら作る）
+  await panel.getByLabel("付けるタグ名").fill("まとめ");
+  await panel.getByLabel("付けるタグ名").press("Enter");
+  await waitIdle();
+  expect((await status()).includes("3件にタグ「まとめ」を付けました"), await status());
+  for (const rel of ["chime.wav", "chime.mp3", "chime.flac"]) {
+    expect((await row(rel).locator(".chip").allInnerTexts()).includes("まとめ"), `${rel}に付いていない`);
+  }
+  // もう一度押すと、ファイルの詳細に戻る。行を押しても戻る
+  await bulkButton().click();
+  await panel.waitFor({ state: "detached", timeout: 3000 });
+  await bulkButton().click();
+  await panel.waitFor({ timeout: 3000 });
+  await row("chime.wav").click();
+  await panel.waitFor({ state: "detached", timeout: 3000 });
+  expect((await detailPath()) === "chime.wav", await detailPath());
+  // 後のテストのため、まとめ を外し、mp3 のチェックを外しておく
+  await bulkButton().click();
+  await panel.waitFor({ timeout: 3000 });
+  await chip("まとめ").click();
+  await waitIdle();
   await row("chime.mp3").getByTestId("file-check").uncheck();
   expect((await ui.checkedCount()).startsWith("チェック 2件"), await ui.checkedCount());
+  // チェックがなくなると、ファイルの詳細に戻る
+  await page.getByRole("button", { name: "チェックをすべて外す" }).click();
+  await panel.waitFor({ state: "detached", timeout: 3000 });
+  await ui.check("chime.wav");
+  await ui.check("chime.flac");
+});
+
+await step("B13", "一括操作の欄：プレイリストに加える・外す（件数付きのチップ）、出典・ライセンスはばらばらなら「（複数）」で、選ぶとすべてに設定する", async () => {
+  const panel = page.getByTestId("bulk-panel");
+  await page.getByRole("button", { name: "プレイリストを作る" }).click();
+  await page.getByLabel("新しいプレイリストの名前").fill("一括");
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
+  await waitIdle();
+  await checkToolbar().getByRole("button", { name: "一括操作" }).click();
+  await panel.waitFor({ timeout: 3000 });
+  await panel.getByLabel("対象のファイルを加えるプレイリスト").selectOption({ label: "一括" });
+  await waitIdle();
+  expect((await status()).includes("2件をプレイリスト「一括」に追加しました"), await status());
+  const pchip = panel.getByTestId("bulk-playlists").locator('[data-playlist-name="一括"]');
+  await pchip.waitFor({ timeout: 3000 });
+  expect((await pchip.locator(".chip-count").innerText()) === "2", await pchip.innerText());
+  await ui.setConfirmReply(true);
+  await ui.confirmed(() => pchip.getByRole("button", { name: "一括から対象のファイルを外す" }).click());
+  await waitIdle();
+  expect((await ui.lastConfirm()).includes("プレイリスト「一括」から、対象の2件を外しますか"), await ui.lastConfirm());
+  await pchip.waitFor({ state: "detached", timeout: 3000 });
+  // 出典：1件だけに設定すると「（複数）」、選ぶとすべてに設定する
+  await page.getByRole("button", { name: "出典を作る" }).click();
+  await page.getByLabel("名前", { exact: true }).fill("素材A");
+  await page.getByLabel("名前", { exact: true }).press("Enter");
+  await waitIdle();
+  // 1件（wav）だけに、ファイルの詳細で設定する（行を押すとファイルの詳細に戻る）
+  await row("chime.wav").click();
+  await page.getByTestId("detail-panel").getByLabel("出典を選ぶ").selectOption({ label: "素材A" });
+  await waitIdle();
+  await checkToolbar().getByRole("button", { name: "一括操作" }).click();
+  await panel.waitFor({ timeout: 3000 });
+  const source = panel.getByTestId("bulk-credit-source").locator("select");
+  await page.waitForFunction(() => document.querySelector("[data-testid=bulk-credit-source] select")?.selectedOptions[0]?.text === "（複数）", null, { timeout: 3000 });
+  await shot("B13_一括操作の欄");
+  await source.selectOption({ label: "素材A" });
+  await waitIdle();
+  expect((await status()).includes("2件に出典「素材A」を設定しました"), await status());
+  await page.waitForFunction(() => document.querySelector("[data-testid=bulk-credit-source] select")?.selectedOptions[0]?.text === "素材A", null, { timeout: 3000 });
+  await source.selectOption({ label: "（なし）" });
+  await waitIdle();
+  await checkToolbar().getByRole("button", { name: "一括操作" }).click();
 });
 
 await step("B11", "チェックしたファイルをライブラリから外すと、チェックからも外れる", async () => {

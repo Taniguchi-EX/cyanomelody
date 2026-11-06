@@ -444,6 +444,14 @@ pub fn remove_file_from_playlist(conn: &Connection, playlist_id: i64, file_id: i
     )?)
 }
 
+/// プレイリストから、ファイル（file_ids）の項目をまとめて外す（ファイルの項目だけ。タグの組み合わせなどはそのまま）。外した項目の数を返す
+pub fn remove_files_from_playlist(conn: &Connection, playlist_id: i64, file_ids: &[i64]) -> Result<usize> {
+    Ok(conn.execute(
+        "DELETE FROM playlist_items WHERE playlist_id = ?1 AND kind = 'file' AND file_id IN (SELECT value FROM json_each(?2))",
+        rusqlite::params![playlist_id, crate::db::ids_json(file_ids)],
+    )?)
+}
+
 /// 項目を、同じプレイリストの中の index の位置（0から）に移す
 pub fn move_item(conn: &mut Connection, item_id: i64, index: usize) -> Result<()> {
     let tx = conn.transaction()?;

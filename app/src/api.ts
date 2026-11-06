@@ -92,6 +92,19 @@ export type CountItem = { id: number | null; count: number };
 /** タグと、そのタグが付いているファイルの数（チェックしたファイルのうち） */
 export type TagCount = { id: number; name: string; count: number };
 
+/** 一括操作の欄に出す、対象のファイルの内訳 */
+export type BulkSummary = {
+  /** 付いているタグと件数（タグの一覧の順） */
+  tags: TagCount[];
+  /** 入っているプレイリスト（ファイルの項目として）と件数 */
+  playlists: TagCount[];
+  /** 出典・ライセンスごとの件数（id が null は設定なし） */
+  sources: { id: number | null; count: number }[];
+  licenses: { id: number | null; count: number }[];
+  /** リンク切れのファイル */
+  missingIds: number[];
+};
+
 export type Tag = {
   id: number;
   name: string;
@@ -138,8 +151,8 @@ export const api = {
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   /** 指定したidのうち、ライブラリにあるもの */
   existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
-  /** チェックしたファイルに付いているタグと、そのタグが付いている件数 */
-  checkedTagCounts: (fileIds: number[]) => invoke<TagCount[]>("checked_tag_counts", { fileIds }),
+  /** 一括操作の欄に出す、対象のファイルの内訳（タグ・プレイリスト・出典・ライセンス・リンク切れ） */
+  bulkSummary: (fileIds: number[]) => invoke<BulkSummary>("bulk_summary", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
   addTag: (fileIds: number[], name: string) => invoke<number>("add_tag", { fileIds, name }),
   removeTag: (fileIds: number[], tagId: number) => invoke<void>("remove_tag", { fileIds, tagId }),
@@ -183,8 +196,6 @@ export const api = {
       fileIds,
       folder,
     }),
-  /** ids のうち、見つからない印のあるファイルの数 */
-  countMissing: (fileIds: number[]) => invoke<number>("count_missing", { fileIds }),
   recordPlay: (fileId: number) => invoke<void>("record_play", { fileId }),
   licenseTypes: () => invoke<LicenseType[]>("license_types"),
   listCredits: (kind: CreditKind) => invoke<Credit[]>("list_credits", { kind }),
@@ -355,6 +366,8 @@ export const playlistApi = {
   itemFiles: (itemId: number) => invoke<PlayEntry[]>("playlist_item_files", { itemId }),
   /** プレイリストから、そのファイルの項目をすべて外す */
   removeFile: (id: number, fileId: number) => invoke<number>("remove_file_from_playlist", { id, fileId }),
+  /** プレイリストから、ファイルの項目をまとめて外す。外した項目の数を返す */
+  removeFiles: (id: number, fileIds: number[]) => invoke<number>("remove_files_from_playlist", { id, fileIds }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   startExport: (id: number, dest: string) => invoke<string>("start_export", { id, dest }),
   cancelExport: () => invoke<void>("cancel_export"),

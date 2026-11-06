@@ -6,7 +6,7 @@ import { connect, expect, parseArgs } from "./helpers.mjs";
 
 const { dataDir, shotDir } = parseArgs("settings.mjs");
 const ui = await connect(shotDir);
-const { page, step, shot, waitIdle, status } = ui;
+const { page, step, shot, waitIdle } = ui;
 
 const dialog = () => page.getByRole("dialog", { name: "設定" });
 const gear = () => page.getByTestId("player-bar").getByRole("button", { name: "設定", exact: true });

@@ -124,6 +124,65 @@ pub fn tag_counts(conn: &Connection, file_ids: &[i64]) -> Result<Vec<NamedCount>
     Ok(items)
 }
 
+/// 一括操作の欄に出す、チェックしたファイルの内訳
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkSummary {
+    /// 付いているタグと件数（タグの一覧の順）
+    pub tags: Vec<NamedCount>,
+    /// 入っているプレイリスト（ファイルの項目として）と件数（左の欄の順）
+    pub playlists: Vec<NamedCount>,
+    /// 出典・ライセンスごとの件数（None は設定なし）
+    pub sources: Vec<CreditCount>,
+    pub licenses: Vec<CreditCount>,
+    /// リンク切れのファイル
+    pub missing_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditCount {
+    pub id: Option<i64>,
+    pub count: i64,
+}
+
+/// チェックしたファイルの内訳（タグ・プレイリスト・出典・ライセンス・リンク切れ）
+pub fn bulk_summary(conn: &Connection, file_ids: &[i64]) -> Result<BulkSummary> {
+    let ids = ids_json(file_ids);
+    let mut playlists: Vec<NamedCount> = conn
+        .prepare(
+            "SELECT p.id, p.name, count(DISTINCT i.file_id) FROM playlist_items i JOIN playlists p ON p.id = i.playlist_id
+             WHERE i.kind = 'file' AND i.file_id IN (SELECT value FROM json_each(?1)) GROUP BY p.id",
+        )?
+        .query_map([&ids], |r| Ok(NamedCount { id: r.get(0)?, name: r.get(1)?, count: r.get(2)? }))?
+        .collect::<rusqlite::Result<_>>()?;
+    let rank: std::collections::HashMap<i64, usize> = crate::playlists::list_playlists(conn)?
+        .into_iter()
+        .enumerate()
+        .map(|(i, p)| (p.id, i))
+        .collect();
+    playlists.sort_by_key(|p| rank.get(&p.id).copied().unwrap_or(usize::MAX));
+    let credits = |col: &str| -> Result<Vec<CreditCount>> {
+        Ok(conn
+            .prepare(&format!(
+                "SELECT {col}, count(*) FROM audio_files WHERE id IN (SELECT value FROM json_each(?1))
+                 GROUP BY {col} ORDER BY count(*) DESC"
+            ))?
+            .query_map([&ids], |r| Ok(CreditCount { id: r.get(0)?, count: r.get(1)? }))?
+            .collect::<rusqlite::Result<_>>()?)
+    };
+    Ok(BulkSummary {
+        tags: tag_counts(conn, file_ids)?,
+        playlists,
+        sources: credits("source_id")?,
+        licenses: credits("license_id")?,
+        missing_ids: conn
+            .prepare("SELECT id FROM audio_files WHERE missing = 1 AND id IN (SELECT value FROM json_each(?1)) ORDER BY id")?
+            .query_map([&ids], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?,
+    })
+}
+
 /// 名前の付いた項目と、その数
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -497,6 +556,37 @@ mod tests {
         // 直近で再生したものの絞り込みでは、選んだ並び順は使わない
         let recent = FileFilter { recent_only: true, sort: FileSort::Name, ..Default::default() };
         assert!(list_files(&conn, &recent).unwrap().is_empty());
+    }
+
+    #[test]
+    fn bulk_summary_counts_tags_playlists_credits_and_missing() {
+        let (_dir, mut conn) = setup();
+        let a = id_of(&conn, "a.wav");
+        let b = id_of(&conn, "b.mp3");
+        let c = id_of(&conn, "sub/c_100%.flac");
+        add_tag(&mut conn, &[a, b], "雨").unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO playlists (id, name, position, created_at) VALUES (1, 'P1', 0, 0), (2, 'P2', 1, 0);
+             INSERT INTO playlist_items (playlist_id, position, kind, file_id, owned, mode) VALUES
+               (2, 0, 'file', {a}, 0, 'order'), (2, 1, 'file', {a}, 0, 'order'), (2, 2, 'file', {b}, 0, 'order'), (1, 0, 'file', {c}, 0, 'order');
+             INSERT INTO sources (id, name, url, note, created_at, position) VALUES (7, 's', '', '', 0, 0);
+             UPDATE audio_files SET source_id = 7 WHERE id IN ({a}, {b});
+             UPDATE audio_files SET missing = 1 WHERE id = {b};"
+        ))
+        .unwrap();
+        let s = bulk_summary(&conn, &[a, b]).unwrap();
+        assert_eq!(s.tags.iter().map(|t| (t.name.as_str(), t.count)).collect::<Vec<_>>(), vec![("雨", 2)]);
+        // 同じファイルが2回入っていても1件と数える。チェックしていないファイルだけのプレイリストは出さない
+        assert_eq!(s.playlists.iter().map(|p| (p.name.as_str(), p.count)).collect::<Vec<_>>(), vec![("P2", 2)]);
+        assert_eq!(s.sources, vec![CreditCount { id: Some(7), count: 2 }]);
+        assert_eq!(s.licenses, vec![CreditCount { id: None, count: 2 }]);
+        assert_eq!(s.missing_ids, vec![b]);
+        // 設定がばらばらなら、出典ごとに数える
+        let s = bulk_summary(&conn, &[a, c]).unwrap();
+        assert_eq!(s.sources.len(), 2);
+        // プレイリストからまとめて外す（ファイルの項目だけ）
+        assert_eq!(crate::playlists::remove_files_from_playlist(&conn, 2, &[a, b]).unwrap(), 3);
+        assert!(bulk_summary(&conn, &[a, b]).unwrap().playlists.is_empty());
     }
 
     #[test]

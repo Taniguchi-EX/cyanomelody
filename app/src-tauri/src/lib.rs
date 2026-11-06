@@ -289,16 +289,6 @@ async fn find_missing_in_folder_many(
     Ok(outcome)
 }
 
-/// ids のうち、見つからない印のあるファイルの数（チェックしたファイルがすべてリンク切れかを見る）
-#[tauri::command]
-async fn count_missing(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<i64> {
-    Ok(state.conn().query_row(
-        "SELECT count(*) FROM audio_files WHERE missing = 1 AND id IN (SELECT value FROM json_each(?1))",
-        [db::ids_json(&file_ids)],
-        |r| r.get(0),
-    )?)
-}
-
 /// ファイルを再生したことを記録する（「直近で再生したもの」）
 #[tauri::command]
 async fn record_play(state: State<'_, AppState>, file_id: i64) -> Result<()> {
@@ -452,11 +442,6 @@ async fn move_tag(state: State<'_, AppState>, tag_id: i64, target: MoveTarget) -
 
 /// チェックしたファイルのタグの内訳（タグと、付いているファイルの数）
 #[tauri::command]
-async fn checked_tag_counts(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Vec<files::NamedCount>> {
-    files::tag_counts(&state.conn(), &file_ids)
-}
-
-#[tauri::command]
 async fn existing_file_ids(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Vec<i64>> {
     files::existing_file_ids(&state.conn(), &file_ids)
 }
@@ -604,6 +589,18 @@ async fn playlists_with_file(state: State<'_, AppState>, file_id: i64) -> Result
 #[tauri::command]
 async fn playlist_item_files(state: State<'_, AppState>, item_id: i64) -> Result<Vec<PlayEntry>> {
     playlists::item_files(&state.conn(), item_id)
+}
+
+/// プレイリストから、ファイルの項目をまとめて外す（一括操作の欄）
+#[tauri::command]
+async fn remove_files_from_playlist(state: State<'_, AppState>, id: i64, file_ids: Vec<i64>) -> Result<usize> {
+    playlists::remove_files_from_playlist(&state.conn(), id, &file_ids)
+}
+
+/// 一括操作の欄に出す、チェックしたファイルの内訳
+#[tauri::command]
+async fn bulk_summary(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<files::BulkSummary> {
+    files::bulk_summary(&state.conn(), &file_ids)
 }
 
 #[tauri::command]
@@ -827,13 +824,13 @@ pub fn run() {
             expand_playlist_item,
             playlists_with_file,
             existing_file_ids,
-            checked_tag_counts,
             link_missing_file,
             find_missing_in_folder,
             find_missing_in_folder_many,
-            count_missing,
             record_play,
             remove_file_from_playlist,
+            remove_files_from_playlist,
+            bulk_summary,
             playlist_item_files,
         ])
         .run(tauri::generate_context!())
