@@ -1,5 +1,14 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { api, describeExport, describeHashing, playlistApi, type ExportProgress, type HashProgress } from "../api";
+import {
+  api,
+  describeAutotag,
+  describeExport,
+  describeHashing,
+  playlistApi,
+  type AutotagProgress,
+  type ExportProgress,
+  type HashProgress,
+} from "../api";
 
 export type Status = { text: string; error: boolean };
 
@@ -15,6 +24,7 @@ type Props = {
   shownChecked: number;
   exportProgress: ExportProgress | null;
   hashProgress: HashProgress | null;
+  autotagProgress: AutotagProgress | null;
   onError: (e: unknown) => void;
 };
 
@@ -29,6 +39,7 @@ export function StatusBar({
   shownChecked,
   exportProgress,
   hashProgress,
+  autotagProgress,
   onError,
 }: Props) {
   return (
@@ -62,6 +73,12 @@ export function StatusBar({
             </a>
           )}
           {exportProgress.running && <button onClick={() => playlistApi.cancelExport().catch(onError)}>中止</button>}
+        </div>
+      )}
+      {autotagProgress && (
+        <div className="hash-status" data-testid="autotag-status">
+          {describeAutotag(autotagProgress)}
+          {autotagProgress.running && <button onClick={() => api.cancelAutotag().catch(onError)}>中止</button>}
         </div>
       )}
       {hashProgress && (

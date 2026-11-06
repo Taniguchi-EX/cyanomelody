@@ -1,5 +1,6 @@
 //! 音声ファイルのタグ情報（ID3、Vorbis コメント、MP4 のメタデータ、WAV の INFO など）と、長さを読む。
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -23,17 +24,25 @@ fn probe(path: &Path) -> Option<ProbeResult> {
         .ok()
 }
 
+/// ID3 の ISO-8859-1 の項目を読み直すのは MP3 だけ（ほかの形式のタグは UTF-8 と決まっている）
+fn is_mp3(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("mp3"))
+}
+
+/// WAV の INFO の項目の文字。文字コードを判定する（どちらでもなければ UTF-8 として読み、読めない部分は「�」）
+fn riff_text(info: &HashMap<[u8; 4], Vec<u8>>, id: &[u8; 4]) -> Option<String> {
+    let bytes = info.get(id)?;
+    let text = clean(&decode_bytes(bytes).unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned()));
+    (!text.is_empty()).then_some(text)
+}
+
 /// トラック名（タイトル）。読めないファイルや、タイトルがないファイルでは None
 pub fn track_title(path: &Path) -> Option<String> {
     // WAV の INFO は、symphonia が UTF-8 として読む（Shift_JIS の文字が失われる）ので、ファイルから直接読む
-    if let Some(bytes) = riff_info_title(path) {
-        let title = clean(&decode_bytes(&bytes).unwrap_or_else(|| String::from_utf8_lossy(&bytes).into_owned()));
-        if !title.is_empty() {
-            return Some(title);
-        }
+    if let Some(title) = riff_info(path).and_then(|info| riff_text(&info, b"INAM")) {
+        return Some(title);
     }
-    // ID3 の ISO-8859-1 の項目を読み直すのは MP3 だけ（ほかの形式のタグは UTF-8 と決まっている）
-    let id3 = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("mp3"));
+    let id3 = is_mp3(path);
     let read_title = |revision: &MetadataRevision| title_of(revision, id3);
     let mut probed = probe(path)?;
     // 形式の外側のタグ（MP3 の先頭の ID3v2 など）を先に見て、なければ形式の中のタグを見る
@@ -42,6 +51,80 @@ pub fn track_title(path: &Path) -> Option<String> {
     }
     let metadata = probed.format.metadata();
     metadata.current().and_then(read_title)
+}
+
+/// 自動タグ付けに使う、ファイルの中の情報。ない項目は None
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileMeta {
+    /// アーティスト。なければアルバムアーティスト
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub genre: Option<String>,
+    pub composer: Option<String>,
+}
+
+/// アーティスト・アルバム・ジャンル・作曲者を読む。読めないファイルでは None。
+/// 文字コードは曲名と同じく読み直す（MP3 の ISO-8859-1 の項目、WAV の INFO）
+pub fn file_meta(path: &Path) -> Option<FileMeta> {
+    let id3 = is_mp3(path);
+    let mut probed = probe(path)?;
+    let mut meta = FileMeta::default();
+    let mut album_artist = None;
+    let mut take = |revision: &MetadataRevision| {
+        for tag in revision.tags() {
+            let raw = tag.value.to_string();
+            let raw = if id3 { reinterpret_latin1(raw) } else { raw };
+            // ID3v2.4 の複数の値は NUL で区切られている。最初の値を使う
+            let Some(text) = raw.split('\0').map(clean).find(|t| !t.is_empty()) else { continue };
+            let slot = match tag.std_key {
+                Some(StandardTagKey::Artist) => &mut meta.artist,
+                Some(StandardTagKey::AlbumArtist) => &mut album_artist,
+                Some(StandardTagKey::Album) => &mut meta.album,
+                Some(StandardTagKey::Genre) => &mut meta.genre,
+                Some(StandardTagKey::Composer) => &mut meta.composer,
+                _ => continue,
+            };
+            // 形式の外側のタグ（MP3 の先頭の ID3v2 など）を先に読むので、先に見つかった値を使う
+            slot.get_or_insert(text);
+        }
+    };
+    if let Some(revision) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
+        take(revision);
+    }
+    if let Some(revision) = probed.format.metadata().current() {
+        take(revision);
+    }
+    // WAV の INFO は、文字コードを判定するためにファイルから直接読み直す
+    if let Some(info) = riff_info(path) {
+        for (id, slot) in [(b"IART", &mut meta.artist), (b"IPRD", &mut meta.album), (b"IGNR", &mut meta.genre)] {
+            if let Some(text) = riff_text(&info, id) {
+                *slot = Some(text);
+            }
+        }
+    }
+    meta.artist = meta.artist.or(album_artist);
+    meta.genre = meta.genre.map(|g| genre_name(&g));
+    Some(meta)
+}
+
+/// ID3 のジャンルの番号の書き方（「(17)」「17」「(17)Rock」）をジャンル名にする。番号でなければそのまま
+fn genre_name(text: &str) -> String {
+    let by_number = |n: &str| -> Option<String> {
+        let n: u8 = n.trim().parse().ok()?;
+        symphonia_metadata::id3v1::util::genre_name(n).map(|g| g.to_string())
+    };
+    if let Some(rest) = text.strip_prefix('(') {
+        if let Some((number, after)) = rest.split_once(')') {
+            let after = after.trim();
+            if !after.is_empty() {
+                return after.to_string();
+            }
+            if let Some(name) = by_number(number) {
+                return name;
+            }
+        }
+    }
+    by_number(text).unwrap_or_else(|| text.to_string())
 }
 
 /// 長さ（秒）。音声ファイルの情報（全体のフレーム数）から求め、情報にないとき（一部の MP3 など）は
@@ -109,8 +192,8 @@ fn reinterpret_latin1(text: String) -> String {
     decode_bytes(&bytes).unwrap_or(text)
 }
 
-/// WAV（RIFF）の LIST/INFO の曲名（INAM）のバイト列。WAV でないファイルや、曲名がないときは None
-fn riff_info_title(path: &Path) -> Option<Vec<u8>> {
+/// WAV（RIFF）の LIST/INFO の項目（INAM・IART など）のバイト列。WAV でないファイルや、INFO がないときは None
+fn riff_info(path: &Path) -> Option<HashMap<[u8; 4], Vec<u8>>> {
     let mut file = BufReader::new(File::open(path).ok()?);
     let mut header = [0u8; 12];
     file.read_exact(&mut header).ok()?;
@@ -131,21 +214,24 @@ fn riff_info_title(path: &Path) -> Option<Vec<u8>> {
             file.read_exact(&mut kind).ok()?;
             if &kind == b"INFO" {
                 let mut rest = len - 4;
+                let mut items = HashMap::new();
                 while rest >= 8 {
-                    let (sub, sub_len) = read_chunk_header(&mut file)?;
+                    let Some((sub, sub_len)) = read_chunk_header(&mut file) else { break };
                     let sub_padded = sub_len + (sub_len & 1);
                     if sub_len > rest - 8 {
-                        return None;
+                        break;
                     }
-                    if &sub == b"INAM" {
-                        let mut value = vec![0u8; sub_len as usize];
-                        file.read_exact(&mut value).ok()?;
-                        return Some(value);
+                    let mut value = vec![0u8; sub_len as usize];
+                    if file.read_exact(&mut value).is_err() {
+                        break;
                     }
-                    file.seek(SeekFrom::Current(sub_padded as i64)).ok()?;
+                    items.entry(sub).or_insert(value);
+                    if sub_len & 1 == 1 {
+                        file.seek(SeekFrom::Current(1)).ok()?;
+                    }
                     rest = rest.saturating_sub(8 + sub_padded);
                 }
-                return None;
+                return Some(items);
             }
             file.seek(SeekFrom::Current(padded as i64 - 4)).ok()?;
         } else {
@@ -188,19 +274,21 @@ mod tests {
         assert_eq!(duration(&dir.path().join("none.wav")), None);
     }
 
-    /// タグのない WAV に、曲名（INAM）だけの LIST/INFO を加えたファイルを作る
-    fn wav_with_title(dir: &Path, name: &str, title: &[u8]) -> std::path::PathBuf {
+    /// タグのない WAV に、items（INAM・IART など）の LIST/INFO を加えたファイルを作る
+    fn wav_with_info(dir: &Path, name: &str, items: &[(&[u8; 4], &[u8])]) -> std::path::PathBuf {
         let path = dir.join(name);
         crate::effects::write_wav(&path, &crate::effects::decode(&fixture("base.wav")).unwrap()).unwrap();
         let mut bytes = fs::read(&path).unwrap();
-        let mut inam = title.to_vec();
-        inam.push(0);
         let mut list = b"INFO".to_vec();
-        list.extend(b"INAM");
-        list.extend((inam.len() as u32).to_le_bytes());
-        list.extend(&inam);
-        if inam.len() % 2 == 1 {
-            list.push(0);
+        for (id, value) in items {
+            let mut v = value.to_vec();
+            v.push(0);
+            list.extend(*id);
+            list.extend((v.len() as u32).to_le_bytes());
+            list.extend(&v);
+            if v.len() % 2 == 1 {
+                list.push(0);
+            }
         }
         bytes.extend(b"LIST");
         bytes.extend((list.len() as u32).to_le_bytes());
@@ -211,24 +299,74 @@ mod tests {
         path
     }
 
-    /// テスト用の MP3 の先頭の ID3v2 を、曲名（TIT2、文字コードは ISO-8859-1）だけのものに差し替えたファイルを作る
-    fn mp3_with_latin1_title(dir: &Path, name: &str, title: &[u8]) -> std::path::PathBuf {
+    fn wav_with_title(dir: &Path, name: &str, title: &[u8]) -> std::path::PathBuf {
+        wav_with_info(dir, name, &[(b"INAM", title)])
+    }
+
+    /// テスト用の MP3 の先頭の ID3v2 を、frames（文字コードは ISO-8859-1）だけのものに差し替えたファイルを作る
+    fn mp3_with_frames(dir: &Path, name: &str, frames: &[(&[u8; 4], &[u8])]) -> std::path::PathBuf {
         let base = fs::read(fixture("base.mp3")).unwrap();
         assert_eq!(&base[0..3], b"ID3");
         let size = base[6..10].iter().fold(0usize, |n, &b| (n << 7) | b as usize);
         let audio = &base[10 + size..];
-        let mut frame = b"TIT2".to_vec();
-        frame.extend(((title.len() + 1) as u32).to_be_bytes());
-        frame.extend([0, 0, 0]);
-        frame.extend(title);
+        let mut body = vec![];
+        for (id, value) in frames {
+            body.extend(*id);
+            body.extend(((value.len() + 1) as u32).to_be_bytes());
+            body.extend([0, 0, 0]);
+            body.extend(*value);
+        }
         let mut tag = b"ID3\x03\x00\x00".to_vec();
-        let n = frame.len();
+        let n = body.len();
         tag.extend([(n >> 21) as u8 & 0x7f, (n >> 14) as u8 & 0x7f, (n >> 7) as u8 & 0x7f, n as u8 & 0x7f]);
-        tag.extend(frame);
+        tag.extend(body);
         tag.extend(audio);
         let path = dir.join(name);
         fs::write(&path, tag).unwrap();
         path
+    }
+
+    fn mp3_with_latin1_title(dir: &Path, name: &str, title: &[u8]) -> std::path::PathBuf {
+        mp3_with_frames(dir, name, &[(b"TIT2", title)])
+    }
+
+    #[test]
+    fn reads_meta_for_autotag() {
+        let dir = tempfile::tempdir().unwrap();
+        let sjis = |s: &str| encoding_rs::SHIFT_JIS.encode(s).0.into_owned();
+        let some = |s: &str| Some(s.to_string());
+        // MP3：Shift_JIS の値も読み直す。アーティストが空ならアルバムアーティスト。ジャンルの番号の書き方はジャンル名に
+        let mp3 = mp3_with_frames(
+            dir.path(),
+            "a.mp3",
+            &[(b"TPE2", &sjis("ゲームフリーク")), (b"TALB", &sjis("ポケモン")), (b"TCON", b"(17)"), (b"TCOM", &sjis("増田順一"))],
+        );
+        assert_eq!(
+            file_meta(&mp3).unwrap(),
+            FileMeta { artist: some("ゲームフリーク"), album: some("ポケモン"), genre: some("Rock"), composer: some("増田順一") }
+        );
+        // アーティストがあれば、アルバムアーティストは使わない。「(13)Pop」のように名前が続けばその名前
+        let mp3 = mp3_with_frames(dir.path(), "b.mp3", &[(b"TPE1", b"Artist"), (b"TPE2", b"Album Artist"), (b"TCON", b"(13)Pop")]);
+        let m = file_meta(&mp3).unwrap();
+        assert_eq!((m.artist.as_deref(), m.genre.as_deref(), m.album), (Some("Artist"), Some("Pop"), None));
+        // WAV の INFO（Shift_JIS）
+        let wav = wav_with_info(dir.path(), "c.wav", &[(b"IART", &sjis("黒魔")), (b"IPRD", &sjis("アルバム名")), (b"IGNR", b"Techno")]);
+        assert_eq!(
+            file_meta(&wav).unwrap(),
+            FileMeta { artist: some("黒魔"), album: some("アルバム名"), genre: some("Techno"), composer: None }
+        );
+        // テスト用の素材（ffmpeg で作ったもの）は曲名だけで、ほかの項目はない
+        for ext in ["flac", "ogg", "m4a"] {
+            assert_eq!(file_meta(&fixture(&format!("base.{ext}"))).unwrap(), FileMeta::default(), "{ext}");
+        }
+        // 読めないファイル
+        let text = dir.path().join("text.mp3");
+        fs::write(&text, "not audio").unwrap();
+        assert_eq!(file_meta(&text), None);
+        // 番号でないジャンルはそのまま
+        assert_eq!(genre_name("J-POP"), "J-POP");
+        assert_eq!(genre_name("17"), "Rock");
+        assert_eq!(genre_name("(999)"), "(999)");
     }
 
     #[test]

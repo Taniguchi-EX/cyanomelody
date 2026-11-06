@@ -15,6 +15,8 @@ type Props = {
   /** タグを付ける。まだない名前なら、最上位に新しいタグを作って付ける */
   onAddTag: (name: string) => Promise<boolean>;
   onRemoveTag: (tagId: number) => void;
+  /** 「ファイルの情報からタグを付ける」（確認のダイアログを出す） */
+  onAutotag: () => void;
   onRemoveMissing: () => void;
   onRelink: () => void;
   /** 見つからないファイルを、選んだファイルにひも付ける */
@@ -42,6 +44,7 @@ export function SelectionPanel({
   busy,
   onAddTag,
   onRemoveTag,
+  onAutotag,
   onRemoveMissing,
   onRelink,
   onLinkFile,
@@ -147,6 +150,15 @@ export function SelectionPanel({
             ))}
           </div>
         )}
+        <div className="row autotag-row">
+          <button
+            onClick={onAutotag}
+            disabled={busy || file.missing}
+            title={file.missing ? "見つからないファイルは読めません" : "アーティスト・アルバム・ジャンル・作曲者のタグを付ける"}
+          >
+            ファイルの情報からタグを付ける
+          </button>
+        </div>
       </Collapsible>
 
       <Collapsible id="detail-playlists" title="プレイリスト" count={usedInPlaylists.length}>

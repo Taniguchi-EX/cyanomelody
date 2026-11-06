@@ -151,6 +151,14 @@ export const api = {
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   /** 指定したidのうち、ライブラリにあるもの */
   existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
+  /** 自動タグ付けで無視する値の一覧 */
+  metaIgnoreValues: () => invoke<string[]>("meta_ignore_values"),
+  setMetaIgnoreValues: (values: string[]) => invoke<void>("set_meta_ignore_values", { values }),
+  /** ファイル1件に、ファイルの中の情報からタグを付ける */
+  autotagFile: (fileId: number, ignore: boolean) => invoke<AutotagFileResult>("autotag_file", { fileId, ignore }),
+  /** たくさんのファイルの自動タグ付けを裏で始める（進み具合はイベント "autotag-progress"） */
+  startAutotag: (fileIds: number[], ignore: boolean) => invoke<void>("start_autotag", { fileIds, ignore }),
+  cancelAutotag: () => invoke<void>("cancel_autotag"),
   /** 一括操作の欄に出す、対象のファイルの内訳（タグ・プレイリスト・出典・ライセンス・リンク切れ） */
   bulkSummary: (fileIds: number[]) => invoke<BulkSummary>("bulk_summary", { fileIds }),
   listTags: () => invoke<Tag[]>("list_tags"),
@@ -464,3 +472,40 @@ export type ImportResult = {
   /** 取り込んだ画面の設定 */
   screen: Record<string, unknown> | null;
 };
+
+/** ファイル1件の自動タグ付けの結果 */
+export type AutotagFileResult = {
+  /** ファイルを読めたか */
+  readable: boolean;
+  /** 新しく付けたタグ（項目の名前とタグの名前） */
+  added: { field: string; name: string }[];
+  /** 新しく作ったタグの数 */
+  created: number;
+  /** 使える値があったか */
+  hasInfo: boolean;
+};
+
+/** 裏で行う自動タグ付けの進み具合 */
+export type AutotagProgress = {
+  running: boolean;
+  done: number;
+  total: number;
+  /** タグを新しく付けたファイルの数 */
+  tagged: number;
+  /** 新しく作ったタグの数 */
+  created: number;
+  /** 使える情報がなかったファイルの数 */
+  noInfo: number;
+  /** 読めなかったファイルの数 */
+  failed: number;
+  cancelled: boolean;
+};
+
+/** 自動タグ付けの進み具合・結果の文 */
+export function describeAutotag(p: AutotagProgress): string {
+  if (p.running) return `ファイルの情報からタグを付けています ${p.done}/${p.total}`;
+  const parts = [`タグを付けたファイル ${p.tagged}件`, `作ったタグ ${p.created}件`];
+  if (p.noInfo) parts.push(`情報がなかったファイル ${p.noInfo}件`);
+  if (p.failed) parts.push(`読めなかったファイル ${p.failed}件`);
+  return `${p.cancelled ? "ファイルの情報からのタグ付けを中止しました" : "ファイルの情報からタグを付けました"}（読んだファイル ${p.done}件、${parts.join("、")}）`;
+}

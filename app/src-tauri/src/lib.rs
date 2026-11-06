@@ -1,4 +1,5 @@
 mod audio_hash;
+mod autotag;
 mod chains;
 mod effect_cache;
 mod credits;
@@ -49,6 +50,7 @@ struct AppState {
     /// エフェクトをかけた音の置き場所
     effect_cache: PathBuf,
     export: Arc<ExportJob>,
+    autotag: Arc<AutotagJob>,
 }
 
 /// 裏で行うプレイリストの出力の状態
@@ -92,6 +94,34 @@ struct HashProgress {
 
 /// 一度に計算して保存する件数。この単位で進み具合を通知し、中止を受け付ける
 const HASH_BATCH: usize = 256;
+
+/// 裏で行う自動タグ付け（ファイルの中の情報からタグを付ける）の状態
+#[derive(Default)]
+struct AutotagJob {
+    running: AtomicBool,
+    cancel: AtomicBool,
+    progress: Mutex<AutotagProgress>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutotagProgress {
+    running: bool,
+    done: usize,
+    total: usize,
+    /// タグを新しく付けたファイルの数
+    tagged: usize,
+    /// 新しく作ったタグの数
+    created: usize,
+    /// 使える情報がなかったファイルの数
+    no_info: usize,
+    /// 読めなかったファイル（見つからないファイルを含む）の数
+    failed: usize,
+    cancelled: bool,
+}
+
+/// 自動タグ付けで一度に読んで保存する件数。この単位で進み具合を通知し、中止を受け付ける
+const AUTOTAG_BATCH: usize = 32;
 
 impl AppState {
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
@@ -145,6 +175,66 @@ fn run_hashing(app: AppHandle, job: Arc<HashJob>) {
     notify(&progress);
 }
 
+/// 対象のファイルに、ファイルの中の情報からタグを付ける（別スレッド）。進み具合はイベント "autotag-progress" で知らせる
+fn run_autotag(app: AppHandle, job: Arc<AutotagJob>, file_ids: Vec<i64>, ignore: Vec<String>) {
+    let state = app.state::<AppState>();
+    let mut progress = AutotagProgress { running: true, total: file_ids.len(), ..Default::default() };
+    let notify = |p: &AutotagProgress| {
+        *job.progress.lock().unwrap_or_else(|e| e.into_inner()) = p.clone();
+        let _ = app.emit("autotag-progress", p);
+    };
+    notify(&progress);
+    for batch in file_ids.chunks(AUTOTAG_BATCH) {
+        // パスを引く（見つからないファイルは読めない）
+        let mut files = Vec::new();
+        {
+            let conn = state.conn();
+            for &id in batch {
+                match autotag::file_path(&conn, id) {
+                    Ok(Some(path)) => files.push(hashing::PendingFile { id, path }),
+                    _ => progress.failed += 1,
+                }
+            }
+        }
+        // ファイルを読むのはデータベースを使わずに並列で行い、付けるのは1つのまとまりで行う
+        let metas = hashing::compute_parallel(&files, &job.cancel, metadata::file_meta);
+        let mut conn = state.conn();
+        let result = (|| -> Result<()> {
+            let tx = conn.transaction()?;
+            for (id, meta) in &metas {
+                let Some(meta) = meta else { continue };
+                progress.done += 1;
+                let Some(meta) = meta else {
+                    progress.failed += 1;
+                    continue;
+                };
+                let applied = autotag::apply(&tx, *id, meta, &ignore)?;
+                progress.created += applied.created;
+                if !applied.added.is_empty() {
+                    progress.tagged += 1;
+                } else if !applied.has_info {
+                    progress.no_info += 1;
+                }
+            }
+            tx.commit()?;
+            Ok(())
+        })();
+        drop(conn);
+        progress.done += batch.len() - files.len();
+        if let Err(e) = result {
+            log::error!("autotag: {e}");
+        }
+        if job.cancel.load(Ordering::Relaxed) {
+            progress.cancelled = true;
+            break;
+        }
+        notify(&progress);
+    }
+    progress.running = false;
+    job.running.store(false, Ordering::SeqCst);
+    notify(&progress);
+}
+
 // Tauriのコマンドは、async にすると画面のスレッドを止めずに別スレッドで動く
 
 /// ハッシュ値の計算を始める。既に計算中なら何もしない。
@@ -168,6 +258,69 @@ async fn cancel_hashing(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
     Ok(state.hashing.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
+}
+
+/// 自動タグ付けで無視する値の一覧
+#[tauri::command]
+async fn meta_ignore_values(state: State<'_, AppState>) -> Result<Vec<String>> {
+    autotag::ignore_values(&state.conn())
+}
+
+#[tauri::command]
+async fn set_meta_ignore_values(state: State<'_, AppState>, values: Vec<String>) -> Result<()> {
+    autotag::set_ignore_values(&state.conn(), &values)
+}
+
+/// ファイル1件の自動タグ付けの結果
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutotagFileResult {
+    /// ファイルを読めたか
+    readable: bool,
+    #[serde(flatten)]
+    applied: autotag::Applied,
+}
+
+/// ファイル1件に、ファイルの中の情報からタグを付ける。ignore なら、無視する値の一覧の値は使わない
+#[tauri::command]
+async fn autotag_file(state: State<'_, AppState>, file_id: i64, ignore: bool) -> Result<AutotagFileResult> {
+    let (path, ignore_list) = {
+        let conn = state.conn();
+        let path = autotag::file_path(&conn, file_id)?.ok_or_else(|| Error::invalid("見つからないファイルは読めません"))?;
+        (path, if ignore { autotag::ignore_values(&conn)? } else { vec![] })
+    };
+    let Some(meta) = metadata::file_meta(&path) else {
+        return Ok(AutotagFileResult { readable: false, applied: Default::default() });
+    };
+    let mut conn = state.conn();
+    let tx = conn.transaction()?;
+    let applied = autotag::apply(&tx, file_id, &meta, &ignore_list)?;
+    tx.commit()?;
+    Ok(AutotagFileResult { readable: true, applied })
+}
+
+/// たくさんのファイルの自動タグ付けを、裏で始める。既に行っている間は始めない
+#[tauri::command]
+async fn start_autotag(app: AppHandle, state: State<'_, AppState>, file_ids: Vec<i64>, ignore: bool) -> Result<()> {
+    let job = state.autotag.clone();
+    if job.running.swap(true, Ordering::SeqCst) {
+        return Err(Error::invalid("ファイルの情報からタグを付けている途中です"));
+    }
+    job.cancel.store(false, Ordering::SeqCst);
+    let ignore_list = if ignore { autotag::ignore_values(&state.conn())? } else { vec![] };
+    std::thread::spawn(move || run_autotag(app, job, file_ids, ignore_list));
+    Ok(())
+}
+
+#[tauri::command]
+async fn cancel_autotag(state: State<'_, AppState>) -> Result<()> {
+    state.autotag.cancel.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+async fn autotag_progress(state: State<'_, AppState>) -> Result<AutotagProgress> {
+    Ok(state.autotag.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
 }
 
 /// 新しい版があれば、その版。開発用のビルドや、探せなかったときは None
@@ -759,6 +912,7 @@ pub fn run() {
                 hashing: Arc::new(HashJob::default()),
                 effect_cache,
                 export: Arc::new(ExportJob::default()),
+                autotag: Arc::new(AutotagJob::default()),
             });
             Ok(())
         })
@@ -788,6 +942,12 @@ pub fn run() {
             hashing_progress,
             track_title,
             check_update,
+            meta_ignore_values,
+            set_meta_ignore_values,
+            autotag_file,
+            start_autotag,
+            cancel_autotag,
+            autotag_progress,
             install_update,
             relink_files,
             license_types,

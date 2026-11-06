@@ -306,7 +306,7 @@ pub fn normalize_tag_name(name: &str) -> Result<String> {
 
 
 /// 名前でタグを探す。大文字・小文字は区別しない。
-fn find_tag(conn: &Connection, name: &str) -> Result<Option<i64>> {
+pub(crate) fn find_tag(conn: &Connection, name: &str) -> Result<Option<i64>> {
     find_by_name(conn, "tags", name)
 }
 
@@ -358,6 +358,19 @@ pub fn get_or_create_tag(conn: &Connection, name: &str) -> Result<i64> {
 }
 
 /// タグを作る。同じ名前のタグがあればエラー。
+/// タグを parent の子の最後に作る（parent が None なら最上位の最後）。同じ名前のタグがあればエラー
+pub fn create_tag_under(conn: &Connection, name: &str, parent: Option<i64>) -> Result<i64> {
+    let id = create_tag(conn, name)?;
+    if let Some(p) = parent {
+        ensure_exists(conn, p)?;
+        conn.execute(
+            "UPDATE tags SET parent_id = ?2, position = ?3 WHERE id = ?1",
+            params![id, p, next_position(conn, Some(p))?],
+        )?;
+    }
+    Ok(id)
+}
+
 pub fn create_tag(conn: &Connection, name: &str) -> Result<i64> {
     let name = normalize_tag_name(name)?;
     ensure_unique_name(conn, "tags", "タグ", &name, None)?;

@@ -692,6 +692,7 @@ dependencies = [
  "serde",
  "serde_json",
  "symphonia",
+ "symphonia-metadata",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

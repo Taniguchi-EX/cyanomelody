@@ -12,6 +12,7 @@ import {
   type CreditKind,
   type Facets,
   type HashProgress,
+  type AutotagProgress,
   type ExportProgress,
   type LibraryFolder,
   type LicenseType,
@@ -52,6 +53,7 @@ import { CreditForm } from "./components/CreditForm";
 import { TagDetail } from "./components/TagDetail";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { BulkPanel } from "./components/BulkPanel";
+import { AutotagDialog } from "./components/AutotagDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
@@ -134,6 +136,9 @@ export default function App() {
   const [itemChecks, setItemChecks] = useState<Set<number>>(new Set());
   /** 右の欄に一括操作を出しているか（出していなければファイルの詳細） */
   const [bulkOpen, setBulkOpen] = useState(false);
+  /** 自動タグ付けの確認のダイアログ（対象のファイル。single はファイルの詳細から開いた） */
+  const [autotagDialog, setAutotagDialog] = useState<{ fileIds: number[]; single: boolean } | null>(null);
+  const [autotagProgress, setAutotagProgress] = useState<AutotagProgress | null>(null);
   /** 右の欄に出している項目のファイル（ファイルの一覧に出ていないこともあるので、別に読む） */
   const [itemFile, setItemFile] = useState<AudioFile | null>(null);
   /** データを読み直すたびに増える（右の欄の項目のファイルを読み直すのに使う） */
@@ -253,6 +258,17 @@ export default function App() {
   useEffect(() => {
     reloadAllRef.current = reloadAll;
   }, [reloadAll]);
+
+  // 自動タグ付けの進み具合。終わったら（中止したときも）データを読み直す
+  useEffect(() => {
+    const unlisten = listen<AutotagProgress>("autotag-progress", (e) => {
+      setAutotagProgress(e.payload);
+      if (!e.payload.running) reloadAllRef.current().catch(showSettingsError);
+    });
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [showSettingsError]);
   useEffect(() => {
     api
       .hashingProgress()
@@ -401,6 +417,21 @@ export default function App() {
       await api.addTag(bulkFileIds, name);
       showInfo(`${bulkFileIds.length}件にタグ「${name.trim()}」を付けました`);
     });
+
+  /** 自動タグ付けの確認のダイアログで「タグを付ける」 */
+  const runAutotag = (fileIds: number[], single: boolean, ignore: boolean) => {
+    setAutotagDialog(null);
+    if (single) {
+      run(async () => {
+        const r = await api.autotagFile(fileIds[0], ignore);
+        if (!r.readable) showInfo("ファイルを読めませんでした");
+        else if (r.added.length > 0) showInfo(`${r.added.map((a) => `${a.field}：${a.name}`).join("、")} を付けました`);
+        else showInfo(r.hasInfo ? "付けるタグはもう付いています" : "ファイルの中に、タグにできる情報はありませんでした");
+      });
+      return;
+    }
+    api.startAutotag(fileIds, ignore).catch(showError);
+  };
 
   /** 一括操作：プレイリストから、対象のファイルの項目を外す（確認してから） */
   const bulkRemoveFromPlaylist = async (p: TagCount) => {
@@ -1142,6 +1173,7 @@ export default function App() {
             dataVersion={dataVersion}
             onAddTag={bulkAddTag}
             onRemoveTag={bulkRemoveTag}
+            onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={openPlaylist}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}
@@ -1179,6 +1211,7 @@ export default function App() {
           busy={busy}
           onAddTag={addTag}
           onRemoveTag={removeTag}
+          onAutotag={() => focusedFile && setAutotagDialog({ fileIds: [focusedFile.id], single: true })}
           onRemoveMissing={() => removeMissing(focusedIds(), 1)}
           onRelink={() => relink(focusedIds())}
           onLinkFile={() => focusedFile && linkMissingFile(focusedFile)}
@@ -1240,6 +1273,7 @@ export default function App() {
         shownChecked={checks.shownChecked}
         exportProgress={exportProgress}
         hashProgress={hashProgress}
+        autotagProgress={autotagProgress}
         onError={showError}
       />
       <audio {...audio.audioProps} />
@@ -1259,6 +1293,14 @@ export default function App() {
           previewing={audio.previewId !== null && audio.previewId === effectDialog.target?.id}
           onStopPreview={audio.stopPreview}
           onClose={() => setEffectDialog(null)}
+        />
+      )}
+      {autotagDialog && (
+        <AutotagDialog
+          count={autotagDialog.fileIds.length}
+          single={autotagDialog.single}
+          onConfirm={(ignore) => runAutotag(autotagDialog.fileIds, autotagDialog.single, ignore)}
+          onClose={() => setAutotagDialog(null)}
         />
       )}
       {settingsOpen && (

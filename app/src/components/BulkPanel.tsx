@@ -22,6 +22,8 @@ type Props = {
   dataVersion: number;
   onAddTag: (name: string) => Promise<boolean>;
   onRemoveTag: (tag: TagCount) => void;
+  /** 「ファイルの情報からタグを付ける」（確認のダイアログを出す） */
+  onAutotag: () => void;
   onAddToPlaylist: (playlistId: number) => void;
   onOpenPlaylist: (playlistId: number) => void;
   onRemoveFromPlaylist: (playlist: TagCount) => void;
@@ -45,6 +47,7 @@ export function BulkPanel({
   dataVersion,
   onAddTag,
   onRemoveTag,
+  onAutotag,
   onAddToPlaylist,
   onOpenPlaylist,
   onRemoveFromPlaylist,
@@ -115,6 +118,11 @@ export function BulkPanel({
                 ))}
               </div>
             )}
+            <div className="row autotag-row">
+              <button onClick={onAutotag} disabled={busy} title="アーティスト・アルバム・ジャンル・作曲者のタグを付ける">
+                ファイルの情報からタグを付ける
+              </button>
+            </div>
           </Collapsible>
 
           <Collapsible id="bulk-playlists" title="プレイリスト" count={data.playlists.length}>
