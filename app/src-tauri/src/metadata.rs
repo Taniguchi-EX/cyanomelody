@@ -157,8 +157,11 @@ pub fn audio_info(path: &Path) -> AudioInfo {
     let year = [StandardTagKey::Date, StandardTagKey::ReleaseDate, StandardTagKey::OriginalDate]
         .iter()
         .find_map(|key| dates.iter().filter(|(k, _)| k == key).find_map(|(_, v)| parse_year(v)))
-        // WAV の INFO の日付（ICRD）は、ファイルから直接読む
-        .or_else(|| riff_info(path).and_then(|info| riff_text(&info, b"ICRD")).and_then(|v| parse_year(&v)));
+        // WAV の INFO の日付（ICRD）は、ファイルから直接読む（WAV でないファイルは開き直さない）
+        .or_else(|| {
+            let wav = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("wav"));
+            wav.then(|| riff_info(path)).flatten().and_then(|info| riff_text(&info, b"ICRD")).and_then(|v| parse_year(&v))
+        });
     AudioInfo { duration: duration_of(probed.format), year }
 }
 
