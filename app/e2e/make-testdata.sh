@@ -28,6 +28,8 @@ ff -f lavfi -i "sine=frequency=330:duration=0.5" -metadata artist="テストア�
 ff -f lavfi -i "sine=frequency=350:duration=0.5" -metadata artist="Unknown" -metadata album="テストアルバム" -metadata date="2019" -c:a libmp3lame "$meta/m2.mp3"
 ff -f lavfi -i "sine=frequency=370:duration=0.5" -metadata genre="Other" -metadata composer="作曲家A" -metadata date="2023-04-14" "$meta/m3.flac"
 ff -f lavfi -i "sine=frequency=390:duration=0.5" "$meta/m4.wav"
+# m5：アーティスト・作曲者に複数の名前（区切り文字で分ける確認用）
+ff -f lavfi -i "sine=frequency=410:duration=0.5" -metadata artist="歌手A feat. 歌手B" -metadata composer="作曲家A / 作曲家B" -c:a libmp3lame "$meta/m5.mp3"
 
 # hash/ … ハッシュ値の機能の確認用。重複（そのままのコピーと、タグだけ書き換えたもの）と、壊れたファイルを含む
 # outside/ … ライブラリの外の音声（リンク切れのファイルを紐づけるときに、フォルダごと登録される）

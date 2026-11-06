@@ -157,10 +157,15 @@ export const api = {
   /** 自動タグ付けで無視する値の一覧 */
   metaIgnoreValues: () => invoke<string[]>("meta_ignore_values"),
   setMetaIgnoreValues: (values: string[]) => invoke<void>("set_meta_ignore_values", { values }),
+  /** 自動タグ付けの区切り文字の一覧 */
+  metaSeparators: () => invoke<string[]>("meta_separators"),
+  setMetaSeparators: (values: string[]) => invoke<void>("set_meta_separators", { values }),
   /** ファイル1件に、ファイルの中の情報からタグを付ける */
-  autotagFile: (fileId: number, ignore: boolean) => invoke<AutotagFileResult>("autotag_file", { fileId, ignore }),
+  autotagFile: (fileId: number, ignore: boolean, split: boolean) =>
+    invoke<AutotagFileResult>("autotag_file", { fileId, ignore, split }),
   /** たくさんのファイルの自動タグ付けを裏で始める（進み具合はイベント "autotag-progress"） */
-  startAutotag: (fileIds: number[], ignore: boolean) => invoke<void>("start_autotag", { fileIds, ignore }),
+  startAutotag: (fileIds: number[], ignore: boolean, split: boolean) =>
+    invoke<void>("start_autotag", { fileIds, ignore, split }),
   cancelAutotag: () => invoke<void>("cancel_autotag"),
   /** 一括操作の欄に出す、対象のファイルの内訳（タグ・プレイリスト・出典・ライセンス・リンク切れ） */
   bulkSummary: (fileIds: number[]) => invoke<BulkSummary>("bulk_summary", { fileIds }),

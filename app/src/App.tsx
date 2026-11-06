@@ -419,18 +419,18 @@ export default function App() {
     });
 
   /** 自動タグ付けの確認のダイアログで「タグを付ける」 */
-  const runAutotag = (fileIds: number[], single: boolean, ignore: boolean) => {
+  const runAutotag = (fileIds: number[], single: boolean, ignore: boolean, split: boolean) => {
     setAutotagDialog(null);
     if (single) {
       run(async () => {
-        const r = await api.autotagFile(fileIds[0], ignore);
+        const r = await api.autotagFile(fileIds[0], ignore, split);
         if (!r.readable) showInfo("ファイルを読めませんでした");
         else if (r.added.length > 0) showInfo(`${r.added.map((a) => `${a.field}：${a.name}`).join("、")} を付けました`);
         else showInfo(r.hasInfo ? "付けるタグはもう付いています" : "ファイルの中に、タグにできる情報はありませんでした");
       });
       return;
     }
-    api.startAutotag(fileIds, ignore).catch(showError);
+    api.startAutotag(fileIds, ignore, split).catch(showError);
   };
 
   /** 一括操作：プレイリストから、対象のファイルの項目を外す（確認してから） */
@@ -1299,7 +1299,7 @@ export default function App() {
         <AutotagDialog
           count={autotagDialog.fileIds.length}
           single={autotagDialog.single}
-          onConfirm={(ignore) => runAutotag(autotagDialog.fileIds, autotagDialog.single, ignore)}
+          onConfirm={(ignore, split) => runAutotag(autotagDialog.fileIds, autotagDialog.single, ignore, split)}
           onClose={() => setAutotagDialog(null)}
         />
       )}

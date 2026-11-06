@@ -1,7 +1,7 @@
 // 「ファイル内の情報による自動タグ付け」の画面テスト。準備と実行の方法は tag-management.mjs と同じ。
 //   node e2e/autotag.mjs <テストデータ> <スクリーンショットの保存先>
 // テストデータの meta/：m1.mp3（アーティスト・アルバム・ジャンル Rock・作曲者）、m2.mp3（アーティスト Unknown・アルバム）、
-// m3.flac（ジャンル Other・作曲者）、m4.wav（情報なし）
+// m3.flac（ジャンル Other・作曲者）、m4.wav（情報なし）、m5.mp3（アーティスト「歌手A feat. 歌手B」・作曲者「作曲家A / 作曲家B」）
 import path from "node:path";
 import { connect, expect, parseArgs } from "./helpers.mjs";
 
@@ -51,11 +51,11 @@ await step("A01", "ファイルの詳細の「ファイルの情報からタグ�
 await step("A02", "無視する値の一覧：＋で加え、✎で直し、−で消す。空・重なる値は入れられない。閉じて開き直しても残る", async () => {
   await openFromDetail("m4.wav");
   await dialog().getByRole("button", { name: "無視する値を加える" }).click();
-  await dialog().getByLabel("加える値").fill("unknown");
-  await dialog().getByLabel("加える値").press("Enter");
-  expect((await dialog().getByTestId("ignore-error").innerText()).includes("もう一覧にあります"), "重なる値が入った");
-  await dialog().getByLabel("加える値").fill("情報なし");
-  await dialog().getByLabel("加える値").press("Enter");
+  await dialog().getByLabel("加える無視する値").fill("unknown");
+  await dialog().getByLabel("加える無視する値").press("Enter");
+  expect((await dialog().getByTestId("ignore-values-error").innerText()).includes("もう一覧にあります"), "重なる値が入った");
+  await dialog().getByLabel("加える無視する値").fill("情報なし");
+  await dialog().getByLabel("加える無視する値").press("Enter");
   await page.waitForFunction(() => document.querySelectorAll("[data-testid=ignore-values] li").length === 4, null, { timeout: 3000 });
   expect((await ignoreValues()).join(",") === "Unknown,アーティスト情報なし,Other,情報なし", (await ignoreValues()).join(","));
   // ✎で直す（Esc は編集だけやめ、ダイアログは閉じない）
@@ -109,6 +109,33 @@ await step("A04", "「以下の値は無視する」を外すと、一覧の値�
   await waitIdle();
   expect((await status()) === "アーティスト：Unknown を付けました", await status());
   expect((await tagItem("Unknown").getAttribute("data-depth")) === "1", "アーティストの下にない");
+});
+
+await step("A05", "アーティスト・作曲者は区切り文字（最初は , / ／ feat. with）で分けてタグにする。区切り文字の一覧は無視する値と同じく編集できる。「以下の文字で区切る」を外すと分けない", async () => {
+  const separators = () => dialog().getByTestId("separator-values").locator("li").evaluateAll((ls) => ls.map((l) => l.dataset.value));
+  const box = () => dialog().getByTestId("separator-values-box");
+  await openFromDetail("m5.mp3");
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 5, null, { timeout: 3000 });
+  expect((await separators()).join(" ") === ", / ／ feat. with", (await separators()).join(" "));
+  expect(await dialog().getByLabel("以下の文字で区切る（アーティスト・作曲者）").isChecked(), "最初が ON でない");
+  // 一覧に加えて消す（無視する値と同じ）
+  await box().getByRole("button", { name: "区切り文字を加える" }).click();
+  await dialog().getByLabel("加える区切り文字").fill("&");
+  await dialog().getByLabel("加える区切り文字").press("Enter");
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 6, null, { timeout: 3000 });
+  await shot("A05_区切り文字の一覧");
+  await box().getByRole("button", { name: "&を消す", exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll("[data-testid=separator-values] li").length === 5, null, { timeout: 3000 });
+  await dialog().getByRole("button", { name: "タグを付ける" }).click();
+  await waitIdle();
+  // 作曲家A は今あるタグを付ける
+  expect((await status()) === "アーティスト：歌手A、アーティスト：歌手B、作曲者：作曲家A、作曲者：作曲家B を付けました", await status());
+  // 区切らなければ、値のままのタグ
+  await openFromDetail("m5.mp3");
+  await dialog().getByLabel("以下の文字で区切る（アーティスト・作曲者）").uncheck();
+  await dialog().getByRole("button", { name: "タグを付ける" }).click();
+  await waitIdle();
+  expect((await status()) === "アーティスト：歌手A feat. 歌手B、作曲者：作曲家A / 作曲家B を付けました", await status());
 });
 
 await ui.finish();

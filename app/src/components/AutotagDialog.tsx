@@ -6,37 +6,103 @@ type Props = {
   /** 対象のファイルの数（1件ならファイルの詳細から開いた） */
   count: number;
   single: boolean;
-  /** 「タグを付ける」。ignore は「以下の値は無視する」 */
-  onConfirm: (ignore: boolean) => void;
+  /** 「タグを付ける」。ignore は「以下の値は無視する」、split は「以下の文字で区切る」 */
+  onConfirm: (ignore: boolean, split: boolean) => void;
   onClose: () => void;
 };
+
+/**
+ * 自動タグ付けの確認のダイアログ。「以下の値は無視する」と無視する値の一覧、「以下の文字で区切る」と区切り文字の一覧。
+ * 一覧は ✎ で編集、− で消す、＋ で加え、変えるとすぐに保存する
+ */
+export function AutotagDialog({ count, single, onConfirm, onClose }: Props) {
+  // チェックボックスは、開くたびに ON から始める
+  const [ignore, setIgnore] = useState(true);
+  const [split, setSplit] = useState(true);
+  // どちらかの一覧を編集している間は「タグを付ける」を押せない
+  const [editingIgnore, setEditingIgnore] = useState(false);
+  const [editingSplit, setEditingSplit] = useState(false);
+  useEscape(onClose);
+
+  return (
+    <div className="overlay">
+      <div className="dialog autotag-dialog" role="dialog" aria-label="ファイルの情報からタグを付ける" data-testid="autotag-dialog">
+        <div className="dialog-head">
+          <h2>ファイルの情報からタグを付ける</h2>
+        </div>
+        <p>
+          {single ? "このファイル" : `${count}件のファイル`}
+          の情報を読み、アーティスト・アルバム・ジャンル・作曲者のタグを付けます。
+        </p>
+        <label className="data-check">
+          <input type="checkbox" checked={ignore} onChange={(e) => setIgnore(e.target.checked)} />
+          以下の値は無視する
+        </label>
+        <EditableList
+          load={api.metaIgnoreValues}
+          save={api.setMetaIgnoreValues}
+          off={!ignore}
+          what="無視する値"
+          testId="ignore-values"
+          onEditing={setEditingIgnore}
+        />
+        <label className="data-check">
+          <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} />
+          以下の文字で区切る（アーティスト・作曲者）
+        </label>
+        <EditableList
+          load={api.metaSeparators}
+          save={api.setMetaSeparators}
+          off={!split}
+          what="区切り文字"
+          testId="separator-values"
+          onEditing={setEditingSplit}
+        />
+        <div className="row" style={{ justifyContent: "flex-end", marginTop: 6 }}>
+          <button onClick={onClose}>やめる</button>
+          <button onClick={() => onConfirm(ignore, split)} disabled={editingIgnore || editingSplit}>
+            タグを付ける
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /** 編集している行（index、null なら最後に加える行）と入力中の文字 */
 type Editing = { index: number | null; text: string };
 
-/**
- * 自動タグ付けの確認のダイアログ。「以下の値は無視する」のチェックボックスと、無視する値の一覧（✎ で編集、− で消す、＋ で加える）。
- * 一覧は変えるとすぐに保存する
- */
-export function AutotagDialog({ count, single, onConfirm, onClose }: Props) {
-  // 開くたびに ON から始める
-  const [ignore, setIgnore] = useState(true);
+type ListProps = {
+  load: () => Promise<string[]>;
+  save: (values: string[]) => Promise<void>;
+  /** チェックボックスが OFF（一覧を薄くする。編集はできる） */
+  off: boolean;
+  /** 一覧の名前（「無視する値」など）。ボタンの名前に使う */
+  what: string;
+  testId: string;
+  /** 編集を始めた・終えたとき */
+  onEditing: (editing: boolean) => void;
+};
+
+/** 編集できる一覧。各行の ✎（編集）・−（削除）と、最後の ＋（追加）。空・重なる値（大文字・小文字は区別しない）は入れない */
+function EditableList({ load, save, off, what, testId, onEditing }: ListProps) {
   const [values, setValues] = useState<string[] | null>(null);
-  const [editing, setEditing] = useState<Editing | null>(null);
+  const [editing, setEditingState] = useState<Editing | null>(null);
   const [error, setError] = useState("");
   // 入力欄の外を押して決めるとき（blur）と Enter が重ならないよう、決めたら印を付ける
   const committed = useRef(false);
-  useEscape(onClose);
   useEffect(() => {
-    api
-      .metaIgnoreValues()
+    load()
       .then(setValues)
       .catch((e) => setError(String(e)));
-  }, []);
+  }, [load]);
+  const setEditing = (e: Editing | null) => {
+    setEditingState(e);
+    onEditing(e !== null);
+  };
 
-  const save = (next: string[]) =>
-    api
-      .setMetaIgnoreValues(next)
+  const store = (next: string[]) =>
+    save(next)
       .then(() => {
         setValues(next);
         setError("");
@@ -65,7 +131,7 @@ export function AutotagDialog({ count, single, onConfirm, onClose }: Props) {
     }
     const next = editing.index === null ? [...values, text] : values.map((v, i) => (i === editing.index ? text : v));
     committed.current = true;
-    if (await save(next)) setEditing(null);
+    if (await store(next)) setEditing(null);
     committed.current = false;
   };
 
@@ -91,60 +157,41 @@ export function AutotagDialog({ count, single, onConfirm, onClose }: Props) {
     );
 
   return (
-    <div className="overlay">
-      <div className="dialog autotag-dialog" role="dialog" aria-label="ファイルの情報からタグを付ける" data-testid="autotag-dialog">
-        <div className="dialog-head">
-          <h2>ファイルの情報からタグを付ける</h2>
-        </div>
-        <p>
-          {single ? "このファイル" : `${count}件のファイル`}
-          の情報を読み、アーティスト・アルバム・ジャンル・作曲者のタグを付けます。
+    <div className="editable-list" data-testid={`${testId}-box`}>
+      <ul className={`ignore-list${off ? " off" : ""}`} data-testid={testId}>
+        {values?.map((v, i) => (
+          <li key={`${i}:${v}`} data-value={v}>
+            {editing?.index === i ? (
+              input(`${v}の新しい値`)
+            ) : (
+              <>
+                <span className="ignore-value">{v}</span>
+                <button className="icon" onClick={() => setEditing({ index: i, text: v })} title="編集" aria-label={`${v}を編集`}>
+                  ✎
+                </button>
+                <button className="icon" onClick={() => store(values.filter((_, j) => j !== i))} title="消す" aria-label={`${v}を消す`}>
+                  −
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+        {editing?.index === null && <li>{input(`加える${what}`)}</li>}
+      </ul>
+      <button
+        className="icon add-button"
+        onClick={() => setEditing({ index: null, text: "" })}
+        disabled={values === null || editing !== null}
+        title="加える"
+        aria-label={`${what}を加える`}
+      >
+        ＋
+      </button>
+      {error && (
+        <p className="error sub" data-testid={`${testId}-error`}>
+          {error}
         </p>
-        <label className="data-check">
-          <input type="checkbox" checked={ignore} onChange={(e) => setIgnore(e.target.checked)} />
-          以下の値は無視する
-        </label>
-        <ul className={`ignore-list${ignore ? "" : " off"}`} data-testid="ignore-values">
-          {values?.map((v, i) => (
-            <li key={`${i}:${v}`} data-value={v}>
-              {editing?.index === i ? (
-                input(`${v}の新しい値`)
-              ) : (
-                <>
-                  <span className="ignore-value">{v}</span>
-                  <button className="icon" onClick={() => setEditing({ index: i, text: v })} title="編集" aria-label={`${v}を編集`}>
-                    ✎
-                  </button>
-                  <button className="icon" onClick={() => save(values.filter((_, j) => j !== i))} title="消す" aria-label={`${v}を消す`}>
-                    −
-                  </button>
-                </>
-              )}
-            </li>
-          ))}
-          {editing?.index === null && <li>{input("加える値")}</li>}
-        </ul>
-        <button
-          className="icon"
-          onClick={() => setEditing({ index: null, text: "" })}
-          disabled={values === null || editing !== null}
-          title="加える"
-          aria-label="無視する値を加える"
-        >
-          ＋
-        </button>
-        {error && (
-          <p className="error sub" data-testid="ignore-error">
-            {error}
-          </p>
-        )}
-        <div className="row" style={{ justifyContent: "flex-end", marginTop: 6 }}>
-          <button onClick={onClose}>やめる</button>
-          <button onClick={() => onConfirm(ignore)} disabled={editing !== null}>
-            タグを付ける
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

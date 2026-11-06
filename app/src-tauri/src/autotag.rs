@@ -13,25 +13,47 @@ use crate::tags::{create_tag_under, find_tag, normalize_tag_name};
 pub const IGNORE_KEY: &str = "meta_ignore_values";
 /// 無視する値の一覧の初期値
 pub const DEFAULT_IGNORE: [&str; 3] = ["Unknown", "アーティスト情報なし", "Other"];
+/// 区切り文字の一覧（設定）
+pub const SEPARATORS_KEY: &str = "meta_separators";
+/// 区切り文字の一覧の初期値（「・」はカタカナの外国の名前を分けてしまうので入れない）
+pub const DEFAULT_SEPARATORS: [&str; 5] = [",", "/", "／", "feat.", "with"];
 
-/// 項目の名前（親のタグの名前）と、ファイルの中の情報での値
-fn fields(meta: &FileMeta) -> [(&'static str, Option<&str>); 4] {
+/// 項目の名前（親のタグの名前）、ファイルの中の情報での値、区切り文字で分けるか（アーティスト・作曲者だけ）
+fn fields(meta: &FileMeta) -> [(&'static str, Option<&str>, bool); 4] {
     [
-        ("アーティスト", meta.artist.as_deref()),
-        ("アルバム", meta.album.as_deref()),
-        ("ジャンル", meta.genre.as_deref()),
-        ("作曲者", meta.composer.as_deref()),
+        ("アーティスト", meta.artist.as_deref(), true),
+        ("アルバム", meta.album.as_deref(), false),
+        ("ジャンル", meta.genre.as_deref(), false),
+        ("作曲者", meta.composer.as_deref(), true),
     ]
+}
+
+fn saved_list(conn: &Connection, key: &str, defaults: &[&str]) -> Result<Vec<String>> {
+    let saved: Option<Vec<String>> = settings::get(conn, key)?;
+    Ok(saved.unwrap_or_else(|| defaults.iter().map(|s| s.to_string()).collect()))
 }
 
 /// 無視する値の一覧。まだ決めていなければ初期値
 pub fn ignore_values(conn: &Connection) -> Result<Vec<String>> {
-    let saved: Option<Vec<String>> = settings::get(conn, IGNORE_KEY)?;
-    Ok(saved.unwrap_or_else(|| DEFAULT_IGNORE.iter().map(|s| s.to_string()).collect()))
+    saved_list(conn, IGNORE_KEY, &DEFAULT_IGNORE)
+}
+
+/// 区切り文字の一覧。まだ決めていなければ初期値
+pub fn separators(conn: &Connection) -> Result<Vec<String>> {
+    saved_list(conn, SEPARATORS_KEY, &DEFAULT_SEPARATORS)
 }
 
 /// 無視する値の一覧を保存する。前後の空白を除き、空の値・同じ値（大文字・小文字は区別しない）があればエラー
 pub fn set_ignore_values(conn: &Connection, values: &[String]) -> Result<()> {
+    set_list(conn, IGNORE_KEY, values)
+}
+
+/// 区切り文字の一覧を保存する（決まりは無視する値と同じ）
+pub fn set_separators(conn: &Connection, values: &[String]) -> Result<()> {
+    set_list(conn, SEPARATORS_KEY, values)
+}
+
+fn set_list(conn: &Connection, key: &str, values: &[String]) -> Result<()> {
     let mut seen = std::collections::HashSet::new();
     let mut list = Vec::new();
     for v in values {
@@ -44,7 +66,54 @@ pub fn set_ignore_values(conn: &Connection, values: &[String]) -> Result<()> {
         }
         list.push(v.to_string());
     }
-    settings::set(conn, IGNORE_KEY, &Some(list))
+    settings::set(conn, key, &Some(list))
+}
+
+/// 値を区切り文字で分ける。大文字・小文字は区別しない。英字で始まる・終わる区切り文字（「feat.」「with」など）は、
+/// 前後が英数字でないとき（単語として）だけ区切る。分けた値は前後の空白を除き、空のものは除く
+pub fn split_value(value: &str, separators: &[String]) -> Vec<String> {
+    let chars: Vec<char> = value.chars().collect();
+    let lower: Vec<char> = chars.iter().map(|c| c.to_lowercase().next().unwrap_or(*c)).collect();
+    // 長い区切り文字を先に試す（「feat.」と「.」があるときなど）
+    let mut seps: Vec<Vec<char>> = separators
+        .iter()
+        .map(|s| s.trim().chars().map(|c| c.to_lowercase().next().unwrap_or(c)).collect::<Vec<char>>())
+        .filter(|s| !s.is_empty())
+        .collect();
+    seps.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    let word = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric() && c.is_ascii());
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i < chars.len() {
+        let hit = seps.iter().find(|sep| {
+            let end = i + sep.len();
+            if end > chars.len() || lower[i..end] != sep[..] {
+                return false;
+            }
+            // 英字で始まる区切り文字は前が、英字で終わる区切り文字は後ろが、英数字でないときだけ
+            let starts_word = sep.first().is_some_and(|c| c.is_ascii_alphabetic());
+            let ends_word = sep.last().is_some_and(|c| c.is_ascii_alphabetic());
+            !(starts_word && i > 0 && word(chars.get(i - 1))) && !(ends_word && word(chars.get(end)))
+        });
+        match hit {
+            Some(sep) => {
+                parts.push(chars[start..i].iter().collect::<String>());
+                i += sep.len();
+                start = i;
+            }
+            None => i += 1,
+        }
+    }
+    parts.push(chars[start..].iter().collect::<String>());
+    let mut out: Vec<String> = Vec::new();
+    for p in parts {
+        let p = p.trim().to_string();
+        if !p.is_empty() && !out.iter().any(|o| o.to_lowercase() == p.to_lowercase()) {
+            out.push(p);
+        }
+    }
+    out
 }
 
 /// 付けたタグ（項目の名前とタグの名前）
@@ -77,21 +146,28 @@ fn tag_id(tx: &Transaction, name: &str, parent: Option<i64>, created: &mut usize
     Ok(id)
 }
 
-/// ファイル（file_id）に、ファイルの中の情報のタグを付ける。ignore にある値（大文字・小文字は区別しない）は使わない。
+/// ファイル（file_id）に、ファイルの中の情報のタグを付ける。アーティスト・作曲者は separators で分け、分けた値ごとに付ける
+/// （separators が空なら分けない）。ignore にある値（大文字・小文字は区別しない）は使わない。
 /// 同じ名前のタグがあれば（どの親の下でも）それを付け、なければ項目の親のタグ（なければ最上位に作る）の下に作る
-pub fn apply(tx: &Transaction, file_id: i64, meta: &FileMeta, ignore: &[String]) -> Result<Applied> {
+pub fn apply(tx: &Transaction, file_id: i64, meta: &FileMeta, ignore: &[String], separators: &[String]) -> Result<Applied> {
     let mut result = Applied::default();
     let ignored = |v: &str| ignore.iter().any(|i| i.trim().eq_ignore_ascii_case(v) || i.trim() == v);
-    for (field, value) in fields(meta) {
-        let Some(value) = value.map(str::trim).filter(|v| !v.is_empty() && !ignored(v)) else { continue };
-        // タグの名前に使えない値（区切りの文字を含むなど）は使わない
-        let Ok(name) = normalize_tag_name(value) else { continue };
-        result.has_info = true;
-        let parent = tag_id(tx, field, None, &mut result.created)?;
-        let tag = tag_id(tx, &name, Some(parent), &mut result.created)?;
-        let n = tx.execute("INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)", params![file_id, tag])?;
-        if n > 0 {
-            result.added.push(AddedTag { field: field.to_string(), name });
+    for (field, value, splittable) in fields(meta) {
+        let Some(value) = value else { continue };
+        let values = if splittable { split_value(value, separators) } else { vec![value.trim().to_string()] };
+        for value in values {
+            if value.is_empty() || ignored(&value) {
+                continue;
+            }
+            // タグの名前に使えない値（区切りの文字を含むなど）は使わない
+            let Ok(name) = normalize_tag_name(&value) else { continue };
+            result.has_info = true;
+            let parent = tag_id(tx, field, None, &mut result.created)?;
+            let tag = tag_id(tx, &name, Some(parent), &mut result.created)?;
+            let n = tx.execute("INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)", params![file_id, tag])?;
+            if n > 0 {
+                result.added.push(AddedTag { field: field.to_string(), name });
+            }
         }
     }
     Ok(result)
@@ -123,7 +199,7 @@ mod tests {
 
     fn run(conn: &mut Connection, file: i64, m: &FileMeta, ignore: &[String]) -> Applied {
         let tx = conn.transaction().unwrap();
-        let r = apply(&tx, file, m, ignore).unwrap();
+        let r = apply(&tx, file, m, ignore, &[]).unwrap();
         tx.commit().unwrap();
         r
     }
@@ -174,6 +250,41 @@ mod tests {
         // 情報がなければ何もしない
         let r = run(&mut conn, 1, &FileMeta::default(), &ignore);
         assert!(!r.has_info && r.added.is_empty());
+    }
+
+    fn seps() -> Vec<String> {
+        DEFAULT_SEPARATORS.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn splits_values_by_separators() {
+        let split = |v: &str| split_value(v, &seps());
+        assert_eq!(split("清水依与吏/back number"), vec!["清水依与吏", "back number"]);
+        assert_eq!(split("A, B ／ C"), vec!["A", "B", "C"]);
+        // 大文字・小文字は区別しない。英字の区切り文字は単語としてだけ
+        assert_eq!(split("DJ X Feat. MC Y"), vec!["DJ X", "MC Y"]);
+        assert_eq!(split("Band WITH Orchestra"), vec!["Band", "Orchestra"]);
+        assert_eq!(split("Smith"), vec!["Smith"]);
+        assert_eq!(split("Withered Tree"), vec!["Withered Tree"]);
+        assert_eq!(split("Starwith"), vec!["Starwith"]);
+        // 「・」は初期値にないので分けない。空の部分・同じ値は除く
+        assert_eq!(split("ジョン・レノン"), vec!["ジョン・レノン"]);
+        assert_eq!(split("A,,A, "), vec!["A"]);
+        // 区切り文字がなければ分けない
+        assert_eq!(split_value("A/B", &[]), vec!["A/B"]);
+    }
+
+    #[test]
+    fn splits_only_artist_and_composer() {
+        let mut conn = test_db(&["a.mp3"], &[]);
+        let tx = conn.transaction().unwrap();
+        let m = meta("歌手A feat. 歌手B", "アルバム/Disc 1", "Rock/Pop", "作曲家A / Unknown");
+        let r = apply(&tx, 1, &m, &["Unknown".to_string()], &seps()).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(
+            r.added.iter().map(|a| format!("{}:{}", a.field, a.name)).collect::<Vec<_>>(),
+            vec!["アーティスト:歌手A", "アーティスト:歌手B", "アルバム:アルバム/Disc 1", "ジャンル:Rock/Pop", "作曲者:作曲家A"]
+        );
     }
 
     #[test]

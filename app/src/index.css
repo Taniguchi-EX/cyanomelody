@@ -1482,11 +1482,15 @@ button.add-button:hover:not(:disabled) {
 }
 
 .ignore-list button.icon,
-.autotag-dialog > button.icon {
+.editable-list > button.icon {
   border: none;
   background: none;
 }
 
-.autotag-dialog > button.icon {
+.editable-list > button.icon {
   margin-left: 22px;
+}
+
+.editable-list {
+  margin-bottom: 6px;
 }

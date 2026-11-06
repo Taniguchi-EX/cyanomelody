@@ -52,6 +52,8 @@ pub struct DataFile {
     pub new_tag: Option<TagSettings>,
     /// 自動タグ付けで無視する値の一覧
     pub meta_ignore: Option<Vec<String>>,
+    /// 自動タグ付けの区切り文字の一覧
+    pub meta_separators: Option<Vec<String>>,
     /// 画面の設定（画面側が持つもの。key と値）
     pub screen: Option<serde_json::Map<String, serde_json::Value>>,
 }
@@ -251,6 +253,7 @@ pub fn export(
         data.licenses = read_credits(conn, "licenses")?;
         data.new_tag = Some(settings::get(conn, settings::NEW_TAG)?);
         data.meta_ignore = Some(crate::autotag::ignore_values(conn)?);
+        data.meta_separators = Some(crate::autotag::separators(conn)?);
         data.screen = screen;
     }
     // 曲：ライブラリを選んだときはすべて。ほかは、書き出す項目に関係する曲
@@ -645,15 +648,16 @@ pub fn import_data(conn: &mut Connection, data: &DataFile, sections: Sections, r
                 result.credits_set += stmt.execute(params![local, id])?;
             }
         }
-        if let Some(values) = &data.meta_ignore {
-            // 空の値・重なる値は除いて保存する
+        // 空の値・重なる値は除いて保存する
+        let clean = |values: &[String]| -> Vec<String> {
             let mut seen = HashSet::new();
-            let list: Vec<String> = values
-                .iter()
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty() && seen.insert(v.to_lowercase()))
-                .collect();
-            crate::autotag::set_ignore_values(&tx, &list)?;
+            values.iter().map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && seen.insert(v.to_lowercase())).collect()
+        };
+        if let Some(values) = &data.meta_ignore {
+            crate::autotag::set_ignore_values(&tx, &clean(values))?;
+        }
+        if let Some(values) = &data.meta_separators {
+            crate::autotag::set_separators(&tx, &clean(values))?;
         }
         if let Some(new_tag) = &data.new_tag {
             settings::set(&tx, settings::NEW_TAG, &sanitize_settings(new_tag))?;
@@ -938,6 +942,7 @@ mod tests {
         .unwrap();
         settings::set(&conn, settings::NEW_TAG, &TagSettings { bg_color: Some("#00ff00".into()), ..Default::default() }).unwrap();
         crate::autotag::set_ignore_values(&conn, &["Unknown".into(), "情報なし".into()]).unwrap();
+        crate::autotag::set_separators(&conn, &["&".into()]).unwrap();
         conn
     }
 
@@ -996,6 +1001,7 @@ mod tests {
         assert_eq!(crate::tags::new_tag_settings(&dest).unwrap().bg_color.as_deref(), Some("#00ff00"));
         // 自動タグ付けで無視する値の一覧
         assert_eq!(crate::autotag::ignore_values(&dest).unwrap(), vec!["Unknown", "情報なし"]);
+        assert_eq!(crate::autotag::separators(&dest).unwrap(), vec!["&"]);
         assert_eq!(r.screen.unwrap()["volume"], 0.5);
         // プレイリスト：項目・別名・再生方法・fx・タグの組み合わせ・子のプレイリスト
         let items = names(

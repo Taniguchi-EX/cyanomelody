@@ -176,7 +176,7 @@ fn run_hashing(app: AppHandle, job: Arc<HashJob>) {
 }
 
 /// 対象のファイルに、ファイルの中の情報からタグを付ける（別スレッド）。進み具合はイベント "autotag-progress" で知らせる
-fn run_autotag(app: AppHandle, job: Arc<AutotagJob>, file_ids: Vec<i64>, ignore: Vec<String>) {
+fn run_autotag(app: AppHandle, job: Arc<AutotagJob>, file_ids: Vec<i64>, ignore: Vec<String>, separators: Vec<String>) {
     let state = app.state::<AppState>();
     let mut progress = AutotagProgress { running: true, total: file_ids.len(), ..Default::default() };
     let notify = |p: &AutotagProgress| {
@@ -208,7 +208,7 @@ fn run_autotag(app: AppHandle, job: Arc<AutotagJob>, file_ids: Vec<i64>, ignore:
                     progress.failed += 1;
                     continue;
                 };
-                let applied = autotag::apply(&tx, *id, meta, &ignore)?;
+                let applied = autotag::apply(&tx, *id, meta, &ignore, &separators)?;
                 progress.created += applied.created;
                 if !applied.added.is_empty() {
                     progress.tagged += 1;
@@ -271,6 +271,17 @@ async fn set_meta_ignore_values(state: State<'_, AppState>, values: Vec<String>)
     autotag::set_ignore_values(&state.conn(), &values)
 }
 
+/// 自動タグ付けの区切り文字の一覧
+#[tauri::command]
+async fn meta_separators(state: State<'_, AppState>) -> Result<Vec<String>> {
+    autotag::separators(&state.conn())
+}
+
+#[tauri::command]
+async fn set_meta_separators(state: State<'_, AppState>, values: Vec<String>) -> Result<()> {
+    autotag::set_separators(&state.conn(), &values)
+}
+
 /// ファイル1件の自動タグ付けの結果
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -281,34 +292,40 @@ struct AutotagFileResult {
     applied: autotag::Applied,
 }
 
-/// ファイル1件に、ファイルの中の情報からタグを付ける。ignore なら、無視する値の一覧の値は使わない
+/// ファイル1件に、ファイルの中の情報からタグを付ける。ignore なら、無視する値の一覧の値は使わない。
+/// split なら、アーティスト・作曲者を区切り文字の一覧で分ける
 #[tauri::command]
-async fn autotag_file(state: State<'_, AppState>, file_id: i64, ignore: bool) -> Result<AutotagFileResult> {
-    let (path, ignore_list) = {
+async fn autotag_file(state: State<'_, AppState>, file_id: i64, ignore: bool, split: bool) -> Result<AutotagFileResult> {
+    let (path, ignore_list, separators) = {
         let conn = state.conn();
         let path = autotag::file_path(&conn, file_id)?.ok_or_else(|| Error::invalid("見つからないファイルは読めません"))?;
-        (path, if ignore { autotag::ignore_values(&conn)? } else { vec![] })
+        (
+            path,
+            if ignore { autotag::ignore_values(&conn)? } else { vec![] },
+            if split { autotag::separators(&conn)? } else { vec![] },
+        )
     };
     let Some(meta) = metadata::file_meta(&path) else {
         return Ok(AutotagFileResult { readable: false, applied: Default::default() });
     };
     let mut conn = state.conn();
     let tx = conn.transaction()?;
-    let applied = autotag::apply(&tx, file_id, &meta, &ignore_list)?;
+    let applied = autotag::apply(&tx, file_id, &meta, &ignore_list, &separators)?;
     tx.commit()?;
     Ok(AutotagFileResult { readable: true, applied })
 }
 
 /// たくさんのファイルの自動タグ付けを、裏で始める。既に行っている間は始めない
 #[tauri::command]
-async fn start_autotag(app: AppHandle, state: State<'_, AppState>, file_ids: Vec<i64>, ignore: bool) -> Result<()> {
+async fn start_autotag(app: AppHandle, state: State<'_, AppState>, file_ids: Vec<i64>, ignore: bool, split: bool) -> Result<()> {
     let job = state.autotag.clone();
     if job.running.swap(true, Ordering::SeqCst) {
         return Err(Error::invalid("ファイルの情報からタグを付けている途中です"));
     }
     job.cancel.store(false, Ordering::SeqCst);
     let ignore_list = if ignore { autotag::ignore_values(&state.conn())? } else { vec![] };
-    std::thread::spawn(move || run_autotag(app, job, file_ids, ignore_list));
+    let separators = if split { autotag::separators(&state.conn())? } else { vec![] };
+    std::thread::spawn(move || run_autotag(app, job, file_ids, ignore_list, separators));
     Ok(())
 }
 
@@ -944,6 +961,8 @@ pub fn run() {
             check_update,
             meta_ignore_values,
             set_meta_ignore_values,
+            meta_separators,
+            set_meta_separators,
             autotag_file,
             start_autotag,
             cancel_autotag,
