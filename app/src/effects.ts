@@ -8,7 +8,8 @@ export type Effect =
   | { kind: "reverb"; seconds: number; mix: number }
   | { kind: "echo"; delay: number; feedback: number; mix: number }
   | { kind: "fadeIn"; seconds: number }
-  | { kind: "fadeOut"; seconds: number };
+  | { kind: "fadeOut"; seconds: number }
+  | { kind: "offVocal"; strength: number; lowHz: number; highHz: number };
 
 export type EffectKind = Effect["kind"];
 
@@ -27,6 +28,8 @@ type NumberParam = { key: string; label: string; unit: string; min: number; max:
 type EffectDef = {
   kind: EffectKind;
   label: string;
+  /** エフェクトの名前にマウスを乗せたときの説明 */
+  note?: string;
   params: NumberParam[];
   defaults: Effect;
 };
@@ -85,6 +88,17 @@ export const EFFECT_DEFS: EffectDef[] = [
     params: [{ key: "seconds", label: "長さ", unit: "秒", min: 0, max: 600, step: 0.1 }],
     defaults: { kind: "fadeOut", seconds: 1 },
   },
+  {
+    kind: "offVocal",
+    label: "簡易オフボーカル",
+    note: "真ん中から聞こえる音のうち、下〜上の周波数の音（ボーカルの音域）を弱めます。モノラルの音にはかかりません",
+    params: [
+      { key: "strength", label: "消す強さ", unit: "%", min: 0, max: 1, step: 0.05, percent: true },
+      { key: "lowHz", label: "下の周波数", unit: "Hz", min: 50, max: 500, step: 10 },
+      { key: "highHz", label: "上の周波数", unit: "Hz", min: 2000, max: 16000, step: 100 },
+    ],
+    defaults: { kind: "offVocal", strength: 1, lowHz: 120, highHz: 9000 },
+  },
 ];
 
 export const effectDef = (kind: EffectKind) => EFFECT_DEFS.find((d) => d.kind === kind)!;
@@ -100,6 +114,8 @@ export function describeEffect(e: Effect): string {
     return p.percent ? `${Math.round(v * 100)}%` : `${v}${p.unit}`;
   });
   if (e.kind === "normalize") values.unshift(e.method === "peak" ? "ピーク" : "平均");
+  // 周波数は「120Hz〜9000Hz」のように範囲で出す
+  if (e.kind === "offVocal") return `${def.label} ${values[0]} ${e.lowHz}Hz〜${e.highHz}Hz`;
   return [def.label, ...values].join(" ");
 }
 

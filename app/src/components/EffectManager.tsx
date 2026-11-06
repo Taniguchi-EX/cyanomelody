@@ -226,7 +226,9 @@ export function EffectManager({
                     const def = effectDef(e.kind);
                     return (
                       <li key={i} data-testid="effect-step" data-kind={e.kind}>
-                        <span className="effect-label">{def.label}</span>
+                        <span className="effect-label" title={def.note}>
+                          {def.label}
+                        </span>
                         {e.kind === "normalize" && (
                           <select
                             value={e.method}

@@ -256,4 +256,27 @@ await step("E13", "再生の欄のエフェクトセットからも管理画面�
   await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
 });
 
+await step("E14", "簡易オフボーカル：追加するエフェクトにあり、消す強さ・下の周波数・上の周波数（最初は 100%・120Hz・9000Hz）を決められる。名前にマウスを乗せるとモノラルにかからないことが出る。試聴で鳴る", async () => {
+  await openFrom("chime.wav", "新しいfxを作る");
+  await nameField().fill("カラオケ");
+  await addEffect("offVocal");
+  expect((await steps()) === "offVocal", await steps());
+  const step = page.getByTestId("effect-step").first();
+  expect((await step.locator(".effect-label").innerText()) === "簡易オフボーカル", await step.locator(".effect-label").innerText());
+  expect((await step.locator(".effect-label").getAttribute("title")).includes("モノラルの音にはかかりません"), "説明がない");
+  expect((await page.getByLabel("1番目の消す強さ").inputValue()) === "100", await page.getByLabel("1番目の消す強さ").inputValue());
+  expect((await page.getByLabel("1番目の下の周波数").inputValue()) === "120", await page.getByLabel("1番目の下の周波数").inputValue());
+  expect((await page.getByLabel("1番目の上の周波数").inputValue()) === "9000", await page.getByLabel("1番目の上の周波数").inputValue());
+  await page.getByLabel("1番目の消す強さ").fill("80");
+  await save();
+  const title = await chainItem("カラオケ").getAttribute("title");
+  expect(title === "簡易オフボーカル 80% 120Hz〜9000Hz", title);
+  await shot("E14_簡易オフボーカル");
+  // 試聴：エフェクトをかけた音が鳴る（テストの音はモノラルでないもの・あるもののどちらでも鳴る）
+  await page.locator(".preview-button").click();
+  await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
+  await page.locator(".preview-button").click();
+  await close();
+});
+
 await ui.finish();
