@@ -154,6 +154,8 @@ export const api = {
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   /** 指定したidのうち、ライブラリにあるもの */
   existingFileIds: (fileIds: number[]) => invoke<number[]>("existing_file_ids", { fileIds }),
+  /** ファイルを削除する（ごみ箱に移す。permanent なら完全に消す）。削除できたファイルはライブラリから外す */
+  deleteFiles: (fileIds: number[], permanent: boolean) => invoke<DeleteResult>("delete_files", { fileIds, permanent }),
   /** 自動タグ付けで無視する値の一覧 */
   metaIgnoreValues: () => invoke<string[]>("meta_ignore_values"),
   setMetaIgnoreValues: (values: string[]) => invoke<void>("set_meta_ignore_values", { values }),
@@ -517,3 +519,11 @@ export function describeAutotag(p: AutotagProgress): string {
   if (p.failed) parts.push(`読めなかったファイル ${p.failed}件`);
   return `${p.cancelled ? "ファイルの情報からのタグ付けを中止しました" : "ファイルの情報からタグを付けました"}（読んだファイル ${p.done}件、${parts.join("、")}）`;
 }
+
+/** ファイルの削除の結果 */
+export type DeleteResult = {
+  /** 削除して、ライブラリから外したファイルの数 */
+  deleted: number;
+  /** 削除できなかったファイル（ライブラリに残る） */
+  failed: { id: number; relPath: string; reason: string }[];
+};

@@ -12,7 +12,7 @@ data="${1:?テストデータのフォルダを指定してください}"
 work="${2:?作業用フォルダを指定してください}"
 shift 2
 scripts=("$@")
-[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tags.mjs hash-features.mjs credits.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs settings.mjs autotag.mjs)
+[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tags.mjs hash-features.mjs credits.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs settings.mjs autotag.mjs delete.mjs)
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$work"
@@ -25,6 +25,8 @@ for s in "${scripts[@]}"; do
   name="${s%.mjs}"
   rm -rf "$work/$name"
   mkdir -p "$work/$name/appdata"
+  # ファイルの削除は、使っている PC のごみ箱の代わりに、このフォルダへ移す（テストのファイルがごみ箱にたまらないように）
+  CYANOMELODY_TRASH_DIR="$work/$name/trash" \
   CYANOMELODY_DATA_DIR="$work/$name/appdata" \
     WEBVIEW2_USER_DATA_FOLDER="$work/$name/webview" \
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 \

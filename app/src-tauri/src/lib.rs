@@ -4,6 +4,7 @@ mod chains;
 mod effect_cache;
 mod credits;
 mod db;
+mod deleting;
 mod effects;
 mod error;
 mod export;
@@ -258,6 +259,14 @@ async fn cancel_hashing(state: State<'_, AppState>) -> Result<()> {
 #[tauri::command]
 async fn hashing_progress(state: State<'_, AppState>) -> Result<HashProgress> {
     Ok(state.hashing.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
+}
+
+/// ファイルを削除する（ごみ箱に移す。permanent なら完全に消す）。削除できたファイルはライブラリから外す。
+/// 画面テストでは、環境変数 CYANOMELODY_TRASH_DIR のフォルダをごみ箱の代わりにする
+#[tauri::command]
+async fn delete_files(state: State<'_, AppState>, file_ids: Vec<i64>, permanent: bool) -> Result<deleting::DeleteResult> {
+    let trash_dir = std::env::var_os("CYANOMELODY_TRASH_DIR").map(PathBuf::from);
+    deleting::delete_files(&mut state.conn(), &file_ids, permanent, trash_dir.as_deref())
 }
 
 /// 自動タグ付けで無視する値の一覧
@@ -960,6 +969,7 @@ pub fn run() {
             track_title,
             check_update,
             meta_ignore_values,
+            delete_files,
             set_meta_ignore_values,
             meta_separators,
             set_meta_separators,

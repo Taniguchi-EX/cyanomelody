@@ -1494,3 +1494,22 @@ button.add-button:hover:not(:disabled) {
 .editable-list {
   margin-bottom: 6px;
 }
+
+/* 実際のファイルも消すボタン（右の欄の一番下） */
+.delete-row {
+  margin-top: 18px;
+}
+
+button.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* ファイルの削除の確認：対象のファイル名 */
+.delete-files {
+  margin: 4px 0;
+  padding-left: 18px;
+  max-height: 220px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}

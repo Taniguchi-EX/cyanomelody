@@ -54,6 +54,7 @@ import { TagDetail } from "./components/TagDetail";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { BulkPanel } from "./components/BulkPanel";
 import { AutotagDialog } from "./components/AutotagDialog";
+import { DeleteDialog } from "./components/DeleteDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { tagStyleMap } from "./tagColors";
 import { CreditField } from "./components/CreditField";
@@ -139,6 +140,11 @@ export default function App() {
   /** 自動タグ付けの確認のダイアログ（対象のファイル。single はファイルの詳細から開いた） */
   const [autotagDialog, setAutotagDialog] = useState<{ fileIds: number[]; single: boolean } | null>(null);
   const [autotagProgress, setAutotagProgress] = useState<AutotagProgress | null>(null);
+  /** ファイルの削除の確認（permanent はごみ箱に移せなかったファイルを完全に消す確認） */
+  const [deleteDialog, setDeleteDialog] = useState<{
+    permanent: boolean;
+    files: { id: number; relPath: string; reason?: string }[];
+  } | null>(null);
   /** 右の欄に出している項目のファイル（ファイルの一覧に出ていないこともあるので、別に読む） */
   const [itemFile, setItemFile] = useState<AudioFile | null>(null);
   /** データを読み直すたびに増える（右の欄の項目のファイルを読み直すのに使う） */
@@ -417,6 +423,36 @@ export default function App() {
       await api.addTag(bulkFileIds, name);
       showInfo(`${bulkFileIds.length}件にタグ「${name.trim()}」を付けました`);
     });
+
+  /** 「ファイルを削除する」：見つかっているファイル（リンク切れは除く）の確認のダイアログを出す */
+  const startDelete = async (fileIds: number[]) => {
+    try {
+      const list = await api.listFiles({ ...EMPTY_FILTER, fileIds });
+      const files = list.filter((f) => !f.missing).map((f) => ({ id: f.id, relPath: f.relPath }));
+      if (files.length === 0) showInfo("削除できるファイルはありません（リンク切れのファイルは「ライブラリから外す」で外せます）");
+      else setDeleteDialog({ permanent: false, files });
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  /** 削除の確認で「削除する」「完全に削除する」。鳴らしているファイルなら先に止める。ごみ箱に移せなかったものは、完全に消すか聞く */
+  const confirmDelete = () => {
+    if (!deleteDialog) return;
+    const { permanent, files } = deleteDialog;
+    const ids = files.map((f) => f.id);
+    setDeleteDialog(null);
+    if (playingFileId !== null && ids.includes(playingFileId)) {
+      audio.stop();
+      audio.stopPreview();
+    }
+    run(async () => {
+      const r = await api.deleteFiles(ids, permanent);
+      const done = permanent ? `${r.deleted}件を完全に削除しました` : `${r.deleted}件を削除しました（ごみ箱に移しました）`;
+      showInfo(r.failed.length > 0 ? `${done}。${r.failed.length}件は削除できませんでした` : done);
+      if (!permanent && r.failed.length > 0) setDeleteDialog({ permanent: true, files: r.failed });
+    });
+  };
 
   /** 自動タグ付けの確認のダイアログで「タグを付ける」 */
   const runAutotag = (fileIds: number[], single: boolean, ignore: boolean, split: boolean) => {
@@ -1174,6 +1210,7 @@ export default function App() {
             onAddTag={bulkAddTag}
             onRemoveTag={bulkRemoveTag}
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
+            onDelete={() => startDelete(bulkFileIds)}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={openPlaylist}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}
@@ -1212,6 +1249,7 @@ export default function App() {
           onAddTag={addTag}
           onRemoveTag={removeTag}
           onAutotag={() => focusedFile && setAutotagDialog({ fileIds: [focusedFile.id], single: true })}
+          onDelete={() => focusedFile && startDelete([focusedFile.id])}
           onRemoveMissing={() => removeMissing(focusedIds(), 1)}
           onRelink={() => relink(focusedIds())}
           onLinkFile={() => focusedFile && linkMissingFile(focusedFile)}
@@ -1293,6 +1331,17 @@ export default function App() {
           previewing={audio.previewId !== null && audio.previewId === effectDialog.target?.id}
           onStopPreview={audio.stopPreview}
           onClose={() => setEffectDialog(null)}
+        />
+      )}
+      {deleteDialog && (
+        <DeleteDialog
+          permanent={deleteDialog.permanent}
+          files={deleteDialog.files}
+          onConfirm={confirmDelete}
+          onClose={() => {
+            if (deleteDialog.permanent) showInfo(`${deleteDialog.files.length}件は削除していません`);
+            setDeleteDialog(null);
+          }}
         />
       )}
       {autotagDialog && (

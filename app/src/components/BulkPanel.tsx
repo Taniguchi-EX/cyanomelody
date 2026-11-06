@@ -24,6 +24,8 @@ type Props = {
   onRemoveTag: (tag: TagCount) => void;
   /** 「ファイルの情報からタグを付ける」（確認のダイアログを出す） */
   onAutotag: () => void;
+  /** 「ファイルを削除する」（確認のダイアログを出す。リンク切れのファイルは除く） */
+  onDelete: () => void;
   onAddToPlaylist: (playlistId: number) => void;
   onOpenPlaylist: (playlistId: number) => void;
   onRemoveFromPlaylist: (playlist: TagCount) => void;
@@ -48,6 +50,7 @@ export function BulkPanel({
   onAddTag,
   onRemoveTag,
   onAutotag,
+  onDelete,
   onAddToPlaylist,
   onOpenPlaylist,
   onRemoveFromPlaylist,
@@ -214,6 +217,17 @@ export function BulkPanel({
               </div>
             </div>
           )}
+          {/* 実際のファイルも消す操作は、一番下に置く */}
+          <div className="row delete-row">
+            <button
+              className="danger"
+              onClick={onDelete}
+              disabled={busy || data.missingIds.length === fileIds.length}
+              title="見つかっているファイルをごみ箱に移し、ライブラリから外す（リンク切れのファイルは除く）"
+            >
+              ファイルを削除する
+            </button>
+          </div>
         </>
       )}
     </section>

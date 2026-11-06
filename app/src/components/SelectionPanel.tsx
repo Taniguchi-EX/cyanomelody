@@ -17,6 +17,8 @@ type Props = {
   onRemoveTag: (tagId: number) => void;
   /** 「ファイルの情報からタグを付ける」（確認のダイアログを出す） */
   onAutotag: () => void;
+  /** 「ファイルを削除する」（確認のダイアログを出す） */
+  onDelete: () => void;
   onRemoveMissing: () => void;
   onRelink: () => void;
   /** 見つからないファイルを、選んだファイルにひも付ける */
@@ -45,6 +47,7 @@ export function SelectionPanel({
   onAddTag,
   onRemoveTag,
   onAutotag,
+  onDelete,
   onRemoveMissing,
   onRelink,
   onLinkFile,
@@ -232,6 +235,17 @@ export function SelectionPanel({
           </div>
         </>
       )}
+      {/* 実際のファイルも消す操作は、一番下に置く */}
+      <div className="row delete-row">
+        <button
+          className="danger"
+          onClick={onDelete}
+          disabled={busy || file.missing}
+          title={file.missing ? "見つからないファイルは「ライブラリから外す」で外せます" : "ごみ箱に移し、ライブラリから外す"}
+        >
+          ファイルを削除する
+        </button>
+      </div>
     </section>
   );
 }
