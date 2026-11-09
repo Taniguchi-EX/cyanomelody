@@ -125,6 +125,59 @@ h2:first-child {
   background: var(--bg);
 }
 
+/* ファイルの行のタグ。1行に収まる分だけ出し（折り返した2行目以降は隠す）、残りは「+N tags」。行の幅の半分まで（ファイル名の場所を残す） */
+.row-tags {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+}
+
+.row-tags-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  height: 20px;
+  overflow: hidden;
+}
+
+.row-tags .chip,
+.tags-popup .chip {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 18px;
+}
+
+.row-tags-box .chip {
+  margin-top: 1px;
+}
+
+.chip.more-tags {
+  flex: none;
+  color: var(--fg-sub);
+  background: var(--bg-sub);
+}
+
+/* たたんだタグをすべて出す欄（マウスを乗せている間だけ） */
+.tags-popup {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  max-width: 420px;
+  padding: 6px 8px 6px 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  pointer-events: none;
+}
+
 /* 重複を見るときの、ハッシュ値の色の印（ハッシュ値がなければ点線の枠） */
 .hash {
   flex: none;
@@ -256,11 +309,13 @@ h2:first-child {
   padding: 0 6px;
 }
 
-/* 再生の欄。左・中央・右の欄をまたぐ。左に曲の名前、中央にボタンとシークバー */
+/* 再生の欄。左・中央・右の欄をまたぐ。左に曲の名前、中央にボタンとシークバー。
+   左右は同じ幅（1fr）にして中央を真ん中に置く。ただし右は中身が収まる幅より狭くしない。
+   狭くなって右の幅が足りなくなると、左が縮み、中央が少しずつ左へずれる */
 .play-area {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 480px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 480px) minmax(max-content, 1fr);
   gap: 16px;
   align-items: center;
   padding: 6px 12px;
@@ -1112,12 +1167,13 @@ button.filter-chip:hover .chip-x {
 /* ===== エフェクトセットの管理画面 ===== */
 
 .effect-dialog {
-  width: min(900px, calc(100% - 32px));
+  width: min(1200px, calc(100% - 32px));
 }
 
+/* 右の欄は中身（試聴の曲の名前など）で広げない（長い名前は「…」で省く） */
 .effect-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: 16px;
 }
 

@@ -3,6 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
 import { baseName } from "../paths";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
+import { RowTags } from "./RowTags";
 
 const ROW_HEIGHT = 30;
 
@@ -155,13 +156,7 @@ export function FileList({
                   <span className="file-name" title={f.relPath}>
                     {baseName(f.relPath)}
                   </span>
-                  <span>
-                    {f.tags.map((t) => (
-                      <span className="chip" key={t.id} style={tagStyles.get(t.id)}>
-                        {t.name}
-                      </span>
-                    ))}
-                  </span>
+                  <RowTags tags={f.tags} tagStyles={tagStyles} />
                   {playingId === f.id && (
                     <div className="row-progress" data-testid="row-progress" style={{ width: `${progress * 100}%` }} />
                   )}

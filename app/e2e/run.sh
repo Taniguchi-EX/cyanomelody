@@ -12,7 +12,7 @@ data="${1:?テストデータのフォルダを指定してください}"
 work="${2:?作業用フォルダを指定してください}"
 shift 2
 scripts=("$@")
-[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tags.mjs hash-features.mjs credits.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs settings.mjs autotag.mjs delete.mjs)
+[ ${#scripts[@]} -eq 0 ] && scripts=(tag-management.mjs tags.mjs hash-features.mjs credits.mjs bulk.mjs facets.mjs playlists.mjs effects.mjs export.mjs settings.mjs autotag.mjs delete.mjs layout.mjs)
 
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$work"
