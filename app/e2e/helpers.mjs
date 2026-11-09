@@ -251,6 +251,54 @@ export async function connect(shotDir) {
       await ui.waitIdle();
     },
     /** 右の欄のプルダウンで、表示中のファイルをプレイリストに加える（選ぶとすぐ加わる） */
+    /** 左の欄のプレイリストの行 */
+    playlistItem: (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`),
+    /** プレイリストの編集画面（重ねて出す） */
+    editor: () => page.getByTestId("playlist-editor"),
+    /** 編集画面を開いていれば閉じる */
+    async closeEditor() {
+      if ((await ui.editor().count()) === 0) return;
+      await ui.editor().getByRole("button", { name: "閉じる", exact: true }).click();
+      await ui.editor().waitFor({ state: "detached", timeout: 3000 });
+    },
+    /** 編集画面を閉じ、プレイリストの選択も外す（ライブラリの一覧に戻る） */
+    async leavePlaylist() {
+      await ui.closeEditor();
+      const chip = page.getByTestId("playlist-filter");
+      if ((await chip.count()) > 0) await ui.filtered(() => chip.click());
+    },
+    /** 左の欄の「＋」でプレイリストを作る（編集画面を開いていれば閉じてから） */
+    async createPlaylist(name) {
+      await ui.closeEditor();
+      await page.getByRole("button", { name: "プレイリストを作る" }).click();
+      await page.getByLabel("新しいプレイリストの名前").fill(name);
+      await page.getByLabel("新しいプレイリストの名前").press("Enter");
+      await ui.waitIdle();
+    },
+    /** 左の欄の行を押してプレイリストを選ぶ（抽選して、中央の一覧がその並びになる）。選んでいれば何もしない */
+    async selectPlaylist(name) {
+      await ui.closeEditor();
+      if ((await page.getByTestId("playlist-filter").filter({ hasText: name }).count()) > 0) return;
+      await ui.filtered(() => ui.playlistItem(name).locator(".tag-name").click());
+      await page.getByTestId("list-title").filter({ hasText: name }).waitFor({ timeout: 3000 });
+    },
+    /** 左の欄の行のダブルクリックで、プレイリストの編集画面を開く（1回目の押しで選ぶ） */
+    async openEditor(name) {
+      await ui.closeEditor();
+      await ui.playlistItem(name).locator(".tag-name").dblclick();
+      await ui.editor().waitFor({ timeout: 3000 });
+      await page.getByTestId("playlist-title").filter({ hasText: name }).waitFor({ timeout: 3000 });
+    },
+    /** 編集画面で、タグの組み合わせの項目を加える */
+    async addCombo(tags) {
+      const input = page.getByLabel("組み合わせに加えるタグ");
+      for (const t of tags) {
+        await input.fill(t);
+        await input.press("Enter");
+      }
+      await page.getByRole("button", { name: "タグの組み合わせを追加" }).click();
+      await ui.waitIdle();
+    },
     async addToPlaylistHere(name) {
       await page.getByLabel("このファイルを加えるプレイリスト").selectOption({ label: name });
       await ui.waitIdle();

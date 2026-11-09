@@ -294,14 +294,8 @@ await step("E14", "簡易オフボーカル：追加するエフェクトにあ�
 
 await step("E15", "入れ子で項目のエフェクトが2つかかる曲では、再生の欄に「内側 → 外側」の順で名前を出す", async () => {
   // 親のプレイリストに「シナリオ」を参照で入れ、その項目に「再生の欄の fx」を付ける（シナリオの chime.wav には「カラオケ」が付いている）
-  const editor = page.getByTestId("playlist-editor");
-  if ((await editor.count()) > 0) await editor.getByRole("button", { name: "閉じる", exact: true }).click();
-  await page.getByRole("button", { name: "プレイリストを作る" }).click();
-  await page.getByLabel("新しいプレイリストの名前").fill("親");
-  await page.getByLabel("新しいプレイリストの名前").press("Enter");
-  await waitIdle();
-  await page.locator(`[data-testid=playlist][data-playlist-name="親"] .tag-name`).dblclick();
-  await page.getByTestId("playlist-title").filter({ hasText: "親" }).waitFor({ timeout: 3000 });
+  await ui.createPlaylist("親");
+  await ui.openEditor("親");
   await page.getByLabel("加えるプレイリスト").selectOption({ label: "シナリオ" });
   await waitIdle();
   await fx("シナリオ").selectOption({ label: "再生の欄の fx" });

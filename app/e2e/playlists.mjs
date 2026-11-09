@@ -12,7 +12,6 @@ const formats = path.join(dataDir, "formats");
 const ui = await connect(shotDir);
 const { page, step, shot, status, row, tagItem, waitIdle, addFolder, addTag } = ui;
 
-const playlistItem = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`);
 /** 左の欄のプレイリストを「名前:深さ」で表示順に */
 const tree = () =>
   page
@@ -24,7 +23,6 @@ const items = () =>
     rows.map((r) => `${r.querySelector(".item-kind").title}:${r.querySelector(".item-content")?.textContent ?? ""}`),
   );
 const itemRow = (content) => page.getByTestId("playlist-item").filter({ hasText: content });
-const editor = () => page.getByTestId("playlist-editor");
 /** 中央の一覧の行（相対パス、表示順） */
 const rels = () => page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
 /** 中央の一覧の行の名前（別名があれば別名）と来た項目のアイコン */
@@ -34,49 +32,13 @@ const rowNames = () =>
   );
 const listTitle = () => page.getByTestId("list-title").innerText();
 
-/** 編集画面を開いていれば閉じる */
-async function closeEditor() {
-  if ((await editor().count()) === 0) return;
-  await editor().getByRole("button", { name: "閉じる", exact: true }).click();
-  await editor().waitFor({ state: "detached", timeout: 3000 });
-}
+const { playlistItem, editor, closeEditor, createPlaylist, addCombo } = ui;
+const select = ui.selectPlaylist;
+const open = ui.openEditor;
 /** 編集画面を閉じ、プレイリストの選択も外して、ライブラリの一覧に戻る */
 async function back() {
-  await closeEditor();
-  const chip = page.getByTestId("playlist-filter");
-  if ((await chip.count()) > 0) await ui.filtered(() => chip.click());
+  await ui.leavePlaylist();
   await page.getByTestId("list-title").filter({ hasText: "ライブラリ" }).waitFor({ timeout: 3000 });
-}
-async function createPlaylist(name) {
-  await closeEditor();
-  await page.getByRole("button", { name: "プレイリストを作る" }).click();
-  await page.getByLabel("新しいプレイリストの名前").fill(name);
-  await page.getByLabel("新しいプレイリストの名前").press("Enter");
-  await waitIdle();
-}
-/** 左の欄の行を押して選ぶ（抽選して、中央の一覧がその並びになる） */
-async function select(name) {
-  await closeEditor();
-  if ((await page.getByTestId("playlist-filter").filter({ hasText: name }).count()) > 0) return;
-  await ui.filtered(() => playlistItem(name).locator(".tag-name").click());
-  await page.getByTestId("list-title").filter({ hasText: name }).waitFor({ timeout: 3000 });
-}
-/** 左の欄の行のダブルクリックで、編集画面を開く（1回目の押しで選ぶ） */
-async function open(name) {
-  await closeEditor();
-  await playlistItem(name).locator(".tag-name").dblclick();
-  await editor().waitFor({ timeout: 3000 });
-  await page.getByTestId("playlist-title").filter({ hasText: name }).waitFor({ timeout: 3000 });
-}
-/** 編集画面で、タグの組み合わせの項目を加える */
-async function addCombo(tags) {
-  const input = page.getByLabel("組み合わせに加えるタグ");
-  for (const t of tags) {
-    await input.fill(t);
-    await input.press("Enter");
-  }
-  await page.getByRole("button", { name: "タグの組み合わせを追加" }).click();
-  await waitIdle();
 }
 const position = () => page.getByTestId("player-position").innerText();
 const startPlay = async () => {

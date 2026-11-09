@@ -13,24 +13,10 @@ fs.mkdirSync(out, { recursive: true });
 const ui = await connect(shotDir);
 const { page, step, shot, status, row, waitIdle, addFolder } = ui;
 
-const editor = () => page.getByTestId("playlist-editor");
-/** 編集画面を開いていれば閉じる */
-async function closeEditor() {
-  if ((await editor().count()) === 0) return;
-  await editor().getByRole("button", { name: "閉じる", exact: true }).click();
-  await editor().waitFor({ state: "detached", timeout: 3000 });
-}
-/** 左の欄の行のダブルクリックで、選んで編集画面を開く */
-async function openPlaylist(name) {
-  await closeEditor();
-  await page.locator(`[data-testid=playlist][data-playlist-name="${name}"] .tag-name`).dblclick();
-  await editor().waitFor({ timeout: 3000 });
-}
+const { closeEditor } = ui;
+const openPlaylist = ui.openEditor;
 async function addToPlaylist(rel, name) {
-  await closeEditor();
-  // プレイリストを選んでいれば外す（ライブラリの一覧から加える）
-  const chip = page.getByTestId("playlist-filter");
-  if ((await chip.count()) > 0) await ui.filtered(() => chip.click());
+  await ui.leavePlaylist();
   await row(rel).click();
   await ui.addToPlaylistHere(name);
 }
