@@ -44,7 +44,7 @@ async function closeEditor() {
 async function back() {
   await closeEditor();
   const chip = page.getByTestId("playlist-filter");
-  if ((await chip.count()) > 0) await ui.filtered(() => chip.getByRole("button").last().click());
+  if ((await chip.count()) > 0) await ui.filtered(() => chip.click());
   await page.getByTestId("list-title").filter({ hasText: "ライブラリ" }).waitFor({ timeout: 3000 });
 }
 async function createPlaylist(name) {
@@ -203,13 +203,15 @@ await step("P11", "選んだプレイリストの再生：再生の欄に名前�
   expect((await position()) === "2/5", await position());
   await page.getByRole("button", { name: "前へ" }).click();
   expect((await position()) === "1/5", await position());
+  // 鳴り始めてから一時停止する
+  await page.waitForFunction(() => document.querySelector("audio").currentTime > 0, null, { timeout: 5000 }).catch(() => {});
   await page.getByRole("button", { name: "一時停止" }).click();
   expect(await page.evaluate(() => document.querySelector("audio").paused), "止まっていない");
   await page.getByRole("button", { name: "再開" }).click();
   await page.waitForFunction(() => !document.querySelector("audio").paused, null, { timeout: 3000 }).catch(() => {});
   expect(!(await page.evaluate(() => document.querySelector("audio").paused)), "再開しない");
   await shot("P11_再生中");
-  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
   expect(!(await ui.isPlaying()), "再生中のまま");
   expect((await page.getByTestId("player-file").innerText()) === "", "曲の名前が残っている");
   expect(await page.getByRole("button", { name: "次へ" }).isDisabled(), "次へが押せる");
@@ -244,7 +246,7 @@ await step("P13", "再生できないファイルは飛ばして、そのこと�
     });
     expect((await status()).includes("サブフォルダ/チャイム.m4a"), await status());
     expect((await position()) === "2/2", await position());
-    await page.getByRole("button", { name: "停止", exact: true }).click();
+    await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
   } finally {
     fs.renameSync(path.join(dataDir, "chime.m4a.moved"), m4a);
   }
@@ -446,7 +448,7 @@ await step("P21", "再生方法のボタン：押すたびに 一曲だけ→順
   });
   expect(ratio2 > 0.6, `移っていない: ${ratio2}`);
   await shot("P26_再生の欄");
-  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
 });
 
 await step("P22", "編集画面で項目の種類の記号を押すと、その項目だけ再生する", async () => {
@@ -455,7 +457,7 @@ await step("P22", "編集画面で項目の種類の記号を押すと、その�
   await ui.waitPlaying();
   expect((await position()) === "1/1", await position());
   expect((await page.getByTestId("player-file-name").innerText()) === "chime.mp3", await page.getByTestId("player-file-name").innerText());
-  await page.getByRole("button", { name: "停止", exact: true }).click();
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
   await closeEditor();
 });
 

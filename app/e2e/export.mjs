@@ -30,7 +30,7 @@ async function addToPlaylist(rel, name) {
   await closeEditor();
   // プレイリストを選んでいれば外す（ライブラリの一覧から加える）
   const chip = page.getByTestId("playlist-filter");
-  if ((await chip.count()) > 0) await ui.filtered(() => chip.getByRole("button").last().click());
+  if ((await chip.count()) > 0) await ui.filtered(() => chip.click());
   await row(rel).click();
   await ui.addToPlaylistHere(name);
 }

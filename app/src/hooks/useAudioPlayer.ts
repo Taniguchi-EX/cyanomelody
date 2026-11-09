@@ -206,7 +206,10 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     const start = (path: string) => {
       audio.src = convertFileSrc(path);
       if (startAt) audio.currentTime = startAt;
-      audio.play().catch((e) => skip(seq, String(e)));
+      // 鳴り始める前に一時停止・停止・別の曲へ移ったとき（AbortError）は、再生できなかったことにしない
+      audio.play().catch((e) => {
+        if ((e as DOMException)?.name !== "AbortError") skip(seq, String(e));
+      });
     };
     if (!next.preparing) {
       start(entry.path);
