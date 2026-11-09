@@ -950,21 +950,58 @@ async fn refresh_draw(state: State<'_, AppState>) -> Result<DrawRefresh> {
 async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, rows: Vec<i64>, dest: String) -> Result<String> {
     let job = state.export.clone();
     if job.running.swap(true, Ordering::SeqCst) {
-        return Err(Error::invalid("ほかのプレイリストを書き出しているところです"));
+        return Err(Error::invalid("ほかの書き出しをしているところです"));
     }
-    let prepared = export::prepare(&state.conn(), id, &rows, Path::new(dest.trim()));
-    let (root, tasks) = match prepared {
-        Ok(p) => p,
+    match export::prepare(&state.conn(), id, &rows, Path::new(dest.trim())) {
+        Ok((root, tasks)) => Ok(spawn_export(app, job, root, tasks, 0)),
         Err(e) => {
             job.running.store(false, Ordering::SeqCst);
-            return Err(e);
+            Err(e)
         }
-    };
+    }
+}
+
+/// 選んだファイル（一括操作の対象）を、dest の中に作るフォルダ（folder_name）へ、そのままコピーし始める。
+/// 進み具合はプレイリストの書出と同じく "export-progress" で知らせる。見つからないファイルは「書き出せなかった」に数える
+#[tauri::command]
+async fn start_export_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    file_ids: Vec<i64>,
+    dest: String,
+    folder_name: String,
+) -> Result<String> {
+    let job = state.export.clone();
+    if job.running.swap(true, Ordering::SeqCst) {
+        return Err(Error::invalid("ほかの書き出しをしているところです"));
+    }
+    match export::prepare_files(&state.conn(), &file_ids, Path::new(dest.trim()), &folder_name) {
+        Ok((root, tasks)) => {
+            let skipped = file_ids.len().saturating_sub(tasks.len());
+            Ok(spawn_export(app, job, root, tasks, skipped))
+        }
+        Err(e) => {
+            job.running.store(false, Ordering::SeqCst);
+            Err(e)
+        }
+    }
+}
+
+/// 書き出しを裏で行う（プレイリストの書出と、選んだファイルの書出で共通）。skipped は最初から書き出せないと分かっている数。
+/// 書き出し先のフォルダのパスを返す
+fn spawn_export(app: AppHandle, job: Arc<ExportJob>, root: PathBuf, tasks: Vec<export::Task>, skipped: usize) -> String {
     job.cancel.store(false, Ordering::SeqCst);
     let folder = root.to_string_lossy().into_owned();
     let result = folder.clone();
     std::thread::spawn(move || {
-        let mut progress = ExportProgress { running: true, total: tasks.len(), folder, ..Default::default() };
+        let mut progress = ExportProgress {
+            running: true,
+            total: tasks.len() + skipped,
+            done: skipped,
+            failed: skipped,
+            folder,
+            ..Default::default()
+        };
         let _ = app.emit("export-progress", &progress);
         for task in &tasks {
             if job.cancel.load(Ordering::Relaxed) {
@@ -982,7 +1019,7 @@ async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, rows:
         job.running.store(false, Ordering::SeqCst);
         let _ = app.emit("export-progress", &progress);
     });
-    Ok(result)
+    result
 }
 
 #[tauri::command]
@@ -1105,6 +1142,7 @@ pub fn run() {
             render_effects,
             preview_effects,
             start_export,
+            start_export_files,
             cancel_export,
             expand_playlist,
             expand_playlist_item,

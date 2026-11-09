@@ -393,4 +393,23 @@ await step("T18", "フォルダの登録を解除すると、ファイルとタ�
   expect(fs.existsSync(path.join(formats, "chime.wav")), "実際のファイルが消えた");
 });
 
+await step("T28", "左の欄で絞り込みの条件を選び、上に条件のチップが出ても、押した行の画面の上の位置は変わらない（欄をスクロールして保つ）", async () => {
+  await ui.clearFilter();
+  await page.setViewportSize({ width: 1280, height: 500 });
+  // 左の欄を少しスクロールしておく（チップの分だけスクロールして戻せるように）
+  await page.locator("aside.side").evaluate((el) => (el.scrollTop = 40));
+  const item = tagItem("付いている");
+  const before = (await item.boundingBox()).y;
+  await ui.filtered(() => item.locator(".tag-name").click());
+  await page.waitForTimeout(100);
+  const after = (await item.boundingBox()).y;
+  expect(Math.abs(after - before) < 2, `ずれた: ${before} → ${after}`);
+  // 外したとき（チップが消えたとき）も
+  await ui.filtered(() => item.locator(".tag-name").click());
+  await page.waitForTimeout(100);
+  const back = (await item.boundingBox()).y;
+  expect(Math.abs(back - before) < 2, `外したときにずれた: ${before} → ${back}`);
+  await page.setViewportSize({ width: 1280, height: 800 });
+});
+
 await ui.finish();

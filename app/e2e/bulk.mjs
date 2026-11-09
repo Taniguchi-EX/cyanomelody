@@ -274,15 +274,36 @@ await step("B14", "一括操作の欄の「情報を書き出す…」：対象�
   const out = path.join(shotDir, "files.json");
   fs.rmSync(out, { force: true });
   await ui.setDialogReply(out);
-  await panel.getByRole("button", { name: "情報を書き出す…" }).click();
-  await ui.waitStatus("件のファイルの情報を書き出しました");
+  await panel.getByRole("button", { name: "メタデータを書き出し…" }).click();
+  await ui.waitStatus("件のファイルのメタデータを書き出しました");
   await ui.setDialogReply(null);
   const data = JSON.parse(fs.readFileSync(out, "utf8"));
   expect(data.app === "cyanomelody" && data.sections.tags && data.sections.credits && !data.sections.playlists, JSON.stringify(data.sections));
   const rels = data.files.map((f) => f.relPath).sort();
   expect(rels.join(",") === "chime.mp3,chime.wav", rels.join(","));
   expect(data.files.every((f) => f.title === "チャイム"), data.files.map((f) => f.title).join(","));
-  expect((await status()).includes("2件のファイルの情報を書き出しました"), await status());
+  expect((await status()).includes("2件のファイルのメタデータを書き出しました"), await status());
+  await ui.clearChecks();
+});
+
+await step("B15", "一括操作の欄の「ファイルをまとめて書出…」：選んだフォルダの中にフォルダを作り、対象のファイルをそのままコピーする", async () => {
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await checkToolbar().getByRole("button", { name: "一括操作" }).click();
+  const panel = page.getByTestId("bulk-panel");
+  await panel.waitFor({ timeout: 3000 });
+  const out = path.join(shotDir, "copied");
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(out, { recursive: true });
+  await ui.setDialogReply(out);
+  await panel.getByRole("button", { name: "ファイルをまとめて書出…" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-testid=export-status]")?.textContent?.includes("書き出しました"), null, { timeout: 15000 });
+  await ui.setDialogReply(null);
+  const [folder] = fs.readdirSync(out);
+  expect(folder.startsWith("cyanomelody-files-"), folder);
+  const copied = fs.readdirSync(path.join(out, folder)).sort();
+  expect(copied.join(",") === "chime.mp3,chime.wav", copied.join(","));
+  expect(fs.readFileSync(path.join(out, folder, "chime.wav")).equals(fs.readFileSync(path.join(formats, "chime.wav"))), "中身が違う");
   await ui.clearChecks();
 });
 

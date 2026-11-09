@@ -431,6 +431,9 @@ export const playlistApi = {
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   /** rows は抽選した並びの行の番号（中央の一覧に見えている順） */
   startExport: (id: number, rows: number[], dest: string) => invoke<string>("start_export", { id, rows, dest }),
+  /** 選んだファイルを、dest の中に作るフォルダ（folderName）へそのままコピーし始め、作ったフォルダのパスを返す。進み具合は "export-progress" */
+  startExportFiles: (fileIds: number[], dest: string, folderName: string) =>
+    invoke<string>("start_export_files", { fileIds, dest, folderName }),
   /** プレイリストを選んで抽選する */
   select: (id: number) => invoke<void>("select_playlist", { id }),
   clearSelection: () => invoke<void>("clear_playlist_selection"),

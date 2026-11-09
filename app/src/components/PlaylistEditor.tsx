@@ -42,6 +42,8 @@ type Props = {
   onAddRef: (refId: number) => void;
   /** dest の中に書き出し始める（中央の一覧に出ている曲を書き出す）。始められたら true */
   onExport: (dest: string) => Promise<boolean>;
+  /** 「メタデータを書き出し…」：中央の一覧に出ている曲のメタデータを JSON に書き出す（保存先を選ぶ） */
+  onExportInfo: () => void;
   /** フォルダを選ぶダイアログを出し、選んだパスを返す */
   onBrowseFolder: () => Promise<string | null>;
   onError: (e: unknown) => void;
@@ -113,6 +115,7 @@ export function PlaylistEditor({
   onAddTags,
   onAddRef,
   onExport,
+  onExportInfo,
   onBrowseFolder,
   onError,
 }: Props) {
@@ -510,10 +513,13 @@ export function PlaylistEditor({
             </div>
           )}
           <div className="toolbar editor-foot">
-            <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting}>
-              書出
+            <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting} title="エフェクトをかけた音を、階層をフォルダにして書き出す">
+              ファイルをまとめて書出
             </button>
-            <span className="sub">中央の一覧に出ている曲（絞り込みと並び順のとおり）を書き出します</span>
+            <button onClick={onExportInfo} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">
+              メタデータを書き出し…
+            </button>
+            <span className="sub">どちらも、中央の一覧に出ている曲（絞り込みと並び順のとおり）が対象です</span>
           </div>
         </div>
       </div>

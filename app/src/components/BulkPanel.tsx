@@ -26,7 +26,9 @@ type Props = {
   onAutotag: () => void;
   /** 「ファイルを削除する」（確認のダイアログを出す。リンク切れのファイルは除く） */
   onDelete: () => void;
-  /** 「情報を書き出す…」：対象のファイルのメタデータを JSON に書き出す（保存先を選ぶ） */
+  /** 「ファイルをまとめて書出…」：対象のファイルを、選んだフォルダの中に作るフォルダへそのままコピーする */
+  onExportFiles: () => void;
+  /** 「メタデータを書き出し…」：対象のファイルのメタデータを JSON に書き出す（保存先を選ぶ） */
   onExportInfo: () => void;
   onAddToPlaylist: (playlistId: number) => void;
   onOpenPlaylist: (playlistId: number) => void;
@@ -53,6 +55,7 @@ export function BulkPanel({
   onRemoveTag,
   onAutotag,
   onDelete,
+  onExportFiles,
   onExportInfo,
   onAddToPlaylist,
   onOpenPlaylist,
@@ -220,15 +223,18 @@ export function BulkPanel({
               </div>
             </div>
           )}
-          {/* 対象のファイルのメタデータ（タグ・出典・ライセンスなど）を、データのエクスポートと同じ形の JSON に書き出す */}
+          {/* 書き出し：音声ファイルそのもの（コピー）と、メタデータ（データのエクスポートと同じ形の JSON） */}
           <h2>書き出し</h2>
           <div className="row">
+            <button onClick={onExportFiles} disabled={busy} title="対象のファイルを、選んだフォルダの中に作るフォルダへ、そのままコピーする">
+              ファイルをまとめて書出…
+            </button>
             <button
               onClick={onExportInfo}
               disabled={busy}
               title="対象のファイルのタグ・出典・ライセンス・曲名・長さ・リリース年を JSON に書き出す（設定画面の「データ」で取り込める）"
             >
-              情報を書き出す…
+              メタデータを書き出し…
             </button>
           </div>
           {/* 実際のファイルも消す操作は、一番下に置く */}

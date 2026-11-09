@@ -43,6 +43,7 @@ import { PlayerBar } from "./components/PlayerBar";
 import { useAudioPlayer, type PreviewTarget } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
 import { usePlaylistSelection } from "./hooks/usePlaylistSelection";
+import { useKeepInPlace } from "./hooks/useKeepInPlace";
 import { EMPTY_FILTER, FILTER_KEYS, useFileFilter } from "./hooks/useFileFilter";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
@@ -63,6 +64,12 @@ import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { SearchBox } from "./components/SearchBox";
 import { useStoredNumber, useStoredString } from "./storage";
+
+/** 今日の日付（YYYYMMDD。書き出すファイル・フォルダの名前に使う） */
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+}
 
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
 const LIST_NAME = "ファイルの一覧";
@@ -88,6 +95,8 @@ export default function App() {
   // 抽選したとき：そのプレイリストの、抽選で変わりうる曲（🎲・🔀の項目の曲）を鳴らしていれば止める（再生のフックは後で作るので ref で呼ぶ）
   const onDrawnRef = useRef<(id: number) => void>(() => {});
   const selection = usePlaylistSelection((id) => onDrawnRef.current(id));
+  /** 押した行の画面の上の位置を保つ（絞り込みの条件のチップやチェックの操作の行が出て、行がずれないように） */
+  const keepInPlace = useKeepInPlace();
   const selectedPlaylistId = selection.selectedId;
   /** 一覧の並び順（FILE_SORTS・PLAYLIST_SORTS の value）。ライブラリとプレイリストで別々に、アプリを閉じても覚えておく */
   const [librarySortValue, setLibrarySortValue] = useStoredString("cyanomelody.fileSort");
@@ -473,19 +482,33 @@ export default function App() {
     });
   };
 
-  /** 一括操作：対象のファイルのメタデータを、データのエクスポートと同じ形の JSON に書き出す（保存先を選ぶ） */
-  const exportFileInfo = async () => {
-    const d = new Date();
-    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  /**
+   * ファイルのメタデータを、データのエクスポートと同じ形の JSON に書き出す（保存先を選ぶ）。
+   * fileIds が関数なら、保存先を選んだ後に呼んで対象を決める（プレイリストの一覧など）
+   */
+  const exportFileInfo = async (name: string, fileIds: number[] | (() => Promise<number[]>)) => {
     const path = await pickSavePath({
-      defaultPath: `cyanomelody-files-${stamp}.json`,
+      defaultPath: `${name}.json`,
       filters: [{ name: "JSON", extensions: ["json"] }],
     }).catch(showError);
     if (!path) return;
     run(async () => {
-      const n = await api.exportFiles(path, bulkFileIds);
-      showInfo(`${n}件のファイルの情報を書き出しました: ${path}`);
+      const ids = typeof fileIds === "function" ? await fileIds() : fileIds;
+      const n = await api.exportFiles(path, ids);
+      showInfo(`${n}件のファイルのメタデータを書き出しました: ${path}`);
     });
+  };
+
+  /** 一括操作：対象のファイルを、選んだフォルダの中に作るフォルダへそのままコピーし始める */
+  const exportCheckedFiles = async () => {
+    const dest = await pickPath({ directory: true }).catch(showError);
+    if (typeof dest !== "string") return;
+    try {
+      const folder = await playlistApi.startExportFiles(bulkFileIds, dest, `cyanomelody-files-${today()}`);
+      showInfo(`書き出しを始めました: ${folder}`);
+    } catch (e) {
+      showError(e);
+    }
   };
 
   /** 一括操作：対象のファイルすべてに出典・ライセンスを設定する（null なら外す） */
@@ -1107,6 +1130,7 @@ export default function App() {
     // ウィンドウを狭くしたときは、左・右の欄が最小の幅まで縮んでから中央の欄が縮む
     <div
       className="app"
+      onClickCapture={keepInPlace}
       style={{
         gridTemplateColumns: `minmax(${SIDE_MIN}px, ${sideWidth}px) auto minmax(${MAIN_MIN}px, 1fr) auto minmax(${SIDE_MIN}px, ${detailWidth}px)`,
       }}
@@ -1287,7 +1311,8 @@ export default function App() {
             onRemoveTag={bulkRemoveTag}
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onDelete={() => startDelete(bulkFileIds)}
-            onExportInfo={exportFileInfo}
+            onExportFiles={exportCheckedFiles}
+            onExportInfo={() => exportFileInfo(`cyanomelody-files-${today()}`, bulkFileIds)}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={(id) => openEditor(id)}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}
@@ -1400,6 +1425,9 @@ export default function App() {
           onAddTags={addTagsToPlaylist}
           onAddRef={addRefToPlaylist}
           onExport={(dest) => exportPlaylist(editor.id, dest)}
+          onExportInfo={() =>
+            exportFileInfo(playlistName(editor.id), async () => [...new Set((await selectedRows(editor.id)).map((r) => r.id))])
+          }
           onBrowseFolder={browseFolder}
           onError={showError}
         />

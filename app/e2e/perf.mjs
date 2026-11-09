@@ -129,4 +129,28 @@ await step("PF04", "3万件が対象のタグの組み合わせのプレイリ�
   return `選ぶ ${selectMs}ms、再生 ${ms}ms`;
 });
 
+await step("PF05", "一覧を下へスクロールして行をチェックし、上にチェックの操作の行が出ても、押した行の画面の上の位置は変わらない", async () => {
+  await ui.clearFilter();
+  await ui.clearChecks();
+  await page.getByTestId("file-list").evaluate((el) => (el.scrollTop = 3000));
+  await page.waitForTimeout(200);
+  // 一覧の真ん中あたりに見えている行（仮想化で描いている、見えていない行は選ばない）
+  const rel = await page.getByTestId("file-list").evaluate((list) => {
+    const box = list.getBoundingClientRect();
+    const mid = box.top + box.height / 2;
+    const rows = [...list.querySelectorAll("[data-testid=file-row]")];
+    return rows.find((r) => Math.abs(r.getBoundingClientRect().top - mid) < 40)?.dataset.relPath;
+  });
+  const before = (await ui.row(rel).boundingBox()).y;
+  await ui.row(rel).getByTestId("file-check").click();
+  await page.waitForTimeout(200);
+  const after = (await ui.row(rel).boundingBox()).y;
+  expect(Math.abs(after - before) < 2, `ずれた: ${before} → ${after}`);
+  // チェックを外して、チェックの操作の行が消えたときも
+  await ui.row(rel).getByTestId("file-check").click();
+  await page.waitForTimeout(200);
+  const back = (await ui.row(rel).boundingBox()).y;
+  expect(Math.abs(back - before) < 2, `外したときにずれた: ${before} → ${back}`);
+});
+
 await ui.finish();

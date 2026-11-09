@@ -129,6 +129,40 @@ fn build(
     Ok(())
 }
 
+/// 選んだファイル（一括操作の対象）をまとめて書き出す準備。dest の中に folder_name のフォルダ（同じ名前があれば「 (2)」など）を作り、
+/// 元のファイルをそのままコピーする一覧を返す（エフェクトはかけない）。名前は元のファイル名のまま、重なるときは「名前 (2).wav」のようにする。
+/// 見つからないファイル・ライブラリにないファイルは入れない（書き出せなかった数は、呼んだ側で数える）
+pub fn prepare_files(conn: &Connection, file_ids: &[i64], dest: &Path, folder_name: &str) -> Result<(PathBuf, Vec<Task>)> {
+    if !dest.is_dir() {
+        return Err(Error::invalid(format!("書き出し先のフォルダがありません: {}", dest.display())));
+    }
+    let files: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+             WHERE a.missing = 0 AND a.id IN (SELECT value FROM json_each(?1)) ORDER BY f.path, a.rel_path",
+        )?
+        .query_map([ids_json(file_ids)], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let root = unique_dir(dest, &sanitize(folder_name))?;
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut tasks = Vec::new();
+    for (folder, rel) in files {
+        let source = absolute_path(&folder, &rel);
+        let stem = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let ext = source.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+        let base = sanitize(&stem);
+        let mut name = format!("{base}{ext}");
+        let mut n = 2;
+        // 大文字・小文字の違いだけの名前も重なりとみなす（Windows では同じファイルになるため）
+        while !used.insert(name.to_lowercase()) {
+            name = format!("{base} ({n}){ext}");
+            n += 1;
+        }
+        tasks.push(Task { dest: root.join(&name), source, effects: Vec::new() });
+    }
+    Ok((root, tasks))
+}
+
 /// 1ファイルを書き出す
 pub fn run_task(task: &Task) -> std::result::Result<(), String> {
     if task.effects.is_empty() {
@@ -157,6 +191,42 @@ mod tests {
         assert_eq!(unique_dir(dir.path(), "P").unwrap(), dir.path().join("P"));
         assert_eq!(unique_dir(dir.path(), "P").unwrap(), dir.path().join("P (2)"));
         assert_eq!(unique_dir(dir.path(), "P").unwrap(), dir.path().join("P (3)"));
+    }
+
+    #[test]
+    fn export_selected_files_copies_with_unique_names() {
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let lib = tempfile::tempdir().unwrap();
+        fs::create_dir_all(lib.path().join("sub")).unwrap();
+        fs::copy(fixtures.join("base.mp3"), lib.path().join("rain.mp3")).unwrap();
+        fs::copy(fixtures.join("base.mp3"), lib.path().join("sub").join("Rain.mp3")).unwrap();
+        fs::copy(fixtures.join("base.flac"), lib.path().join("wind.flac")).unwrap();
+        let mut conn = open_in_memory().unwrap();
+        let folder = add_folder(&conn, lib.path()).unwrap();
+        scan_folder(&mut conn, folder).unwrap();
+        // wind.flac は見つからないことにする（書き出さない）
+        conn.execute("UPDATE audio_files SET missing = 1 WHERE rel_path = 'wind.flac'", []).unwrap();
+        let ids: Vec<i64> = conn
+            .prepare("SELECT id FROM audio_files")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let (root, tasks) = prepare_files(&conn, &ids, out.path(), "まとめて").unwrap();
+        assert_eq!(root, out.path().join("まとめて"));
+        let names: Vec<String> = tasks.iter().map(|t| t.dest.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        // 大文字・小文字だけ違う名前も重ならないようにする
+        assert_eq!(names, vec!["rain.mp3", "Rain (2).mp3"]);
+        assert!(tasks.iter().all(|t| t.effects.is_empty()));
+        for t in &tasks {
+            run_task(t).unwrap();
+        }
+        assert!(root.join("Rain (2).mp3").exists());
+        // もう一度書き出すと別のフォルダ。書き出し先がなければエラー
+        assert_eq!(prepare_files(&conn, &ids, out.path(), "まとめて").unwrap().0, out.path().join("まとめて (2)"));
+        assert!(prepare_files(&conn, &ids, &out.path().join("none"), "まとめて").is_err());
     }
 
     #[test]
