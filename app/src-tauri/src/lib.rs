@@ -52,6 +52,26 @@ struct AppState {
     effect_cache: PathBuf,
     export: Arc<ExportJob>,
     autotag: Arc<AutotagJob>,
+    /// 選んでいるプレイリストと、抽選したときの中身の版（抽選した並びは DB の一時テーブルにある）
+    draw: Mutex<Option<DrawState>>,
+}
+
+#[derive(Debug, Clone)]
+struct DrawState {
+    playlist_id: i64,
+    version: String,
+}
+
+/// データを読み直したときの、抽選した並びの扱い
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+enum DrawRefresh {
+    /// プレイリストを選んでいない、または中身が変わっていない
+    Unchanged,
+    /// 中身が変わったので抽選し直した
+    Redrawn,
+    /// プレイリストが消えたので、選択を外した
+    Cleared,
 }
 
 /// 裏で行うプレイリストの出力の状態
@@ -128,6 +148,11 @@ impl AppState {
     fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         // 前の処理がパニックしても、DBの状態はトランザクションで守られているので使い続ける
         self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 選んでいるプレイリスト（DB の後にロックする）
+    fn draw(&self) -> std::sync::MutexGuard<'_, Option<DrawState>> {
+        self.draw.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -862,13 +887,63 @@ async fn preview_effects(state: State<'_, AppState>, file_id: i64, effects: Vec<
 
 /// プレイリストを dest の中に書き出し始める。書き出し先のフォルダを作って、そのパスを返す。
 /// ファイルの書き出しは裏で行い、進み具合はイベント "export-progress" で知らせる
+/// プレイリストを選び、抽選する（選んでいたものは外れる）
 #[tauri::command]
-async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, dest: String) -> Result<String> {
+async fn select_playlist(state: State<'_, AppState>, id: i64) -> Result<()> {
+    let conn = state.conn();
+    let version = playlists::draw::draw(&conn, id)?;
+    *state.draw() = Some(DrawState { playlist_id: id, version });
+    Ok(())
+}
+
+/// プレイリストの選択を外す
+#[tauri::command]
+async fn clear_playlist_selection(state: State<'_, AppState>) -> Result<()> {
+    let conn = state.conn();
+    playlists::draw::clear(&conn)?;
+    *state.draw() = None;
+    Ok(())
+}
+
+/// 選んでいるプレイリストを抽選し直す（最後まで再生した後に、もう一度再生するとき）
+#[tauri::command]
+async fn redraw_playlist(state: State<'_, AppState>) -> Result<()> {
+    let conn = state.conn();
+    let mut draw = state.draw();
+    if let Some(d) = draw.as_mut() {
+        d.version = playlists::draw::draw(&conn, d.playlist_id)?;
+    }
+    Ok(())
+}
+
+/// データを読み直すときに呼ぶ。選んでいるプレイリストの中身の版が変わっていれば抽選し直し、消えていれば選択を外す
+#[tauri::command]
+async fn refresh_draw(state: State<'_, AppState>) -> Result<DrawRefresh> {
+    let conn = state.conn();
+    let mut draw = state.draw();
+    let Some(d) = draw.as_mut() else { return Ok(DrawRefresh::Unchanged) };
+    match playlists::draw::version(&conn, d.playlist_id)? {
+        None => {
+            playlists::draw::clear(&conn)?;
+            *draw = None;
+            Ok(DrawRefresh::Cleared)
+        }
+        Some(v) if v == d.version => Ok(DrawRefresh::Unchanged),
+        Some(_) => {
+            d.version = playlists::draw::draw(&conn, d.playlist_id)?;
+            Ok(DrawRefresh::Redrawn)
+        }
+    }
+}
+
+/// プレイリストを書き出し始める。rows は抽選した並びの行の番号（中央の一覧に見えている順）
+#[tauri::command]
+async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, rows: Vec<i64>, dest: String) -> Result<String> {
     let job = state.export.clone();
     if job.running.swap(true, Ordering::SeqCst) {
         return Err(Error::invalid("ほかのプレイリストを書き出しているところです"));
     }
-    let prepared = export::prepare(&state.conn(), id, Path::new(dest.trim()));
+    let prepared = export::prepare(&state.conn(), id, &rows, Path::new(dest.trim()));
     let (root, tasks) = match prepared {
         Ok(p) => p,
         Err(e) => {
@@ -945,6 +1020,7 @@ pub fn run() {
                 effect_cache,
                 export: Arc::new(ExportJob::default()),
                 autotag: Arc::new(AutotagJob::default()),
+                draw: Mutex::new(None),
             });
             Ok(())
         })
@@ -954,6 +1030,10 @@ pub fn run() {
             remove_folder,
             scan_folder,
             list_files,
+            select_playlist,
+            clear_playlist_selection,
+            redraw_playlist,
+            refresh_draw,
             facet_counts,
             list_tags,
             create_tag,

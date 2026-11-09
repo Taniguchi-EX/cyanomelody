@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::ids_json;
 use crate::error::Result;
 use crate::library::absolute_path;
+use crate::playlists::{ItemKind, PlayMode};
 use crate::tags::{descendants_and_self, get_or_create_tag, tag_rank, TAG_SEPARATOR};
 use crate::tree::NamedRef;
 
@@ -25,6 +26,29 @@ pub struct AudioFile {
     pub hash_error: Option<String>,
     pub source_id: Option<i64>,
     pub license_id: Option<i64>,
+    /// 一覧の中で行を見分ける値。ライブラリの一覧ではファイルの id、抽選した並びでは行の番号（同じファイルが2行出ることがある）
+    pub key: i64,
+    /// 抽選した並びの行だけ：ファイルの項目の別名（プレイリスト上での名前）
+    pub alias: Option<String>,
+    /// 抽選した並びの行だけ：選んだプレイリストの、この曲を出した項目（直下の項目）。ファイルの項目から来た曲は None
+    pub origin: Option<RowOrigin>,
+    /// 抽選した並びの行だけ：選んだプレイリストの直下の項目の id（ファイルの項目も含む）
+    pub item_id: Option<i64>,
+    /// 抽選した並びの行だけ：かけるエフェクトセット（内側から外側の順）
+    pub chains: Vec<i64>,
+    /// 抽選した並びの行だけ：🎲・🔀の項目を通った曲か（抽選し直すと変わりうる）
+    pub drawn: bool,
+}
+
+/// 抽選した並びの行が、どの項目から来たか（行のアイコンと説明に使う）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RowOrigin {
+    pub item_id: i64,
+    pub kind: ItemKind,
+    pub mode: PlayMode,
+    /// 項目の内容（タグの組み合わせは「雨 ＋ 風」、プレイリストは別名かその名前）
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -58,9 +82,23 @@ pub struct FileFilter {
     /// リリース年がこれ以上・以下のファイルに絞り込む。年のないファイルは出さない
     pub min_year: Option<i32>,
     pub max_year: Option<i32>,
+    /// 抽選した並び（プレイリストを選んでいるとき）の中で絞り込む。行ごとに返し、同じファイルが2行出ることがある
+    pub draw: bool,
     /// 一覧の並び順（絞り込みには使わない）。同じ値どうしはパス順
     pub sort: FileSort,
     pub sort_desc: bool,
+}
+
+/// フォルダを除いたファイル名（audio_files を a として）
+const FILE_NAME: &str = "substr(a.rel_path, length(rtrim(a.rel_path, replace(a.rel_path, '/', ''))) + 1)";
+
+/// 絞り込みの対象の表（FROM 句）。抽選した並びでは、行（d）ごとにファイル（a）と、別名を引く項目（pi）をつなぐ
+pub(crate) fn source_tables(filter: &FileFilter) -> &'static str {
+    if filter.draw {
+        "temp.draw_rows d JOIN audio_files a ON a.id = d.file_id LEFT JOIN playlist_items pi ON pi.id = d.alias_item"
+    } else {
+        "audio_files a"
+    }
 }
 
 /// ファイルの一覧の並び順
@@ -78,18 +116,22 @@ pub enum FileSort {
     Modified,
     /// 長さ。長さのないファイルは、昇順・降順とも最後
     Duration,
+    /// 抽選した順（プレイリストを選んでいるときだけ。ライブラリの一覧ではパス順）
+    Playlist,
 }
 
 impl FileSort {
     /// ORDER BY に書く式（パス順の前に置く）。パス順なら None
-    fn key(self, desc: bool) -> Option<String> {
+    fn key(self, desc: bool, draw: bool) -> Option<String> {
         let dir = if desc { "DESC" } else { "ASC" };
         Some(match self {
             FileSort::Path => return None,
-            // 最後の「/」の後ろ（rtrim で「/」以外を消した長さが、最後の「/」の位置になる）
-            FileSort::Name => format!(
-                "substr(a.rel_path, length(rtrim(a.rel_path, replace(a.rel_path, '/', ''))) + 1) COLLATE NOCASE {dir}"
-            ),
+            FileSort::Playlist if draw => format!("d.seq {dir}"),
+            FileSort::Playlist => return None,
+            // 最後の「/」の後ろ（rtrim で「/」以外を消した長さが、最後の「/」の位置になる）。
+            // 抽選した並びでは、出している名前（別名があれば別名）で並べる
+            FileSort::Name if draw => format!("coalesce(pi.alias, {FILE_NAME}) COLLATE NOCASE {dir}"),
+            FileSort::Name => format!("{FILE_NAME} COLLATE NOCASE {dir}"),
             FileSort::Added => format!("a.added_at {dir}, a.id {dir}"),
             FileSort::Modified => format!("a.modified_at {dir}"),
             FileSort::Duration => format!("a.duration IS NULL, a.duration {dir}"),
@@ -202,8 +244,15 @@ pub(crate) fn filter_conditions(conn: &Connection, filter: &FileFilter) -> Resul
     let mut args: Vec<Value> = Vec::new();
     let text = filter.text.trim();
     if !text.is_empty() {
-        sql.push_str(" AND a.rel_path LIKE ? ESCAPE '\\'");
-        args.push(Value::Text(format!("%{}%", escape_like(text))));
+        let pattern = Value::Text(format!("%{}%", escape_like(text)));
+        if filter.draw {
+            // 抽選した並びでは、別名にも当てる
+            sql.push_str(" AND (a.rel_path LIKE ? ESCAPE '\\' OR pi.alias LIKE ? ESCAPE '\\')");
+            args.push(pattern.clone());
+        } else {
+            sql.push_str(" AND a.rel_path LIKE ? ESCAPE '\\'");
+        }
+        args.push(pattern);
     }
     // 選んだタグごとに、そのタグか子孫のタグが付いていること
     for tag_id in &filter.tag_ids {
@@ -277,12 +326,18 @@ pub const FILE_ORDER: &str = "f.path, a.rel_path";
 
 pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFile>> {
     let (conditions, args) = filter_conditions(conn, filter)?;
+    if filter.draw {
+        crate::playlists::draw::ensure_table(conn)?;
+    }
+    // 抽選した並びでは、行の番号・通った項目・別名・抽選の印も引く
+    let draw_columns = if filter.draw { "d.seq, d.path, d.top_item, pi.alias, d.drawn" } else { "a.id, NULL, NULL, NULL, 0" };
+    let tables = source_tables(filter);
     let mut sql = format!(
         "SELECT a.id, a.rel_path, f.path, a.missing,
                 (SELECT group_concat(t.id || char(30) || t.name, char(31)) FROM file_tags ft
                    JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
-                a.hash, a.hash_error, a.source_id, a.license_id
-         FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+                a.hash, a.hash_error, a.source_id, a.license_id, {draw_columns}
+         FROM {tables} JOIN library_folders f ON f.id = a.folder_id
          WHERE 1 = 1{conditions}"
     );
     // 直近で再生したものは、新しく再生した順にする（選んだ並び順は使わない）
@@ -294,14 +349,21 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         if filter.duplicates_only {
             order.push("a.hash".into());
         }
-        order.extend(filter.sort.key(filter.sort_desc));
+        order.extend(filter.sort.key(filter.sort_desc, filter.draw));
     }
     order.push(if filter.sort == FileSort::Path && filter.sort_desc && !filter.recent_only {
         "f.path DESC, a.rel_path DESC".into()
     } else {
         FILE_ORDER.into()
     });
+    // 同じファイルが2行出るときは、抽選した順
+    if filter.draw {
+        order.push("d.seq".into());
+    }
     sql.push_str(&format!(" ORDER BY {}", order.join(", ")));
+
+    // 抽選した並びの行の、来た項目とかけるエフェクトセットは、今の項目から引く
+    let infos = if filter.draw { crate::playlists::draw::item_infos(conn)? } else { Default::default() };
 
     // ファイルに付いたタグは、タグの一覧と同じ順に並べる
     let rank = tag_rank(conn)?;
@@ -322,6 +384,18 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             })
             .unwrap_or_default();
         tags.sort_by_key(|t| rank.get(&t.id).copied().unwrap_or(usize::MAX));
+        let path: Vec<i64> = r.get::<_, Option<String>>(10)?.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default();
+        let top_item: Option<i64> = r.get(11)?;
+        // 来た項目：直下の項目がタグの組み合わせかプレイリストのとき（ファイルの項目なら出さない）
+        let origin = top_item.and_then(|id| {
+            let info = infos.get(&id)?;
+            (info.kind != ItemKind::File).then(|| RowOrigin {
+                item_id: id,
+                kind: info.kind,
+                mode: info.mode,
+                label: info.alias.clone().filter(|_| info.kind == ItemKind::Playlist).unwrap_or_else(|| info.label.clone()),
+            })
+        });
         Ok(AudioFile {
             id: r.get(0)?,
             path: absolute_path(&folder_path, &rel_path).to_string_lossy().into_owned(),
@@ -332,6 +406,12 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             hash_error: r.get(6)?,
             source_id: r.get(7)?,
             license_id: r.get(8)?,
+            key: r.get(9)?,
+            alias: r.get(12)?,
+            origin,
+            item_id: top_item,
+            chains: crate::playlists::draw::chains_of(&path, &infos),
+            drawn: r.get(13)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

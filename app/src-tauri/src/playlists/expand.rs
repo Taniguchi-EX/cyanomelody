@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params_from_iter, Connection};
 
-use super::{ensure_exists, not_found, ItemKind, PlayEntry, PlayMode};
+use super::{ensure_exists, ItemKind, PlayEntry, PlayMode};
 use crate::db::ids_json;
 use crate::error::{Error, Result};
 use crate::files::{filter_conditions, FileFilter, FILE_ORDER};
@@ -34,16 +34,23 @@ struct Track {
     chains: Vec<i64>,
     /// この曲を出した項目。外側の項目を展開するたびに書き換わり、最後はいちばん外側の項目になる
     item: Option<i64>,
+    /// 通った項目（外側から内側の順）。抽選した並びで、来た項目・別名・エフェクトを今の項目から引くのに使う
+    path: Vec<i64>,
+    /// 別名を引く項目（ファイルの項目から来た曲だけ）
+    alias_item: Option<i64>,
+    /// 🎲・🔀の項目を通ったか（抽選し直すと変わりうる曲）
+    drawn: bool,
 }
 
 impl Track {
     fn plain(file_id: i64) -> Track {
-        Track { file_id, alias: None, chains: Vec::new(), item: None }
+        Track { file_id, alias: None, chains: Vec::new(), item: None, path: Vec::new(), alias_item: None, drawn: false }
     }
 
-    /// この曲を出した項目を、外側の項目に書き換える
+    /// この曲を出した項目を、外側の項目に書き換える（通った項目の先頭にも足す）
     fn from_item(mut self, item_id: i64) -> Track {
         self.item = Some(item_id);
+        self.path.insert(0, item_id);
         self
     }
 
@@ -165,7 +172,7 @@ impl<'a> Catalog<'a> {
 pub(super) struct Rng(pub(super) u64);
 
 impl Rng {
-    fn from_time() -> Rng {
+    pub(super) fn from_time() -> Rng {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1);
         Rng(nanos | 1)
     }
@@ -202,6 +209,16 @@ fn apply_mode<T>(mut files: Vec<T>, mode: PlayMode, rng: &mut Rng) -> Vec<T> {
 }
 
 /// プレイリストの項目を展開して、再生するファイルの並びにする（プレイリスト自体の再生方法は当てはめない）
+/// 🎲・🔀の項目から出た曲に、抽選し直すと変わりうる印を付ける
+fn mark_drawn(mut tracks: Vec<Track>, mode: PlayMode) -> Vec<Track> {
+    if mode != PlayMode::Order {
+        for t in &mut tracks {
+            t.drawn = true;
+        }
+    }
+    tracks
+}
+
 fn expand_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<Track>> {
     // ループは保存できないが、念のため同じプレイリストを二重にたどらない
     if path.contains(&playlist_id) {
@@ -253,20 +270,25 @@ fn expand_item(cat: &mut Catalog, item: &ItemRow, rng: &mut Rng, path: &mut Vec<
     Ok(match item.kind {
         ItemKind::File => match (cat.file_ok(item.file_id), item.file_id) {
             (true, Some(file_id)) => {
-                vec![Track { file_id, alias: item.alias.clone(), chains: Vec::from_iter(item.effect_chain_id), item: None }]
+                vec![Track {
+                    alias: item.alias.clone(),
+                    chains: Vec::from_iter(item.effect_chain_id),
+                    alias_item: Some(item.id),
+                    ..Track::plain(file_id)
+                }]
             }
             _ => Vec::new(),
         },
         ItemKind::Tags => {
             let tracks =
                 cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
-            apply_mode(tracks, item.mode, rng)
+            mark_drawn(apply_mode(tracks, item.mode, rng), item.mode)
         }
         ItemKind::Playlist => match item.ref_id {
             Some(r) => {
                 let tracks: Vec<Track> =
                     expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
-                apply_mode(tracks, item.mode, rng)
+                mark_drawn(apply_mode(tracks, item.mode, rng), item.mode)
             }
             None => Vec::new(),
         },
@@ -280,81 +302,6 @@ pub enum ExportNode {
     File { file_id: i64, alias: Option<String>, chains: Vec<i64> },
     /// プレイリストの項目のフォルダ。名前は、別名があれば別名、なければプレイリスト名
     Folder { name: String, children: Vec<ExportNode> },
-}
-
-impl ExportNode {
-    fn from_track(t: Track) -> ExportNode {
-        ExportNode::File { file_id: t.file_id, alias: t.alias, chains: t.chains }
-    }
-
-    /// 中のファイルすべてに、外側の項目のエフェクトセットを足す
-    fn with_chain(self, chain: Option<i64>) -> ExportNode {
-        match self {
-            ExportNode::File { file_id, alias, mut chains } => {
-                chains.extend(chain);
-                ExportNode::File { file_id, alias, chains }
-            }
-            ExportNode::Folder { name, children } => {
-                ExportNode::Folder { name, children: children.into_iter().map(|c| c.with_chain(chain)).collect() }
-            }
-        }
-    }
-}
-
-/// 書き出す内容を決める。項目の展開・再生方法・別名・エフェクトは再生と同じ決まりで、プレイリストの項目はフォルダにする。
-/// 「順に再生」のプレイリストの項目は、中の階層をそのままフォルダにする。シャッフル・ランダムセレクトの項目は、
-/// 並べ替えや選び方が中の階層をまたぐので、展開した曲をそのフォルダに並べる
-fn plan_items(cat: &mut Catalog, playlist_id: i64, rng: &mut Rng, path: &mut Vec<i64>) -> Result<Vec<ExportNode>> {
-    if path.contains(&playlist_id) {
-        return Ok(Vec::new());
-    }
-    path.push(playlist_id);
-    let mut out = Vec::new();
-    for item in cat.items(playlist_id) {
-        match item.kind {
-            ItemKind::File => {
-                // 見つからないファイルも入れておき、書き出すときに「書き出せなかった」に数える
-                if let Some(file_id) = item.file_id.filter(|f| cat.files.contains_key(f)) {
-                    out.push(ExportNode::File {
-                        file_id,
-                        alias: item.alias.clone(),
-                        chains: Vec::from_iter(item.effect_chain_id),
-                    });
-                }
-            }
-            ItemKind::Tags => {
-                let tracks: Vec<Track> =
-                    cat.files_for_tags(item.id)?.into_iter().map(|f| Track::plain(f).with_chain(item.effect_chain_id)).collect();
-                out.extend(apply_mode(tracks, item.mode, rng).into_iter().map(ExportNode::from_track));
-            }
-            ItemKind::Playlist => {
-                let Some(r) = item.ref_id else { continue };
-                let name = item.alias.clone().or_else(|| cat.names.get(&r).cloned()).unwrap_or_default();
-                let children = if item.mode == PlayMode::Order {
-                    plan_items(cat, r, rng, path)?.into_iter().map(|n| n.with_chain(item.effect_chain_id)).collect()
-                } else {
-                    let tracks: Vec<Track> =
-                        expand_items(cat, r, rng, path)?.into_iter().map(|t| t.with_chain(item.effect_chain_id)).collect();
-                    apply_mode(tracks, item.mode, rng).into_iter().map(ExportNode::from_track).collect()
-                };
-                out.push(ExportNode::Folder { name, children });
-            }
-        }
-    }
-    path.pop();
-    Ok(out)
-}
-
-/// プレイリストの名前と、書き出す内容
-pub fn plan_export(conn: &Connection, id: i64) -> Result<(String, Vec<ExportNode>)> {
-    plan_export_with(conn, id, &mut Rng::from_time())
-}
-
-pub(super) fn plan_export_with(conn: &Connection, id: i64, rng: &mut Rng) -> Result<(String, Vec<ExportNode>)> {
-    let mut cat = Catalog::load(conn)?;
-    let name = cat.names.get(&id).cloned().ok_or_else(not_found)?;
-    let nodes = plan_items(&mut cat, id, rng, &mut Vec::new())?;
-    Ok((name, nodes))
 }
 
 pub(super) fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
@@ -405,6 +352,39 @@ fn to_entries(conn: &Connection, tracks: Vec<Track>) -> Result<Vec<PlayEntry>> {
 }
 
 /// 再生順を決める（詳しくは docs の「再生の順番の決め方」）
+/// 抽選した並びの1曲（`draw` で一時テーブルに入れる）
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawnTrack {
+    pub file_id: i64,
+    /// 通った項目（外側から内側の順）
+    pub path: Vec<i64>,
+    /// 別名を引く項目（ファイルの項目から来た曲だけ）
+    pub alias_item: Option<i64>,
+    /// 🎲・🔀の項目を通ったか
+    pub drawn: bool,
+}
+
+/// プレイリストを1回展開して、再生する曲の並びを決める（抽選）。プレイリスト自体の再生方法は当てはめない
+pub(super) fn draw_tracks(conn: &Connection, id: i64, rng: &mut Rng) -> Result<Vec<DrawnTrack>> {
+    ensure_exists(conn, id)?;
+    let mut cat = Catalog::load(conn)?;
+    Ok(expand_items(&mut cat, id, rng, &mut Vec::new())?
+        .into_iter()
+        .map(|t| DrawnTrack { file_id: t.file_id, path: t.path, alias_item: t.alias_item, drawn: t.drawn })
+        .collect())
+}
+
+/// すべてのプレイリストの、通しで流したときに鳴る曲の数（🎲の項目は1曲。見つからないファイルは数えない）
+pub(super) fn track_counts(conn: &Connection) -> Result<HashMap<i64, i64>> {
+    let mut cat = Catalog::load(conn)?;
+    let ids: Vec<i64> = cat.names.keys().copied().collect();
+    let mut memo = HashMap::new();
+    for id in ids {
+        count_items(&mut cat, id, &mut memo, &mut Vec::new())?;
+    }
+    Ok(memo)
+}
+
 pub fn expand_playlist(conn: &Connection, id: i64, mode: PlayMode) -> Result<Vec<PlayEntry>> {
     expand_with(conn, id, mode, &mut Rng::from_time())
 }

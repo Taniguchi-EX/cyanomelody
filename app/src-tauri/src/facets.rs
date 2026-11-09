@@ -6,7 +6,7 @@ use rusqlite::{params_from_iter, Connection};
 use serde::Serialize;
 
 use crate::error::Result;
-use crate::files::{filter_conditions, CountItem, FileFilter};
+use crate::files::{filter_conditions, source_tables, CountItem, FileFilter};
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -33,10 +33,13 @@ struct Row {
 
 fn matching_rows(conn: &Connection, filter: &FileFilter) -> Result<Vec<Row>> {
     let (conditions, args) = filter_conditions(conn, filter)?;
+    if filter.draw {
+        crate::playlists::draw::ensure_table(conn)?;
+    }
+    // 抽選した並びでは行ごとに返す（同じファイルが2行あれば2回数える）
+    let tables = source_tables(filter);
     Ok(conn
-        .prepare(&format!(
-            "SELECT a.id, a.source_id, a.license_id FROM audio_files a WHERE 1 = 1{conditions}"
-        ))?
+        .prepare(&format!("SELECT a.id, a.source_id, a.license_id FROM {tables} WHERE 1 = 1{conditions}"))?
         .query_map(params_from_iter(args), |r| {
             Ok(Row { id: r.get(0)?, source_id: r.get(1)?, license_id: r.get(2)? })
         })?

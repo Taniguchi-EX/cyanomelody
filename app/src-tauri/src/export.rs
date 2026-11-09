@@ -1,4 +1,4 @@
-//! プレイリストの出力：書き出す内容（`playlists::plan_export`）を、フォルダとファイルにする
+//! プレイリストの出力：抽選した並びのうち中央の一覧に出ている行（`playlists::draw::plan_rows`）を、フォルダとファイルにする
 
 use std::collections::HashMap;
 use std::fs;
@@ -11,7 +11,7 @@ use crate::db::ids_json;
 use crate::effects::{apply_all, decode, write_wav, Effect};
 use crate::error::{Error, Result};
 use crate::library::absolute_path;
-use crate::playlists::{plan_export, ExportNode};
+use crate::playlists::{draw::plan_rows, ExportNode};
 
 /// 書き出す1ファイル
 #[derive(Debug, Clone, PartialEq)]
@@ -51,12 +51,16 @@ fn unique_dir(parent: &Path, name: &str) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-/// 書き出し先のフォルダを作り、書き出すファイルの一覧を返す（ファイルはまだ書かない）
-pub fn prepare(conn: &Connection, playlist_id: i64, dest: &Path) -> Result<(PathBuf, Vec<Task>)> {
+/// 書き出し先のフォルダを作り、書き出すファイルの一覧を返す（ファイルはまだ書かない）。
+/// rows は抽選した並びの行の番号（中央の一覧に見えている順）
+pub fn prepare(conn: &Connection, playlist_id: i64, rows: &[i64], dest: &Path) -> Result<(PathBuf, Vec<Task>)> {
     if !dest.is_dir() {
         return Err(Error::invalid(format!("書き出し先のフォルダがありません: {}", dest.display())));
     }
-    let (name, nodes) = plan_export(conn, playlist_id)?;
+    let name: String = conn
+        .query_row("SELECT name FROM playlists WHERE id = ?1", [playlist_id], |r| r.get(0))
+        .map_err(|_| Error::invalid("プレイリストが見つかりません"))?;
+    let nodes = plan_rows(conn, rows)?;
     // ファイルの場所をまとめて引く
     let mut ids = Vec::new();
     collect_ids(&nodes, &mut ids);
@@ -177,8 +181,9 @@ mod tests {
         set_item_alias(&conn, items[0].id, "激しめの雨").unwrap();
         crate::chains::set_item_chain(&conn, items[1].id, Some(chain)).unwrap();
 
+        crate::playlists::draw::draw(&conn, top).unwrap();
         let out = tempfile::tempdir().unwrap();
-        let (root, tasks) = prepare(&conn, top, out.path()).unwrap();
+        let (root, tasks) = prepare(&conn, top, &[1, 2], out.path()).unwrap();
         assert_eq!(root, out.path().join("戦闘_ 1"));
         let dests: Vec<PathBuf> = tasks.iter().map(|t| t.dest.strip_prefix(&root).unwrap().to_path_buf()).collect();
         assert_eq!(dests, vec![PathBuf::from("001_激しめの雨.mp3"), Path::new("002_足音").join("001_wind.wav")]);
@@ -190,8 +195,8 @@ mod tests {
         // エフェクトのかかる曲はWAV（読み直せる）
         assert!(decode(&root.join("002_足音").join("001_wind.wav")).is_ok());
         // もう一度書き出すと、別のフォルダになる
-        let (again, _) = prepare(&conn, top, out.path()).unwrap();
+        let (again, _) = prepare(&conn, top, &[1, 2], out.path()).unwrap();
         assert_eq!(again, out.path().join("戦闘_ 1 (2)"));
-        assert!(prepare(&conn, top, &out.path().join("none")).is_err());
+        assert!(prepare(&conn, top, &[1, 2], &out.path().join("none")).is_err());
     }
 }

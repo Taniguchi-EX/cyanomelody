@@ -3,6 +3,7 @@
 //! 子のプレイリストは、親の項目（種類がプレイリストで owned = 1）として持つ。
 //! どこの子でもないプレイリストが最上位で、最上位の中の順番は playlists.position に持つ。
 
+pub mod draw;
 mod expand;
 
 use std::collections::{HashMap, HashSet};
@@ -82,6 +83,8 @@ pub struct PlaylistNode {
     pub parent_id: Option<i64>,
     pub depth: i64,
     pub item_count: i64,
+    /// 通しで流したときに鳴る曲の数（🎲の項目は1曲。見つからないファイルは数えない）。左の欄の行の件数
+    pub track_count: i64,
     /// 項目として直接入れているプレイリスト（子と参照）。画面でループになる候補を外すのに使う
     pub refs: Vec<i64>,
 }
@@ -230,6 +233,7 @@ pub fn list_playlists(conn: &Connection) -> Result<Vec<PlaylistNode>> {
         .prepare("SELECT playlist_id, count(*) FROM playlist_items GROUP BY playlist_id")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
+    let tracks = track_counts(conn)?;
     let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut refs: HashMap<i64, Vec<i64>> = HashMap::new();
     for row in conn
@@ -262,6 +266,7 @@ pub fn list_playlists(conn: &Connection) -> Result<Vec<PlaylistNode>> {
             parent_id,
             depth,
             item_count: counts.get(&id).copied().unwrap_or(0),
+            track_count: tracks.get(&id).copied().unwrap_or(0),
             refs: refs.get(&id).cloned().unwrap_or_default(),
         });
         for &c in children.get(&id).map(Vec::as_slice).unwrap_or_default().iter().rev() {
@@ -558,8 +563,8 @@ pub fn playlists_with_file(conn: &Connection, file_id: i64) -> Result<Vec<i64>> 
         .collect::<rusqlite::Result<_>>()?)
 }
 
-pub use expand::{expand_playlist, expand_playlist_item, item_files, plan_export, ExportNode};
-use expand::{count_item, Catalog};
+pub use expand::{expand_playlist, expand_playlist_item, item_files, ExportNode};
+use expand::{count_item, track_counts, Catalog};
 
 pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
     let mut cat = Catalog::load(conn)?;
@@ -620,7 +625,7 @@ pub fn remove_empty_tag_items(conn: &Connection) -> Result<usize> {
 
 #[cfg(test)]
 mod tests {
-    use super::expand::{expand_item_with, expand_with, plan_export_with, Rng};
+    use super::expand::{expand_item_with, expand_with, Rng};
     use super::*;
     use crate::db::test_db;
     use crate::files::add_tag;
@@ -1102,8 +1107,10 @@ mod tests {
         crate::chains::set_item_chain(&conn, items[2].id, Some(chain)).unwrap();
         set_item_mode(&conn, items[3].id, PlayMode::Shuffle).unwrap();
 
-        let (name, nodes) = plan_export_with(&conn, top, &mut Rng(1)).unwrap();
-        assert_eq!(name, "戦闘");
+        super::draw::draw_with(&conn, top, &mut Rng(1)).unwrap();
+        let seqs: Vec<i64> = conn.prepare("SELECT seq FROM temp.draw_rows ORDER BY seq").unwrap()
+            .query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap();
+        let nodes = super::draw::plan_rows(&conn, &seqs).unwrap();
         let file = |id: i64, alias: Option<&str>, chains: Vec<i64>| ExportNode::File {
             file_id: id,
             alias: alias.map(str::to_owned),
@@ -1112,9 +1119,8 @@ mod tests {
         assert_eq!(
             nodes,
             vec![
+                // 見つからないファイル（5）は抽選した並びに入らない
                 file(1, Some("剣"), vec![]),
-                // 見つからないファイル（5）も入れる（書き出すときに失敗として数える）
-                file(5, None, vec![]),
                 ExportNode::Folder {
                     name: "足音".into(),
                     children: vec![
