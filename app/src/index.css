@@ -734,6 +734,42 @@ button.filter-chip:hover .chip-x {
 
 /* 試聴中の行の下端の進み具合 */
 /* 鳴らしている行の進み具合。行全体を、左から薄い青で染めていく（文字は透けて読める） */
+/* グリッドのタイル：1行目に再生ボタン・来た項目・印とチェック、その下に曲名（2行まで）、一番下にタグ */
+.file-row.file-tile {
+  right: auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.file-tile .check-cell {
+  order: 5;
+  margin-left: auto;
+  height: 24px;
+}
+
+.file-tile .file-name {
+  order: 10;
+  flex: 1 0 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.3;
+}
+
+.file-tile .row-tags {
+  order: 11;
+  flex: 1 0 100%;
+  max-width: 100%;
+}
+
 .row-progress {
   position: absolute;
   left: 0;
@@ -1535,6 +1571,18 @@ button.add-button:hover:not(:disabled) {
 /* 「一括操作」のボタン（チェックの操作の行の右端）。右の欄に一括操作を出している間は押した状態にする */
 .bulk-button {
   margin-left: auto;
+}
+
+/* 中央の一覧の見せ方の切り替え（≡ 一覧・▦ グリッド）。選んでいる方は押した状態の色 */
+.view-switch {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+.view-switch button.active {
+  background: var(--selected);
+  border-color: var(--accent);
 }
 
 .bulk-button.active {

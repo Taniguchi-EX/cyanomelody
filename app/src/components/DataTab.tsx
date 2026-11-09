@@ -8,6 +8,8 @@ const SCREEN_KEYS = [
   "cyanomelody.volume",
   "cyanomelody.playerMode",
   "cyanomelody.fileSort",
+  "cyanomelody.fileSort.playlist",
+  "cyanomelody.listView",
   "cyanomelody.width.side",
   "cyanomelody.width.detail",
 ];

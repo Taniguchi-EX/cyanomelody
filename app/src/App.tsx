@@ -35,7 +35,7 @@ import { confirmDialog } from "./confirm";
 import { FolderPanel } from "./components/FolderPanel";
 import { FilterChips } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
-import { FileList } from "./components/FileList";
+import { FileList, type ListView } from "./components/FileList";
 import type { FileDropTarget } from "./hooks/useFileDrag";
 import { PlaylistPanel } from "./components/PlaylistPanel";
 import { PlaylistEditor } from "./components/PlaylistEditor";
@@ -96,6 +96,9 @@ export default function App() {
   const fileSortValue = selectedPlaylistId !== null ? playlistSortValue : librarySortValue;
   const setFileSortValue = selectedPlaylistId !== null ? setPlaylistSortValue : setLibrarySortValue;
   const fileSort = sorts.find((s) => s.value === fileSortValue) ?? sorts[0];
+  /** 中央の一覧の見せ方（一覧・グリッド）。アプリを閉じても覚えておく */
+  const [storedView, setStoredView] = useStoredString("cyanomelody.listView");
+  const listView: ListView = storedView === "grid" ? "grid" : "list";
   /** クリックして右の欄に出している行（AudioFile.key） */
   const [focusedKey, setFocusedKey] = useState<number | null>(null);
   /**
@@ -1188,6 +1191,26 @@ export default function App() {
                   </option>
                 ))}
               </select>
+              {/* 見せ方の切り替え：一覧（行の並び）・グリッド（タイルの格子） */}
+              <span className="view-switch" role="group" aria-label="一覧の見せ方">
+                {(
+                  [
+                    ["list", "≡", "一覧で見る"],
+                    ["grid", "▦", "グリッドで見る"],
+                  ] as const
+                ).map(([v, icon, label]) => (
+                  <button
+                    key={v}
+                    className={`icon${listView === v ? " active" : ""}`}
+                    aria-pressed={listView === v}
+                    title={label}
+                    aria-label={label}
+                    onClick={() => setStoredView(v)}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </span>
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (
@@ -1222,6 +1245,7 @@ export default function App() {
               reveal={revealFile}
               onRevealed={() => setRevealFile(null)}
               onOpenOrigin={(f) => selectedPlaylistId !== null && f.origin && openEditor(selectedPlaylistId, f.origin.itemId)}
+              view={listView}
             />
       </main>
       <Splitter

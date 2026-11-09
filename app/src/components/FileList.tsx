@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
 import { originText } from "../playlistItem";
@@ -7,6 +7,13 @@ import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 import { RowTags } from "./RowTags";
 
 const ROW_HEIGHT = 30;
+/** グリッドのタイルの大きさと間（px） */
+const TILE_WIDTH = 160;
+const TILE_HEIGHT = 96;
+const TILE_GAP = 8;
+
+/** 中央の一覧の見せ方：行の並び（一覧）か、格子（グリッド） */
+export type ListView = "list" | "grid";
 
 /** ハッシュ値から決まる色（同じ音声のファイルは同じ色になる） */
 const hashColor = (hash: string) => `hsl(${parseInt(hash.slice(0, 6), 16) % 360} 65% 50%)`;
@@ -41,6 +48,8 @@ type Props = {
   onRevealed: () => void;
   /** 行の来た項目のアイコンを押したとき（プレイリストを選んでいるときだけ出す） */
   onOpenOrigin: (file: AudioFile) => void;
+  /** 見せ方（一覧・グリッド）。操作はどちらも同じ */
+  view: ListView;
 };
 
 export function FileList({
@@ -60,22 +69,54 @@ export function FileList({
   reveal,
   onRevealed,
   onOpenOrigin,
+  view,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
+  const grid = view === "grid";
+  // グリッドで横に並べる数（欄の幅から求める）
+  const [columns, setColumns] = useState(1);
+  // 一覧の欄は、0件のときは出さないので、出したときに測り直す
+  const empty = files.length === 0;
+  useEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const update = () => setColumns(Math.max(1, Math.floor((el.clientWidth - TILE_GAP) / (TILE_WIDTH + TILE_GAP))));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [empty]);
+  const perRow = grid ? columns : 1;
+  // 仮想化は段（グリッドではタイルを横に並べた1段、一覧では1行）を単位にする
   const virtualizer = useVirtualizer({
-    count: files.length,
+    count: Math.ceil(files.length / perRow),
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 20,
+    estimateSize: () => (grid ? TILE_HEIGHT + TILE_GAP : ROW_HEIGHT),
+    overscan: grid ? 4 : 20,
   });
+  useEffect(() => {
+    virtualizer.measure();
+  }, [grid, virtualizer]);
+  /** index 番目のファイルが見える所までスクロールする */
+  const scrollTo = (index: number, align: "auto" | "center" = "auto") => virtualizer.scrollToIndex(Math.floor(index / perRow), { align });
 
   useEffect(() => {
     if (!reveal) return;
     const index = files.findIndex((f) => f.key === reveal.key);
-    if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
+    if (index >= 0) virtualizer.scrollToIndex(Math.floor(index / perRow), { align: "center" });
     onRevealed();
-  }, [reveal, files, virtualizer, onRevealed]);
+  }, [reveal, files, virtualizer, onRevealed, perRow]);
+
+  /** 右の欄に出すファイルを delta だけ移す。試聴中なら、移った先を続けて試聴する（聞き比べ） */
+  const moveFocus = (delta: number) => {
+    const cur = files.findIndex((f) => f.key === focusedKey);
+    const next = cur < 0 ? 0 : Math.min(Math.max(cur + delta, 0), files.length - 1);
+    const f = files[next];
+    onFocus(f);
+    scrollTo(next);
+    if (playingKey !== null && playingKey !== f.key && !f.missing) onPlay(f);
+  };
 
   return (
     <>
@@ -92,16 +133,14 @@ export function FileList({
               e.preventDefault();
               onCheckShown(true);
             }
-            // ↑↓：右の欄に出すファイルを移す。試聴中なら、移った先を続けて試聴する（聞き比べ）
+            // ↑↓：右の欄に出すファイルを移す（グリッドでは1段上・下）。←→：グリッドで前・後ろ
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
-              const cur = files.findIndex((f) => f.key === focusedKey);
-              const next =
-                cur < 0 ? 0 : Math.min(Math.max(cur + (e.key === "ArrowDown" ? 1 : -1), 0), files.length - 1);
-              const f = files[next];
-              onFocus(f);
-              virtualizer.scrollToIndex(next);
-              if (playingKey !== null && playingKey !== f.key && !f.missing) onPlay(f);
+              moveFocus((e.key === "ArrowDown" ? 1 : -1) * perRow);
+            }
+            if (grid && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+              e.preventDefault();
+              moveFocus(e.key === "ArrowRight" ? 1 : -1);
             }
             // スペース：右の欄に出しているファイルの試聴を始める・止める（ボタンなどの上では、そちらの操作にする）
             if (e.key === " " && !(e.target as HTMLElement).closest("button, input")) {
@@ -112,9 +151,14 @@ export function FileList({
           }}
         >
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((item) => {
+            {virtualizer.getVirtualItems().flatMap((band) =>
+              Array.from({ length: perRow }, (_, c) => band.index * perRow + c)
+                .filter((index) => index < files.length)
+                .map((index) => ({ index, start: band.start, column: index % perRow })),
+            ).map((item) => {
               const f = files[item.index];
               const classes = ["file-row"];
+              if (grid) classes.push("file-tile");
               const playing = playingKey === f.key;
               if (focusedKey === f.key) classes.push("selected");
               if (checked.has(f.id)) classes.push("checked");
@@ -123,7 +167,11 @@ export function FileList({
                 <div
                   key={f.key}
                   className={classes.join(" ")}
-                  style={{ top: item.start, height: ROW_HEIGHT }}
+                  style={
+                    grid
+                      ? { top: item.start + TILE_GAP, left: TILE_GAP + item.column * (TILE_WIDTH + TILE_GAP), width: TILE_WIDTH, height: TILE_HEIGHT }
+                      : { top: item.start, height: ROW_HEIGHT }
+                  }
                   data-testid="file-row"
                   data-rel-path={f.relPath}
                   onClick={() => onFocus(f)}
