@@ -34,6 +34,17 @@ await step("S01", "タグの詳細画面でシノニムを加えて保存でき�
   // ほかのタグの名前・自分のタグ名と同じものは入れない（入力は続く。Esc で入力だけやめる）
   await addSynonym("歌手b");
   expect((await synonymError()) === "「歌手b」は、タグ「歌手B」の名前です", await synonymError());
+  // 理由はエラーの色（赤）で出す
+  const [color, error] = await detail().getByTestId("synonym-list-error").evaluate((e) => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--error)";
+    document.body.appendChild(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return [getComputedStyle(e).color, c];
+  });
+  expect(color === error, `理由の文字の色: ${color}（エラーの色 ${error}）`);
+  await shot("S01_重なりの理由");
   await detail().getByLabel("加えるシノニム").fill("歌手A");
   await detail().getByLabel("加えるシノニム").press("Enter");
   expect((await synonymError()) === "タグ名と同じです", await synonymError());

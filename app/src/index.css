@@ -1591,8 +1591,24 @@ button.danger {
   color: var(--accent);
 }
 
-/* タグの詳細画面のシノニムの一覧：無視する値の一覧と同じ形で、文字はふつうの色。字下げはしない */
+/* タグの詳細画面のシノニムの一覧：無視する値の一覧と同じ形で、文字はふつうの色。字下げはしない（「＋」も左に寄せる） */
 .synonym-list .ignore-list {
   margin-left: 0;
   color: var(--fg);
+}
+
+.synonym-list .editable-list > button.icon {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+/* 「シノニム」の見出しは、一覧の一番上の行にそろえる */
+.form-grid > .synonym-label {
+  align-self: start;
+  line-height: 26px;
+}
+
+/* 一覧に入れられない理由（重なりなど） */
+.editable-list .error {
+  color: var(--error);
 }

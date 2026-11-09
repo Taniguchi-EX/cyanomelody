@@ -112,19 +112,6 @@ export function TagDetail({ tag, parent, tags, busy, onSubmit, onClose }: Props)
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && !editingSynonyms && submit()}
           />
-          <span>シノニム</span>
-          <div className="synonym-list">
-            <EditableList
-              load={loadSynonyms}
-              save={async (values) => setSynonyms(values)}
-              off={false}
-              what="シノニム"
-              testId="synonym-list"
-              onEditing={setEditingSynonyms}
-              validate={(value) => synonymProblem(value, name, tag, tags)}
-            />
-            <span className="sub">別の名前。付けるタグ名の候補・検索・ファイルの情報からのタグ付けで、このタグとして扱う</span>
-          </div>
           <label htmlFor="tag-detail-sort">子のタグの並び順</label>
           <span className="row">
             <select
@@ -178,6 +165,18 @@ export function TagDetail({ tag, parent, tags, busy, onSubmit, onClose }: Props)
               {name.trim() || tag.name}
             </span>
           </span>
+          <span className="synonym-label">シノニム</span>
+          <div className="synonym-list">
+            <EditableList
+              load={loadSynonyms}
+              save={async (values) => setSynonyms(values)}
+              off={false}
+              what="シノニム"
+              testId="synonym-list"
+              onEditing={setEditingSynonyms}
+              validate={(value) => synonymProblem(value, name, tag, tags)}
+            />
+          </div>
         </div>
         <div className="row" style={{ justifyContent: "flex-end", marginTop: 6 }}>
           <button onClick={onClose}>やめる</button>
