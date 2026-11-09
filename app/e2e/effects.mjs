@@ -212,7 +212,18 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   await page.getByRole("button", { name: "次へ" }).click();
   await page.waitForFunction(() => document.querySelector("[data-testid=player-fx]").dataset.overridden === "true", null, { timeout: 5000 });
   expect((await playerFx.evaluate((e) => getComputedStyle(e).opacity)) !== "1", "薄くない");
+  // グレーアウトしている間は、かけている項目のエフェクトセットの名前を出し、説明に理由と名前を出す
+  expect((await playerFx.locator("option:checked").innerText()) === "新しいエフェクトセット", `表示: ${await playerFx.locator("option:checked").innerText()}`);
+  const overriddenTitle = await playerFx.getAttribute("title");
+  expect(overriddenTitle.includes("プレイリストの項目のエフェクト（新しいエフェクトセット）"), overriddenTitle);
   await shot("E12_再生の欄のエフェクト");
+  // グレーアウトしていても選び直せる。表示は項目のエフェクトセットのまま、項目のエフェクトのない曲に戻ると選んだものが出る
+  await playerFx.selectOption({ label: "fx なし" });
+  expect((await playerFx.locator("option:checked").innerText()) === "新しいエフェクトセット", "選び直すと表示が変わった");
+  await page.getByRole("button", { name: "前へ" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-testid=player-fx]").dataset.overridden === "false", null, { timeout: 5000 });
+  expect((await playerFx.locator("option:checked").innerText()) === "fx なし", `戻った後: ${await playerFx.locator("option:checked").innerText()}`);
+  await playerFx.selectOption({ label: "新しいエフェクトセット" });
   await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
   // 再読み込み後も残る。「fx なし」に戻すと、項目のエフェクトのない曲にはかからない
   await ui.reload();
@@ -277,6 +288,33 @@ await step("E14", "簡易オフボーカル：追加するエフェクトにあ�
   await page.waitForFunction(() => document.querySelector("audio").src.includes("effects-cache"), null, { timeout: 10000 });
   await page.locator(".preview-button").click();
   await close();
+});
+
+await step("E15", "入れ子で項目のエフェクトが2つかかる曲では、再生の欄に「内側 → 外側」の順で名前を出す", async () => {
+  // 親のプレイリストに「シナリオ」を参照で入れ、その項目に「再生の欄の fx」を付ける（シナリオの chime.wav には「カラオケ」が付いている）
+  await page.getByRole("button", { name: "プレイリストを作る" }).click();
+  await page.getByLabel("新しいプレイリストの名前").fill("親");
+  await page.getByLabel("新しいプレイリストの名前").press("Enter");
+  await waitIdle();
+  await page.locator(`[data-testid=playlist][data-playlist-name="親"] .tag-name`).click();
+  await page.getByTestId("playlist-title").filter({ hasText: "親" }).waitFor({ timeout: 3000 });
+  await page.getByLabel("加えるプレイリスト").selectOption({ label: "シナリオ" });
+  await waitIdle();
+  await fx("シナリオ").selectOption({ label: "再生の欄の fx" });
+  await waitIdle();
+  await page.getByRole("button", { name: "シナリオを再生" }).click();
+  await ui.waitPlaying();
+  // 項目の並びは mp3、wav。2曲目（chime.wav）へ
+  await page.getByRole("button", { name: "次へ" }).click();
+  const playerFx = page.getByTestId("player-fx");
+  await page
+    .waitForFunction(() => document.querySelector("[data-testid=player-fx] option:checked")?.textContent === "カラオケ → 再生の欄の fx", null, { timeout: 5000 })
+    .catch(() => {});
+  const shown = await playerFx.locator("option:checked").innerText();
+  expect(shown === "カラオケ → 再生の欄の fx", `表示: ${shown}`);
+  expect((await playerFx.getAttribute("title")).includes("カラオケ → 再生の欄の fx"), await playerFx.getAttribute("title"));
+  await shot("E15_入れ子のエフェクト");
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
 });
 
 await ui.finish();

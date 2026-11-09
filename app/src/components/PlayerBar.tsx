@@ -46,6 +46,8 @@ type Props = {
 /** fx のプルダウンの、管理画面を開く選び肢 */
 const NEW_FX = "new-fx";
 const EDIT_FX = "edit-fx";
+/** 項目のエフェクトがかかる曲を鳴らしている間だけ足す、表示用の選び肢（選べない） */
+const ITEM_FX = "item-fx";
 
 const clock = (s: number) =>
   Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00";
@@ -112,6 +114,13 @@ export function PlayerBar({
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
   // 鳴らしている曲にプレイリストの項目のエフェクトがかかるときは、再生の欄のエフェクトセットはかけない
   const itemFx = (entry?.chains.length ?? 0) > 0;
+  // 項目のエフェクトセットの名前（内側から外側の順。消えたエフェクトセットは飛ばす）。グレーアウトしたプルダウンに出す
+  const itemFxName = itemFx
+    ? entry!.chains
+        .map((id) => chains.find((c) => c.id === id)?.name)
+        .filter((n): n is string => n !== undefined)
+        .join(" → ") || "項目の fx"
+    : "";
   // 再生方法のボタン：今の再生方法と、押したときに変わる先
   const modeIndex = PLAYER_MODES.findIndex((m) => m.mode === playMode);
   const mode = PLAYER_MODES[modeIndex];
@@ -241,12 +250,16 @@ export function PlayerBar({
       </div>
 
       <div className="play-side">
-        {/* 再生する曲にかけるエフェクトセット。項目のエフェクトがかかる曲ではグレーアウトする（選び直すことはできる） */}
+        {/*
+          再生する曲にかけるエフェクトセット。項目のエフェクトがかかる曲ではグレーアウトし、かけている項目のエフェクトセットの名前を出す
+          （先頭の表示用の選び肢を選んだ状態に見せる。選び直すことはできる）
+        */}
         <select
           className={`player-fx${itemFx ? " overridden" : ""}`}
-          value={baseChain ?? ""}
+          value={itemFx ? ITEM_FX : (baseChain ?? "")}
           onChange={(e) => {
             const v = e.target.value;
+            if (v === ITEM_FX) return;
             if (v === NEW_FX) onOpenEffects(null);
             else if (v === EDIT_FX) onOpenEffects(baseChain);
             else onBaseChain(v ? Number(v) : null);
@@ -254,12 +267,17 @@ export function PlayerBar({
           aria-label="再生する曲にかけるエフェクト"
           title={
             itemFx
-              ? "この曲には、プレイリストの項目のエフェクトをかけています"
+              ? `この曲には、プレイリストの項目のエフェクト（${itemFxName}）をかけています。再生の欄で選んだエフェクトセットはかけません`
               : "再生する曲にかけるエフェクトセット（プレイリストの項目のエフェクトがあれば、そちらをかけます）"
           }
           data-testid="player-fx"
           data-overridden={itemFx}
         >
+          {itemFx && (
+            <option value={ITEM_FX} disabled hidden>
+              {itemFxName}
+            </option>
+          )}
           <option value="">fx なし</option>
           {chains.map((c) => (
             <option key={c.id} value={c.id}>

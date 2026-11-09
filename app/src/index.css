@@ -1333,6 +1333,8 @@ button.add-button:hover:not(:disabled) {
 .player-fx {
   max-width: 160px;
   margin-right: 8px;
+  /* 項目のエフェクトセットの名前（「A → B」）が長いときは省く。説明（title）には全部出す */
+  text-overflow: ellipsis;
 }
 
 .player-fx.overridden {
