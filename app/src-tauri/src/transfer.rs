@@ -78,7 +78,7 @@ pub struct XFile {
     /// 出典・ライセンス（出典・ライセンスを書き出したときだけ）
     pub source: Option<i64>,
     pub license: Option<i64>,
-    /// 選んだファイルの書き出し（`export_files`）だけ：見るための情報。取り込みでは使わない
+    /// 選んだファイルの書き出し（`export_metadata`）だけ：見るための情報。取り込みでは使わない
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -319,7 +319,7 @@ pub fn export(
 /// 項目は「タグ」と「出典・ライセンス」（曲へのタグ付け・設定は、選んだファイルの分だけ）。タグ・出典・ライセンスの定義はすべて入れる
 /// （取り込む側で名前を合わせるため）。新しく作るタグの既定値・自動タグ付けの設定・画面の設定は入れない。
 /// 曲には、見るための情報（曲名・長さ・リリース年・見つからない印）も入れる（取り込みでは使わない）
-pub fn export_files(conn: &Connection, file_ids: &[i64], app_version: &str) -> Result<DataFile> {
+pub fn export_metadata(conn: &Connection, file_ids: &[i64], app_version: &str) -> Result<DataFile> {
     let sections = Sections { tags: true, credits: true, ..Default::default() };
     let mut data = export(conn, sections, app_version, None)?;
     data.new_tag = None;
@@ -1064,7 +1064,7 @@ mod tests {
     fn exports_only_selected_files_with_tags_and_credits() {
         let conn = source_db();
         // a.wav（タグ2つ・出典・ライセンス）と sub/c.flac（何もない）を選ぶ
-        let data = roundtrip(&export_files(&conn, &[1, 3], "1.2.0").unwrap());
+        let data = roundtrip(&export_metadata(&conn, &[1, 3], "1.2.0").unwrap());
         assert_eq!(data.sections, Sections { tags: true, credits: true, ..Default::default() });
         let rels: Vec<&str> = data.files.iter().map(|f| f.rel_path.as_str()).collect();
         assert_eq!(rels, vec!["a.wav", "sub/c.flac"]);

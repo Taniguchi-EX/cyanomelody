@@ -29,7 +29,7 @@ type Props = {
   /** 「ファイルをまとめて書出…」：対象のファイルを、選んだフォルダの中に作るフォルダへそのままコピーする */
   onExportFiles: () => void;
   /** 「メタデータを書き出し…」：対象のファイルのメタデータを JSON に書き出す（保存先を選ぶ） */
-  onExportInfo: () => void;
+  onExportMetadata: () => void;
   onAddToPlaylist: (playlistId: number) => void;
   onOpenPlaylist: (playlistId: number) => void;
   onRemoveFromPlaylist: (playlist: TagCount) => void;
@@ -56,7 +56,7 @@ export function BulkPanel({
   onAutotag,
   onDelete,
   onExportFiles,
-  onExportInfo,
+  onExportMetadata,
   onAddToPlaylist,
   onOpenPlaylist,
   onRemoveFromPlaylist,
@@ -230,7 +230,7 @@ export function BulkPanel({
               ファイルをまとめて書出…
             </button>
             <button
-              onClick={onExportInfo}
+              onClick={onExportMetadata}
               disabled={busy}
               title="対象のファイルのタグ・出典・ライセンス・曲名・長さ・リリース年を JSON に書き出す（設定画面の「データ」で取り込める）"
             >

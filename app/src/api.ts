@@ -223,7 +223,10 @@ export const api = {
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   /** データのエクスポート：選んだ項目を path に書き出す。screen は画面の設定 */
   /** 選んだファイルのメタデータを書き出す（データのエクスポートと同じ形）。書き出した曲の数を返す */
-  exportFiles: (path: string, fileIds: number[]) => invoke<number>("export_files", { path, fileIds }),
+  exportMetadata: (path: string, fileIds: number[]) => invoke<number>("export_metadata", { path, fileIds }),
+  /** 選んだファイルを、dest の中に作るフォルダ（folderName）へそのままコピーし始め、作ったフォルダのパスを返す。進み具合は "export-progress" */
+  startExportFiles: (fileIds: number[], dest: string, folderName: string) =>
+    invoke<string>("start_export_files", { fileIds, dest, folderName }),
   exportData: (path: string, sections: DataSections, screen: Record<string, unknown> | null) =>
     invoke<ExportSummary>("export_data", { path, sections, screen }),
   /** インポートの見込み */
@@ -430,9 +433,6 @@ export const playlistApi = {
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   /** rows は抽選した並びの行の番号（中央の一覧に見えている順） */
   startExport: (id: number, rows: number[], dest: string) => invoke<string>("start_export", { id, rows, dest }),
-  /** 選んだファイルを、dest の中に作るフォルダ（folderName）へそのままコピーし始め、作ったフォルダのパスを返す。進み具合は "export-progress" */
-  startExportFiles: (fileIds: number[], dest: string, folderName: string) =>
-    invoke<string>("start_export_files", { fileIds, dest, folderName }),
   /** プレイリストを選んで抽選する */
   select: (id: number) => invoke<void>("select_playlist", { id }),
   clearSelection: () => invoke<void>("clear_playlist_selection"),

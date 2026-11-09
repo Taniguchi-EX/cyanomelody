@@ -562,8 +562,8 @@ struct ExportSummary {
 /// データのエクスポート：選んだ項目を path に JSON で書き出す。screen は画面の設定
 /// 選んだファイル（一括操作の対象）のメタデータを、データのエクスポートと同じ形で path に書き出す。書き出した曲の数を返す
 #[tauri::command]
-async fn export_files(app: AppHandle, state: State<'_, AppState>, path: String, file_ids: Vec<i64>) -> Result<usize> {
-    let data = transfer::export_files(&state.conn(), &file_ids, &app.package_info().version.to_string())?;
+async fn export_metadata(app: AppHandle, state: State<'_, AppState>, path: String, file_ids: Vec<i64>) -> Result<usize> {
+    let data = transfer::export_metadata(&state.conn(), &file_ids, &app.package_info().version.to_string())?;
     let json = serde_json::to_string_pretty(&data).map_err(|e| Error::invalid(e.to_string()))?;
     std::fs::write(&path, json)?;
     Ok(data.files.len())
@@ -1077,7 +1077,7 @@ pub fn run() {
             set_tag_synonyms,
             new_tag_settings,
             export_data,
-            export_files,
+            export_metadata,
             inspect_import,
             import_data,
             set_new_tag_settings,

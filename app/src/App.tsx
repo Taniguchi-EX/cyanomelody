@@ -481,12 +481,12 @@ export default function App() {
    * ファイルのメタデータを、データのエクスポートと同じ形の JSON に書き出す（保存先を選ぶ）。
    * fileIds が関数なら、保存先を選んだ後に呼んで対象を決める（プレイリストの一覧など）
    */
-  const exportFileInfo = async (name: string, fileIds: number[] | (() => Promise<number[]>)) => {
+  const exportMetadata = async (name: string, fileIds: number[] | (() => Promise<number[]>)) => {
     const path = await pickJsonSavePath(name).catch(showError);
     if (!path) return;
     run(async () => {
       const ids = typeof fileIds === "function" ? await fileIds() : fileIds;
-      const n = await api.exportFiles(path, ids);
+      const n = await api.exportMetadata(path, ids);
       showInfo(`${n}件のファイルのメタデータを書き出しました: ${path}`);
     });
   };
@@ -496,7 +496,7 @@ export default function App() {
     const dest = await pickPath({ directory: true }).catch(showError);
     if (typeof dest !== "string") return;
     try {
-      const folder = await playlistApi.startExportFiles(bulkFileIds, dest, `cyanomelody-files-${todayStamp()}`);
+      const folder = await api.startExportFiles(bulkFileIds, dest, `cyanomelody-files-${todayStamp()}`);
       showInfo(`書き出しを始めました: ${folder}`);
     } catch (e) {
       showError(e);
@@ -1304,7 +1304,7 @@ export default function App() {
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onDelete={() => startDelete(bulkFileIds)}
             onExportFiles={exportCheckedFiles}
-            onExportInfo={() => exportFileInfo(`cyanomelody-files-${todayStamp()}`, bulkFileIds)}
+            onExportMetadata={() => exportMetadata(`cyanomelody-files-${todayStamp()}`, bulkFileIds)}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={(id) => openEditor(id)}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}
@@ -1417,8 +1417,8 @@ export default function App() {
           onAddTags={addTagsToPlaylist}
           onAddRef={addRefToPlaylist}
           onExport={(dest) => exportPlaylist(editor.id, dest)}
-          onExportInfo={() =>
-            exportFileInfo(playlistName(editor.id), async () => [...new Set((await selectedRows(editor.id)).map((r) => r.id))])
+          onExportMetadata={() =>
+            exportMetadata(playlistName(editor.id), async () => [...new Set((await selectedRows(editor.id)).map((r) => r.id))])
           }
           onBrowseFolder={browseFolder}
           onError={showError}
