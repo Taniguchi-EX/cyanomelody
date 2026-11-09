@@ -113,9 +113,9 @@ await step("P06", "別の階層のプレイリストを参照として加えら�
   await shot("P06_ループの候補");
 });
 
-await step("P07", "左の欄で作ったプレイリストを、取っ手で別のプレイリストの中に落とすと子になり、親の項目にも入る", async () => {
+await step("P07", "左の欄で作ったプレイリストを、行のドラッグで別のプレイリストの中に落とすと子になり、親の項目にも入る", async () => {
   await createPlaylist("剣");
-  await ui.dragTo(playlistItem("剣").getByTestId("drag-handle"), playlistItem("戦闘"), 0.5);
+  await ui.dragTo(playlistItem("剣").locator(".tag-name, .credit-name").first(), playlistItem("戦闘"), 0.5);
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:0", await tree());
   await open("戦闘");
   expect((await items()).at(-1) === "子のプレイリスト:剣", (await items()).join(" / "));
@@ -123,17 +123,16 @@ await step("P07", "左の欄で作ったプレイリストを、取っ手で別�
   expect((await page.getByLabel("子のプレイリストの名前").count()) === 0, "子のプレイリストを作る欄が残っている");
 });
 
-await step("P08", "項目を取っ手で並べ替えられる。左の欄の取っ手で別のプレイリストの子にでき、ループになる位置には落とせない", async () => {
-  const handles = page.getByTestId("item-handle");
-  await ui.dragTo(handles.last(), page.getByTestId("playlist-item").first(), 0.2);
+await step("P08", "項目を行のドラッグで並べ替えられる。左の欄の行のドラッグで別のプレイリストの子にでき、ループになる位置には落とせない", async () => {
+  await ui.dragTo(page.getByTestId("item-content").last(), page.getByTestId("playlist-item").first(), 0.2);
   expect((await items())[0] === "子のプレイリスト:剣", (await items()).join(" / "));
   // 子の項目の位置は、左の欄の子の並びにもなる
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:0", await tree());
-  // 左の欄の取っ手で子にする。ループになる位置には落とせない（旧 P09）
-  await ui.dragTo(playlistItem("足音").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
+  // 左の欄の行のドラッグで子にする。ループになる位置には落とせない（旧 P09）
+  await ui.dragTo(playlistItem("足音").locator(".tag-name, .credit-name").first(), playlistItem("環境"), 0.5);
   expect((await tree()) === "戦闘:0 剣:1 環境:0 足音:1", await tree());
   // 戦闘は環境を参照しているので、戦闘を環境の子にするとループになる
-  await ui.dragTo(playlistItem("戦闘").getByTestId("drag-handle"), playlistItem("環境"), 0.5, false);
+  await ui.dragTo(playlistItem("戦闘").locator(".tag-name, .credit-name").first(), playlistItem("環境"), 0.5, false);
   const cls = await playlistItem("環境").getAttribute("class");
   expect(!/drop-/.test(cls), `ループになる位置に表示が出た: ${cls}`);
   await page.mouse.up();
@@ -246,7 +245,7 @@ await step("P15", "左の欄の行の「✎」で名前を変えられる（同�
 
 await step("P16", "左の欄の行の「🗑」で削除すると、子は繰り上がり、参照していたプレイリストから外れる（確認に書いてある）", async () => {
   // 環境の子に足音（短い）を入れてから、環境を削除する
-  await ui.dragTo(playlistItem("足音（短い）").getByTestId("drag-handle"), playlistItem("環境"), 0.5);
+  await ui.dragTo(playlistItem("足音（短い）").locator(".tag-name, .credit-name").first(), playlistItem("環境"), 0.5);
   await open("環境");
   await ui.rowAction(playlistItem("環境"), "環境を削除");
   await waitIdle();
@@ -493,14 +492,14 @@ await step("P23", "右の欄に、そのファイルを入れているプレイ�
   await back();
 });
 
-await step("P25", "左の欄の行は開閉の印・名前・✎・🗑・数・取っ手の順。詳細画面：丸い「＜」で戻る。「書出」は一番下の行（🗑はない）。タグの組み合わせの項目を押すと、右の欄にその名前の欄と内容が出る", async () => {
+await step("P25", "左の欄の行は開閉の印・名前・✎・🗑・数の順。詳細画面：丸い「＜」で戻る。「書出」は一番下の行（🗑はない）。タグの組み合わせの項目を押すと、右の欄にその名前の欄と内容が出る", async () => {
   await back();
   const item = playlistItem("ドラッグ");
   await item.hover();
   const order = await item.evaluate((li) =>
     [...li.children].map((c) => c.dataset.testid ?? (c.classList.contains("sub") ? "count" : c.className)).join(","),
   );
-  expect(order === "tag-twisty,tag-name,row-actions,count,drag-handle", order);
+  expect(order === "tag-twisty,tag-name,row-actions,count", order);
   await createPlaylist("消す用");
   await open("消す用");
   await ui.filtered(() => tagItem("雨").click());
@@ -738,6 +737,73 @@ await step("P34", "詳細画面の「一括操作」：チェックした項目�
   // 項目の行を押すと、項目の詳細に戻る
   await itemRow("chime.flac").locator(".item-content").click();
   await panel.waitFor({ state: "detached", timeout: 3000 });
+  await back();
+});
+
+/** CSS の色（var(--accent) など）を、計算した rgb にする */
+const cssColor = (value) =>
+  page.evaluate((v) => {
+    const e = document.createElement("span");
+    e.style.color = v;
+    document.body.appendChild(e);
+    const c = getComputedStyle(e).color;
+    e.remove();
+    return c;
+  }, value);
+
+await step("P35", "再生の欄：歯車とスピーカーは絵。スピーカーを押すとミュート（音量0・×のアイコン）、もう一度押すと前の音量に戻る。つまみで0にしても×になり、押すと100%", async () => {
+  const volume = page.getByLabel("音量");
+  const mute = page.getByTestId("player-mute");
+  const icon = () => mute.locator("svg").getAttribute("data-icon");
+  expect((await page.getByRole("button", { name: "設定", exact: true }).locator("svg[data-icon=gear]").count()) === 1, "歯車の絵がない");
+  const before = await volume.inputValue();
+  expect(before !== "0" && (await icon()) === "speaker", `${before} ${await icon()}`);
+  await mute.click();
+  expect((await volume.inputValue()) === "0" && (await icon()) === "speaker-muted", `${await volume.inputValue()} ${await icon()}`);
+  expect((await page.evaluate(() => document.querySelector("audio").volume)) === 0, "音が消えない");
+  await shot("P35_ミュート");
+  await mute.click();
+  expect((await volume.inputValue()) === before && (await icon()) === "speaker", `戻らない ${await volume.inputValue()}`);
+  // つまみで0にしても×。押すと（前の音量を覚えていなければ）100%
+  await volume.focus();
+  await page.keyboard.press("Home");
+  expect((await icon()) === "speaker-muted", await icon());
+  await ui.reload();
+  await page.getByTestId("player-mute").click();
+  expect((await page.getByLabel("音量").inputValue()) === "100", await page.getByLabel("音量").inputValue());
+});
+
+await step("P36", "ライブラリの行をダブルクリックすると再生する（鳴らしている行なら止めずに鳴らし直す）。鳴らしている行の停止ボタンは青い", async () => {
+  await back();
+  await ui.clearFilter();
+  await row("chime.wav").locator(".file-name").dblclick();
+  await ui.waitPlaying();
+  const stop = row("chime.wav").getByRole("button", { name: "停止", exact: true });
+  expect((await stop.count()) === 1, "ダブルクリックで再生しない");
+  const color = await stop.evaluate((e) => getComputedStyle(e).color);
+  expect(color === (await cssColor("var(--accent)")), `停止ボタンの色: ${color}`);
+  await shot("P36_鳴らしている行");
+  await row("chime.wav").locator(".file-name").dblclick();
+  await page.waitForTimeout(500);
+  expect((await stop.count()) === 1, "鳴らし直さずに止まった");
+  await stop.click();
+  await ui.waitStopped();
+});
+
+await step("P37", "プレイリストの項目：行のダブルクリックで再生する。行をつかんで項目の行の上で離すと並べ替え（チェックしていても、つかんだ項目だけ）", async () => {
+  await open("一括の項目");
+  const contents = () => page.getByTestId("item-content").allInnerTexts();
+  const before = await contents();
+  expect(before.length === 2, before.join(","));
+  await itemRow(before[0]).locator(".item-content").dblclick();
+  await ui.waitPlaying();
+  await page.locator(".play-buttons").getByRole("button", { name: "停止", exact: true }).click();
+  await ui.waitStopped();
+  // 両方チェックしたまま、後ろの項目を前へ
+  await itemRow(before[0]).getByTestId("item-check").check();
+  await itemRow(before[1]).getByTestId("item-check").check();
+  await ui.dragTo(itemRow(before[1]).locator(".item-content"), itemRow(before[0]), 0.2);
+  expect((await contents()).join(",") === [before[1], before[0]].join(","), (await contents()).join(","));
   await back();
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { EffectChain } from "../effects";
 import { stem } from "../paths";
+import { GearIcon, SpeakerIcon } from "./Icons";
 import { PLAYER_MODES, type Player, type PlayerMode, type PreviewTarget } from "../hooks/useAudioPlayer";
 
 type Props = {
@@ -28,6 +29,8 @@ type Props = {
   onVolume: (volume: number) => void;
   /** 音量のバーを動かし終えたとき（保存する） */
   onVolumeCommit: () => void;
+  /** スピーカーのボタン：ミュートとミュートの解除を切り替える */
+  onToggleMute: () => void;
   chains: EffectChain[];
   /** 再生の欄で選んだエフェクトセット（null は「fx なし」） */
   baseChain: number | null;
@@ -79,6 +82,7 @@ export function PlayerBar({
   volume,
   onVolume,
   onVolumeCommit,
+  onToggleMute,
   chains,
   baseChain,
   onBaseChain,
@@ -265,9 +269,16 @@ export function PlayerBar({
           <option value={NEW_FX}>新しいfxを作る</option>
           {baseChain !== null && <option value={EDIT_FX}>このfxを編集</option>}
         </select>
-        <span className="sub" aria-hidden="true">
-          🔈
-        </span>
+        <button
+          className="icon speaker-button"
+          onClick={onToggleMute}
+          title={volume > 0 ? "ミュート" : "ミュートを解除"}
+          aria-label={volume > 0 ? "ミュート" : "ミュートを解除"}
+          data-testid="player-mute"
+          data-muted={volume === 0}
+        >
+          <SpeakerIcon volume={volume} />
+        </button>
         <input
           type="range"
           min={0}
@@ -281,7 +292,7 @@ export function PlayerBar({
           data-testid="player-volume"
         />
         <button className="icon settings-button" onClick={onOpenSettings} title="設定" aria-label="設定">
-          ⚙
+          <GearIcon />
         </button>
       </div>
     </div>

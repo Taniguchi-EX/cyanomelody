@@ -27,8 +27,8 @@ const colors = (locator) => locator.evaluate((e) => `${getComputedStyle(e).backg
 /** 左の欄のタグを「名前:深さ」で表示順に */
 const tree = () =>
   page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => `${r.dataset.tagName}:${r.dataset.depth}`).join(" "));
-const handle = (name) => tagItem(name).getByTestId("drag-handle");
-/** タグ name の取っ手をつかんで、target の行の高さの ratio の位置まで動かす。release が false なら離さない */
+const handle = (name) => tagItem(name).locator(".tag-name, .credit-name").first();
+/** タグ name の行（名前）をつかんで、target の行の高さの ratio の位置まで動かす。release が false なら離さない */
 const dragTo = (name, target, ratio, release = true) => ui.dragTo(handle(name), target, ratio, release);
 
 // ===== タグ自体の管理（作成・名前の変更・統合・削除） =====
@@ -130,9 +130,9 @@ await step("A08", "「🗑」でタグを削除すると、ファイルから外
   expect((await tagNames()).join(",") === "未使用タグ", "キャンセルしたのに削除した");
 });
 
-// ===== タグの階層構造（取っ手での並べ替え、たたむ、子のあるタグの削除） =====
+// ===== タグの階層構造（行のドラッグでの並べ替え、たたむ、子のあるタグの削除） =====
 
-await step("G02", "取っ手で落とす位置：行の真ん中は子の最後、上の端は前、下の端は後ろ、一覧の下の空いた所は最上位の最後（子孫も一緒に移る）", async () => {
+await step("G02", "行のドラッグで落とす位置：行の真ん中は子の最後、上の端は前、下の端は後ろ、一覧の下の空いた所は最上位の最後（子孫も一緒に移る）", async () => {
   // 準備：前のテストのタグを消し、階層用のタグを作ってファイルに付ける
   await rowAction(tagItem("未使用タグ"), "未使用タグを削除");
   await waitIdle();
@@ -189,10 +189,14 @@ await step("G05", "自分自身や子孫の中には落とせない（表示が�
   expect((await tree()) === AFTER_G02, await tree());
 });
 
-await step("G07", "取っ手を押しただけでは絞り込まない。名前を押すと絞り込む", async () => {
-  await handle("爆発").click();
+await step("G07", "行をつかんで動かし、同じ行の上で離しても絞り込まない（ドラッグは押したことにしない）。名前を押すと絞り込む", async () => {
+  const box = await handle("爆発").boundingBox();
+  await page.mouse.move(box.x + 4, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 24, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
   await page.waitForTimeout(300);
-  expect(!(await tagItem("爆発").getAttribute("class")).includes("active"), "取っ手で絞り込んだ");
+  expect(!(await tagItem("爆発").getAttribute("class")).includes("active"), "ドラッグで絞り込んだ");
   expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
   await ui.filtered(() => tagItem("爆発").locator(".tag-name").click());
   expect((await fileCount()) === 1, `名前で絞り込めない ${await fileCount()}`);

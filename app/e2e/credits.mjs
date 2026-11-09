@@ -269,24 +269,24 @@ await step("C22", "右の欄の出典・ライセンスはプルダウン：（�
   await shot("C22_右の欄のプルダウン");
 });
 
-await step("C23", "出典・ライセンスは取っ手のドラッグで並べ替えられる（前・後ろ・最後）。件数は✎🗑の右。「なし」の件数はほかの行とそろう。左の欄の検索で絞り込める", async () => {
+await step("C23", "出典・ライセンスは行のドラッグで並べ替えられる（前・後ろ・最後）。件数は✎🗑の右。「なし」の件数はほかの行とそろう。左の欄の検索で絞り込める", async () => {
   const names = await leftNames("license");
   expect(names.length >= 2, names.join(","));
   const [first, second] = names;
   // 2番目を1番目の前（上半分）に落とす
-  await ui.dragTo(leftItem("license", second).getByTestId("drag-handle"), leftItem("license", first), 0.2);
+  await ui.dragTo(leftItem("license", second).locator(".tag-name, .credit-name").first(), leftItem("license", first), 0.2);
   expect((await leftNames("license"))[0] === second, (await leftNames("license")).join(","));
   // 一覧の下の空いた所に落とすと最後
-  await ui.dragTo(leftItem("license", second).getByTestId("drag-handle"), page.getByTestId("license-drop-root"), 0.5);
+  await ui.dragTo(leftItem("license", second).locator(".tag-name, .credit-name").first(), page.getByTestId("license-drop-root"), 0.5);
   const after = await leftNames("license");
   expect(after[after.length - 1] === second, after.join(","));
   await ui.reload();
   expect((await leftNames("license")).join(",") === after.join(","), "再読み込みで戻った");
-  // 行の並び：名前、（条項の記号）、✎🗑、件数、取っ手
+  // 行の並び：名前、（条項の記号）、✎🗑、件数
   const order = await leftItem("license", first).evaluate((li) =>
     [...li.children].map((c) => c.dataset.testid ?? c.className).join(","),
   );
-  expect(order === "credit-name,term-marks,row-actions,credit-count,drag-handle", order);
+  expect(order === "credit-name,term-marks,row-actions,credit-count", order);
   // 「なし」の行の件数の右端は、ほかの行の件数の右端とそろう
   const rights = await page.evaluate(() => {
     const none = document.querySelector("[data-testid=source-none] .sub").getBoundingClientRect().right;

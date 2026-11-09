@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MoveTarget } from "./api";
 
 /** ドラッグ中に、どこに落とすかの表示 */
@@ -19,17 +19,25 @@ type Options = {
 };
 
 /**
- * 木（タグ・プレイリスト）と一覧（出典・ライセンス）の行を、取っ手のドラッグアンドドロップで並べ替える。
+ * 木（タグ・プレイリスト）と一覧（出典・ライセンス）の行を、行そのもののドラッグアンドドロップで並べ替える。
+ * 少し動かしてからドラッグにする（押しただけなら行を押したことになる）。行の中のボタン・入力欄からは始めない。
  * HTMLのドラッグアンドドロップはTauri（Windows）で動かないことがあるので、pointerイベントで作る。
  * 行には data-tree と data-node-id を、一覧の下の空いた所には data-tree-root を付ける。
  */
-export function useTreeDrag({ tree, busy, flat = false, canDrop, onMove }: Options) {
+export function useTreeDrag(options: Options) {
+  // window のイベントから、いつも最新の値を見る
+  const opts = useRef(options);
+  useEffect(() => {
+    opts.current = options;
+  });
   const [dragId, setDragId] = useState<number | null>(null);
   const [drop, setDrop] = useState<Drop | null>(null);
-  const start = useRef<{ id: number; x: number; y: number; moving: boolean } | null>(null);
+  /** ドラッグを終えた直後の click（同じ行の上で離したとき）を、行を押したことにしない */
+  const suppressClick = useRef(false);
 
   /** ポインタの下にある、落とせる場所 */
   const dropAt = (x: number, y: number, dragged: number): Drop | null => {
+    const { tree, flat = false, canDrop } = opts.current;
     const el = document.elementFromPoint(x, y);
     if (el?.closest(`[data-tree-root="${tree}"]`)) return { id: null, pos: "root" };
     const row = el?.closest<HTMLElement>(`[data-tree="${tree}"][data-node-id]`);
@@ -42,41 +50,48 @@ export function useTreeDrag({ tree, busy, flat = false, canDrop, onMove }: Optio
     return canDrop(dragged, id, pos) ? { id, pos } : null;
   };
 
-  const finish = (e: React.PointerEvent, commit: boolean) => {
-    const s = start.current;
-    start.current = null;
-    setDragId(null);
-    setDrop(null);
-    if (!s?.moving || !commit) return;
-    const d = dropAt(e.clientX, e.clientY, s.id);
-    if (!d) return;
-    onMove(s.id, d.id === null ? { kind: "root" } : { kind: d.pos, id: d.id });
-  };
-
-  /** 取っ手に付けるイベント */
-  const handleProps = (id: number) => ({
-    onClick: (e: React.MouseEvent) => e.stopPropagation(),
+  /** 行に付けるイベント */
+  const rowProps = (id: number) => ({
     onPointerDown: (e: React.PointerEvent) => {
-      if (busy || e.button !== 0) return;
-      e.preventDefault();
-      e.currentTarget.setPointerCapture(e.pointerId);
-      start.current = { id, x: e.clientX, y: e.clientY, moving: false };
+      if (opts.current.busy || e.button !== 0) return;
+      // 開く・たたむ、✎、🗑、名前の入力欄などは、その操作だけにする
+      if ((e.target as HTMLElement).closest("button, input, select, label, [role=button]")) return;
+      const s = { x: e.clientX, y: e.clientY, moving: false };
+      const move = (ev: PointerEvent) => {
+        if (!s.moving) {
+          if (Math.hypot(ev.clientX - s.x, ev.clientY - s.y) < DRAG_THRESHOLD) return;
+          s.moving = true;
+          setDragId(id);
+        }
+        setDrop(dropAt(ev.clientX, ev.clientY, id));
+      };
+      const end = (ev: PointerEvent, commit: boolean) => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", cancel);
+        setDragId(null);
+        setDrop(null);
+        if (!s.moving) return;
+        suppressClick.current = true;
+        setTimeout(() => (suppressClick.current = false), 0);
+        if (!commit) return;
+        const d = dropAt(ev.clientX, ev.clientY, id);
+        if (d) opts.current.onMove(id, d.id === null ? { kind: "root" } : { kind: d.pos, id: d.id });
+      };
+      const up = (ev: PointerEvent) => end(ev, true);
+      const cancel = (ev: PointerEvent) => end(ev, false);
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", cancel);
     },
-    onPointerMove: (e: React.PointerEvent) => {
-      const s = start.current;
-      if (!s) return;
-      if (!s.moving) {
-        if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < DRAG_THRESHOLD) return;
-        s.moving = true;
-        setDragId(s.id);
-      }
-      setDrop(dropAt(e.clientX, e.clientY, s.id));
+    onClickCapture: (e: React.MouseEvent) => {
+      if (!suppressClick.current) return;
+      e.stopPropagation();
+      suppressClick.current = false;
     },
-    onPointerUp: (e: React.PointerEvent) => finish(e, true),
-    onPointerCancel: (e: React.PointerEvent) => finish(e, false),
   });
 
   const dropClass = (id: number) => (drop && drop.id === id ? ` drop-${drop.pos}` : "");
 
-  return { dragId, drop, handleProps, dropClass };
+  return { dragId, drop, rowProps, dropClass };
 }

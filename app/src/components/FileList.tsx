@@ -24,6 +24,8 @@ type Props = {
   /** 表示中のファイルをすべてチェックする（false なら外す）。Ctrl+A で使う */
   onCheckShown: (check: boolean) => void;
   onPlay: (file: AudioFile) => void;
+  /** 行のダブルクリック：そのファイルから再生する（鳴らしている行なら最初から鳴らし直す） */
+  onPlayFrom: (file: AudioFile) => void;
   /** 行にハッシュ値の色の印を出す（重複を見るとき） */
   showHash: boolean;
   /** 行を左の欄のプレイリストへドラッグしたとき。チェックした行をつかんだら、チェックしたファイルすべて */
@@ -46,6 +48,7 @@ export function FileList({
   onCheck,
   onCheckShown,
   onPlay,
+  onPlayFrom,
   showHash,
   onDrop,
   tagStyles,
@@ -117,10 +120,14 @@ export function FileList({
                   data-testid="file-row"
                   data-rel-path={f.relPath}
                   onClick={() => onFocus(f)}
+                  // ボタン・チェックボックスの上のダブルクリックは、そちらの操作だけにする
+                  onDoubleClick={(e) => {
+                    if (!f.missing && !(e.target as HTMLElement).closest("button, input, label")) onPlayFrom(f);
+                  }}
                   onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
                 >
                   <button
-                    className="play"
+                    className={playingId === f.id ? "play playing" : "play"}
                     disabled={f.missing}
                     title={playingId === f.id ? "停止" : "再生"}
                     aria-label={playingId === f.id ? "停止" : "再生"}

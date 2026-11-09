@@ -4,7 +4,7 @@ import { useStoredIdSet } from "../storage";
 import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, HandleSpace, NameInput, RowActions, Twisty } from "./TreeParts";
+import { NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   tags: Tag[];
@@ -107,7 +107,6 @@ export function TagPanel({
           >
             <span className="tag-name">（タグなし）</span>
             {untaggedCount !== null && <span className="sub">{untaggedCount}</span>}
-            <HandleSpace />
           </li>
         )}
         {shown.map((t) => {
@@ -131,6 +130,7 @@ export function TagPanel({
               data-tag-name={t.name}
               data-depth={t.depth}
               style={{ paddingLeft: 6 + t.depth * 14 }}
+              {...drag.rowProps(t.id)}
             >
               <Twisty
                 name={t.name}
@@ -148,7 +148,6 @@ export function TagPanel({
                 onDelete={() => onDelete(t)}
               />
               <span className="sub">{countOf(t)}</span>
-              <DragHandle name={t.name} handlers={drag.handleProps(t.id)} />
             </li>
           );
         })}

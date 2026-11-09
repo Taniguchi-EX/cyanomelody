@@ -56,8 +56,16 @@ export function useStoredString(key: string): [string, (value: string) => void] 
 }
 
 /** 覚えておく数値（欄の幅など）。保存は確定したときだけ行う（ドラッグ中は覚えない） */
-export function useStoredNumber(key: string, fallback: number): [number, (value: number) => void, () => void] {
+/** 4つ目は、値を変えてすぐ保存する（ボタンで切り替えるときなど） */
+export function useStoredNumber(
+  key: string,
+  fallback: number,
+): [number, (value: number) => void, () => void, (value: number) => void] {
   const [value, setValue] = useState(() => load(key, fallback));
   const commit = () => save(key, value);
-  return [value, setValue, commit];
+  const setAndSave = (v: number) => {
+    save(key, v);
+    setValue(v);
+  };
+  return [value, setValue, commit, setAndSave];
 }

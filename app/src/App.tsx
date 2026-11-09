@@ -1178,6 +1178,7 @@ export default function App() {
               onCheck={checks.checkRow}
               onCheckShown={checks.checkShown}
               onPlay={toggleRowPlay}
+              onPlayFrom={playList}
               showHash={filter.duplicatesOnly || filter.hash !== null}
               onDrop={dropFiles}
               tagStyles={tagStyles}
@@ -1294,6 +1295,7 @@ export default function App() {
         volume={audio.volume}
         onVolume={audio.setVolume}
         onVolumeCommit={audio.commitVolume}
+        onToggleMute={audio.toggleMute}
         chains={chains}
         baseChain={audio.baseChain}
         onBaseChain={audio.setBaseChain}

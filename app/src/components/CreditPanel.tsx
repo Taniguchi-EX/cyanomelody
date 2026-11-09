@@ -4,7 +4,7 @@ import { nameMatches } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
 import { TermMarks } from "./TermMarks";
-import { DragHandle, HandleSpace, RowActions } from "./TreeParts";
+import { RowActions } from "./TreeParts";
 
 type Props = {
   kind: CreditKind;
@@ -84,7 +84,6 @@ export function CreditPanel({
           >
             <span className="credit-name">（{label}なし）</span>
             {noneCount !== null && <span className="sub">{noneCount}</span>}
-            <HandleSpace />
           </li>
         )}
         {shown.map((c) => {
@@ -107,6 +106,7 @@ export function CreditPanel({
               // 並べ替えの落とす先（useTreeDrag）と、ファイルの行を落とす先（useFileDrag）
               data-tree={kind}
               data-node-id={c.id}
+              {...drag.rowProps(c.id)}
             >
               <span className="credit-name">{c.name}</span>
               {kind === "license" && <TermMarks terms={c.terms} />}
@@ -114,7 +114,6 @@ export function CreditPanel({
               <span className="sub" data-testid="credit-count">
                 {count}
               </span>
-              <DragHandle name={c.name} handlers={drag.handleProps(c.id)} />
             </li>
           );
         })}

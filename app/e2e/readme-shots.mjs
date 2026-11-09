@@ -7,7 +7,7 @@ const { dataDir, shotDir } = parseArgs("readme-shots.mjs");
 const ui = await connect(shotDir);
 const { page, step, shot, row, tagItem, waitIdle, addTag } = ui;
 
-const handle = (name) => tagItem(name).getByTestId("drag-handle");
+const handle = (name) => tagItem(name).locator(".tag-name, .credit-name").first();
 const playlistItem = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"]`);
 
 /** ファイルを選んで、右の欄からタグを付ける */

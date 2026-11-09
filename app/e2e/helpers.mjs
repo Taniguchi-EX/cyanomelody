@@ -183,7 +183,7 @@ export async function connect(shotDir) {
       if (!(await ui.tagNames()).includes(name)) await ui.createTags([name]);
       await ui.dragChecked(ui.tagItem(name));
     },
-    /** 取っ手 handle をつかんで、target の行の高さの ratio の位置まで動かして離す。
+    /** handle（行の名前など、行の中のつかむ所）をつかんで、target の行の高さの ratio の位置まで動かして離す。
      *  release が false なら離さない（落とす前の表示を確かめるとき。後で page.mouse.up() する） */
     async dragTo(handle, target, ratio, release = true) {
       // つかむ所と落とす先を、画面の中までスクロールしてから操作する

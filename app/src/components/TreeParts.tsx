@@ -28,36 +28,6 @@ export function Twisty({ name, hasChildren, collapsed, onToggle }: TwistyProps) 
   );
 }
 
-type HandleProps = {
-  name: string;
-  /** useTreeDrag の handleProps(id) */
-  handlers: ReturnType<ReturnType<typeof import("../treeDrag").useTreeDrag>["handleProps"]>;
-};
-
-/** 並べ替えの取っ手 */
-export function DragHandle({ name, handlers }: HandleProps) {
-  return (
-    <span
-      className="drag-handle"
-      title="ドラッグして並べ替え"
-      aria-label={`${name}を移す`}
-      data-testid="drag-handle"
-      {...handlers}
-    >
-      ≡
-    </span>
-  );
-}
-
-/** 取っ手のない行（「（タグなし）」など）で、件数の位置をほかの行とそろえるために、取っ手の幅だけ空ける */
-export function HandleSpace() {
-  return (
-    <span className="drag-handle handle-space" aria-hidden="true">
-      ≡
-    </span>
-  );
-}
-
 type RowActionsProps = {
   name: string;
   busy: boolean;

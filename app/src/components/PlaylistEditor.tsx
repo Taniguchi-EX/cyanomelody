@@ -5,7 +5,7 @@ import { makesLoop } from "../playlistGraph";
 import type { EffectChain } from "../effects";
 import { useStoredString } from "../storage";
 import { itemContent } from "../playlistItem";
-import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
+import { useFileDrag, type FileDropTarget, type LocalDrop } from "../hooks/useFileDrag";
 
 type Props = {
   detail: PlaylistDetail;
@@ -52,7 +52,6 @@ type Props = {
   onBrowseFolder: () => Promise<string | null>;
 };
 
-const DRAG_THRESHOLD = 4;
 /** fx のプルダウンの、管理画面を開く選び肢 */
 const NEW_FX = "new-fx";
 const EDIT_FX = "edit-fx";
@@ -144,17 +143,11 @@ export function PlaylistEditor({
       setExporting(false);
     }
   };
-  // 項目の並べ替え（取っ手のドラッグ。前・後ろだけ）
+  // 項目の並べ替え（行のドラッグ。前・後ろだけ）。左の欄へ落とすドラッグ（useFileDrag）と同じドラッグで行う
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropAt, setDropAt] = useState<{
     index: number;
     pos: "before" | "after";
-  } | null>(null);
-  const start = useRef<{
-    index: number;
-    x: number;
-    y: number;
-    moving: boolean;
   } | null>(null);
 
   // ループになるプレイリスト（自分自身と、自分を含むもの）は、候補に出すが選べないようにする
@@ -171,19 +164,27 @@ export function PlaylistEditor({
     } as const;
   };
 
-  const finishDrag = (e: React.PointerEvent, commit: boolean) => {
-    const s = start.current;
-    start.current = null;
-    setDragIndex(null);
-    setDropAt(null);
-    if (!s?.moving || !commit) return;
-    const t = targetAt(e.clientX, e.clientY);
-    if (!t) return;
-    // 移す項目を抜いた後の並びでの位置
-    let dest = t.pos === "before" ? t.index : t.index + 1;
-    if (s.index < dest) dest -= 1;
-    if (dest !== s.index) onMoveItem(detail.items[s.index], dest);
-  };
+  /** index の項目をつかんだときの並べ替え：項目の行の上で離すと、その前・後ろへ移す（つかんだ項目だけ） */
+  const reorder = (index: number): LocalDrop => ({
+    over: (x, y) => {
+      const t = targetAt(x, y);
+      setDragIndex(index);
+      setDropAt(t);
+      return t !== null;
+    },
+    drop: (x, y) => {
+      const t = targetAt(x, y);
+      if (!t) return;
+      // 移す項目を抜いた後の並びでの位置
+      let dest = t.pos === "before" ? t.index : t.index + 1;
+      if (index < dest) dest -= 1;
+      if (dest !== index) onMoveItem(detail.items[index], dest);
+    },
+    end: () => {
+      setDragIndex(null);
+      setDropAt(null);
+    },
+  });
 
   return (
     <div className="playlist-editor" data-testid="playlist-editor">
@@ -242,11 +243,17 @@ export function PlaylistEditor({
               data-item-id={item.id}
               data-item-index={index}
               data-item-kind={item.kind}
-              // 行の中のボタン・プルダウン・チェックボックス・取っ手を押したときは、その操作だけにする
+              // 行の中のボタン・プルダウン・チェックボックスを押したときは、その操作だけにする
               onClick={(e) => {
-                if (!(e.target as HTMLElement).closest("button, select, input, label, .drag-handle")) onFocusItem(item);
+                if (!(e.target as HTMLElement).closest("button, select, input, label")) onFocusItem(item);
               }}
-              onPointerDown={(e) => beginItemDrag(e, targetsOf(item).map((t) => t.id))}
+              // ダブルクリックで、その項目を再生する（項目の▶と同じ）
+              onDoubleClick={(e) => {
+                const playable = item.kind === "file" ? !!item.file && !item.file.missing : item.fileCount > 0;
+                if (playable && !(e.target as HTMLElement).closest("button, select, input, label")) onPlayItem(item);
+              }}
+              // 項目の行の上で離すと並べ替え、左の欄の行で離すとそこへ落とす
+              onPointerDown={(e) => beginItemDrag(e, targetsOf(item).map((t) => t.id), busy ? undefined : reorder(index))}
             >
               <button
                 className="item-kind"
@@ -314,36 +321,6 @@ export function PlaylistEditor({
               >
                 ✕
               </button>
-              <span
-                className="drag-handle"
-                title="ドラッグして並べ替え"
-                data-testid="item-handle"
-                onPointerDown={(e) => {
-                  if (busy || e.button !== 0) return;
-                  e.preventDefault();
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  start.current = {
-                    index,
-                    x: e.clientX,
-                    y: e.clientY,
-                    moving: false,
-                  };
-                }}
-                onPointerMove={(e) => {
-                  const s = start.current;
-                  if (!s) return;
-                  if (!s.moving) {
-                    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < DRAG_THRESHOLD) return;
-                    s.moving = true;
-                    setDragIndex(s.index);
-                  }
-                  setDropAt(targetAt(e.clientX, e.clientY));
-                }}
-                onPointerUp={(e) => finishDrag(e, true)}
-                onPointerCancel={(e) => finishDrag(e, false)}
-              >
-                ≡
-              </span>
               <label className="check-cell" title="チェックすると、まとめて操作できる">
                 <input
                   type="checkbox"

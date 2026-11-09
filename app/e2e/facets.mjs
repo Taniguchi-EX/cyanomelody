@@ -46,7 +46,7 @@ await step("F01", "準備。条件がないときは総数を出し、どのフ�
     await row(file).click();
     for (const t of tags) await addTag(t);
   }
-  for (const n of ["雨", "風"]) await ui.dragTo(tagItem(n).getByTestId("drag-handle"), tagItem("環境音"), 0.5);
+  for (const n of ["雨", "風"]) await ui.dragTo(tagItem(n).locator(".tag-name, .credit-name").first(), tagItem("環境音"), 0.5);
   await setCredit("chime.wav", "s1");
   await setCredit("chime.mp3", "s2");
   const s = await tagState();
@@ -82,10 +82,10 @@ await step("F08", "タグを付けるなどデータが変わると、件数を�
   expect(s === "環境音3 雨2 風2 鳥1 爆発1 なし1", s);
 });
 
-await step("F09", "グレーアウトしていても、取っ手で並べ替えはできる", async () => {
+await step("F09", "グレーアウトしていても、行のドラッグで並べ替えはできる", async () => {
   await ui.filtered(() => tagItem("雨").click());
   expect(await disabled(tagItem("爆発")), "爆発がグレーアウトしていない");
-  await ui.dragTo(tagItem("爆発").getByTestId("drag-handle"), tagItem("環境音"), 0.1);
+  await ui.dragTo(tagItem("爆発").locator(".tag-name, .credit-name").first(), tagItem("環境音"), 0.1);
   const names = await ui.tagNames();
   expect(names[0] === "爆発", names.join(","));
   await clearFilter();

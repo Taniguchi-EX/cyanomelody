@@ -472,8 +472,8 @@ h2:first-child {
   cursor: default;
 }
 
-/* グレーアウトするのは名前・件数など。行の記号のボタン（✎・🗑）と取っ手は押せるので薄くしない */
-.tag-list li.disabled > :not(.row-actions):not(.drag-handle) {
+/* グレーアウトするのは名前・件数など。行の記号のボタン（✎・🗑）は押せるので薄くしない */
+.tag-list li.disabled > :not(.row-actions) {
   opacity: 0.45;
 }
 
@@ -506,12 +506,6 @@ h2:first-child {
 /* 左の欄の検索で、あてはまる行の親（あてはまらないもの）は薄く出す。押して絞り込みには使える */
 .tag-list li.search-parent > .tag-name {
   opacity: 0.5;
-}
-
-/* 取っ手のない行で、件数の位置をそろえるための空き */
-.handle-space {
-  visibility: hidden;
-  cursor: default;
 }
 
 /* 行の「✎」「🗑」。行にマウスを乗せたとき（行の中にフォーカスがあるとき）だけ出す。場所は常に取っておく */
@@ -557,23 +551,18 @@ li > .name-input {
 
 /* ===== ドラッグアンドドロップでの並べ替え（木の行、プレイリストの項目） ===== */
 
-.drag-handle {
-  flex: none;
-  padding: 0 4px;
-  color: var(--fg-sub);
-  cursor: grab;
-  font-size: 15px;
-  line-height: 1;
-  touch-action: none;
+/* 行そのものをつかんで動かす。つかんだときに文字を選ばない */
+.tag-list li,
+.playlist-item {
   user-select: none;
 }
 
-.tag-tree.dragging,
-.tag-tree.dragging .drag-handle {
+.tag-list.dragging,
+.tag-list.dragging li {
   cursor: grabbing;
 }
 
-.tag-tree li.drag-source,
+.tag-list li.drag-source,
 .playlist-item.drag-source {
   opacity: 0.4;
 }
@@ -718,6 +707,11 @@ button.filter-chip:hover .chip-x {
 .play {
   width: 28px;
   padding: 0;
+}
+
+/* 鳴らしている行の停止ボタン */
+.play.playing {
+  color: var(--accent);
 }
 
 .check-cell {
@@ -1330,12 +1324,30 @@ button.add-button:hover:not(:disabled) {
   text-decoration: underline;
 }
 
-/* 再生の欄の右端の歯車（設定画面を開く） */
-.play-side .settings-button {
+/* 再生の欄の右端の歯車（設定画面を開く）と、音量の左のスピーカー（押すとミュート） */
+.play-side .settings-button,
+.play-side .speaker-button {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: none;
-  font-size: 17px;
+  padding: 2px;
+  color: var(--fg-sub);
+}
+
+.play-side .settings-button {
   margin-left: 4px;
+}
+
+.play-side .settings-button:hover,
+.play-side .speaker-button:hover {
+  color: var(--fg);
+}
+
+/* SVG のアイコン：文字と同じ高さにそろえる */
+.svg-icon {
+  display: block;
+  flex: none;
 }
 
 /* 設定画面：上にタブ、下に選んだタブの中身 */

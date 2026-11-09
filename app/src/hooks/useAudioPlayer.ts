@@ -101,7 +101,18 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
   const previewId = previewFile?.id ?? null;
   /** 音量（0〜1）。試聴とプレイリストの再生で同じものを使い、アプリを閉じても覚えておく */
   // 動かしている間は音量だけを変え、動かし終えたとき（commitVolume）に保存する
-  const [volume, setVolume, commitVolume] = useStoredNumber("cyanomelody.volume", 1);
+  const [volume, setVolume, commitVolume, saveVolume] = useStoredNumber("cyanomelody.volume", 1);
+  /** ミュートする前の音量（解除で戻す）。覚えていなければ 100% に戻す */
+  const unmuteVolume = useRef(1);
+  /** スピーカーのボタン：音量が0でなければ0にし（ミュート）、0なら前の音量に戻す */
+  const toggleMute = () => {
+    if (volume > 0) {
+      unmuteVolume.current = volume;
+      saveVolume(0);
+    } else {
+      saveVolume(unmuteVolume.current > 0 ? unmuteVolume.current : 1);
+    }
+  };
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
@@ -315,6 +326,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     volume,
     setVolume,
     commitVolume,
+    toggleMute,
     baseChain,
     setBaseChain,
     audioProps,

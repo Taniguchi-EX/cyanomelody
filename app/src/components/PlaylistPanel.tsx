@@ -5,7 +5,7 @@ import { useStoredIdSet } from "../storage";
 import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
-import { DragHandle, NameInput, RowActions, Twisty } from "./TreeParts";
+import { NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   playlists: PlaylistNode[];
@@ -106,6 +106,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
             data-playlist-name={p.name}
             data-depth={p.depth}
             style={{ paddingLeft: 6 + p.depth * 14 }}
+            {...drag.rowProps(p.id)}
           >
             <Twisty
               name={p.name}
@@ -134,7 +135,6 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
               onDelete={() => onDelete(p.id)}
             />
             <span className="sub">{p.itemCount}</span>
-            <DragHandle name={p.name} handlers={drag.handleProps(p.id)} />
           </li>
         ))}
       </ul>
