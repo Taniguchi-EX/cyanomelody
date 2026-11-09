@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { pickPath } from "./dialogs";
+import { pickPath, pickSavePath } from "./dialogs";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
@@ -470,6 +470,21 @@ export default function App() {
     run(async () => {
       await playlistApi.removeFiles(p.id, bulkFileIds);
       showInfo(`プレイリスト「${p.name}」から${p.count}件を外しました`);
+    });
+  };
+
+  /** 一括操作：対象のファイルのメタデータを、データのエクスポートと同じ形の JSON に書き出す（保存先を選ぶ） */
+  const exportFileInfo = async () => {
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const path = await pickSavePath({
+      defaultPath: `cyanomelody-files-${stamp}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    }).catch(showError);
+    if (!path) return;
+    run(async () => {
+      const n = await api.exportFiles(path, bulkFileIds);
+      showInfo(`${n}件のファイルの情報を書き出しました: ${path}`);
     });
   };
 
@@ -1272,6 +1287,7 @@ export default function App() {
             onRemoveTag={bulkRemoveTag}
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onDelete={() => startDelete(bulkFileIds)}
+            onExportInfo={exportFileInfo}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={(id) => openEditor(id)}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}

@@ -78,6 +78,15 @@ pub struct XFile {
     /// 出典・ライセンス（出典・ライセンスを書き出したときだけ）
     pub source: Option<i64>,
     pub license: Option<i64>,
+    /// 選んだファイルの書き出し（`export_files`）だけ：見るための情報。取り込みでは使わない
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_year: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -280,6 +289,7 @@ pub fn export(
             tags: file_tags.get(&id).cloned().unwrap_or_default(),
             source: if sections.credits { r.get(5)? } else { None },
             license: if sections.credits { r.get(6)? } else { None },
+            ..Default::default()
         })
     })?;
     for f in files {
@@ -301,6 +311,66 @@ pub fn export(
         .collect::<rusqlite::Result<Vec<_>>>()?
         .into_iter()
         .filter(|f| sections.library || used.contains(&f.id))
+        .collect();
+    Ok(data)
+}
+
+/// 選んだファイル（一括操作の対象）のメタデータを、データのエクスポートと同じ形で書き出す。
+/// 項目は「タグ」と「出典・ライセンス」（曲へのタグ付け・設定は、選んだファイルの分だけ）。タグ・出典・ライセンスの定義はすべて入れる
+/// （取り込む側で名前を合わせるため）。新しく作るタグの既定値・自動タグ付けの設定・画面の設定は入れない。
+/// 曲には、見るための情報（曲名・長さ・リリース年・見つからない印）も入れる（取り込みでは使わない）
+pub fn export_files(conn: &Connection, file_ids: &[i64], app_version: &str) -> Result<DataFile> {
+    let sections = Sections { tags: true, credits: true, ..Default::default() };
+    let mut data = export(conn, sections, app_version, None)?;
+    data.new_tag = None;
+    data.meta_ignore = None;
+    data.meta_separators = None;
+    let file_tags = file_tag_map(conn)?;
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.folder_id, a.rel_path, a.size, a.hash, a.source_id, a.license_id, a.duration, a.release_year,
+                a.missing, f.path
+         FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+         WHERE a.id IN (SELECT value FROM json_each(?1)) ORDER BY f.path, a.rel_path",
+    )?;
+    let rows = stmt.query_map([crate::db::ids_json(file_ids)], |r| {
+        let id: i64 = r.get(0)?;
+        let rel_path: String = r.get(2)?;
+        let folder_path: String = r.get(10)?;
+        let missing: bool = r.get(9)?;
+        Ok((
+            XFile {
+                id,
+                folder: r.get(1)?,
+                rel_path: rel_path.clone(),
+                size: r.get(3)?,
+                hash: r.get(4)?,
+                tags: file_tags.get(&id).cloned().unwrap_or_default(),
+                source: r.get(5)?,
+                license: r.get(6)?,
+                title: None,
+                duration: r.get(7)?,
+                release_year: r.get(8)?,
+                missing: Some(missing),
+            },
+            crate::library::absolute_path(&folder_path, &rel_path),
+        ))
+    })?;
+    data.files = Vec::new();
+    for row in rows {
+        let (mut f, path) = row?;
+        // 曲名（タグ情報のタイトル）はファイルから読む（見つからないファイルは読まない）
+        if f.missing != Some(true) {
+            f.title = crate::metadata::track_title(&path);
+        }
+        data.files.push(f);
+    }
+    let used: HashSet<i64> = data.files.iter().map(|f| f.folder).collect();
+    data.folders = conn
+        .prepare("SELECT id, path FROM library_folders ORDER BY id")?
+        .query_map([], |r| Ok(XFolder { id: r.get(0)?, path: r.get(1)? }))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .filter(|f| used.contains(&f.id))
         .collect();
     Ok(data)
 }
@@ -988,6 +1058,32 @@ mod tests {
                  WHERE a.rel_path = '{rel}' ORDER BY t.name"
             ),
         )
+    }
+
+    #[test]
+    fn exports_only_selected_files_with_tags_and_credits() {
+        let conn = source_db();
+        // a.wav（タグ2つ・出典・ライセンス）と sub/c.flac（何もない）を選ぶ
+        let data = roundtrip(&export_files(&conn, &[1, 3], "1.2.0").unwrap());
+        assert_eq!(data.sections, Sections { tags: true, credits: true, ..Default::default() });
+        let rels: Vec<&str> = data.files.iter().map(|f| f.rel_path.as_str()).collect();
+        assert_eq!(rels, vec!["a.wav", "sub/c.flac"]);
+        assert_eq!(data.files[0].tags, vec![2, 4]);
+        assert_eq!((data.files[0].source, data.files[0].license), (Some(1), Some(1)));
+        assert!(data.files[1].tags.is_empty());
+        assert_eq!(data.files[0].missing, Some(false));
+        // タグ・出典・ライセンスの定義はすべて。プレイリストと設定は入れない
+        assert_eq!(data.tags.len(), 4);
+        assert_eq!((data.sources.len(), data.licenses.len()), (1, 1));
+        assert!(data.playlists.is_empty() && data.effect_chains.is_empty());
+        assert!(data.new_tag.is_none() && data.meta_ignore.is_none() && data.screen.is_none());
+        assert_eq!(data.folders.len(), 1);
+        // 別のDBに取り込める（選んだファイルのタグ付けだけが入る）
+        let mut dest = test_db(&["a.wav", "b.mp3", "sub/c.flac"], &[]);
+        let mut result = ImportResult::default();
+        import_data(&mut dest, &data, data.sections, false, &mut result).unwrap();
+        let tagged: i64 = dest.query_row("SELECT count(DISTINCT file_id) FROM file_tags", [], |r| r.get(0)).unwrap();
+        assert_eq!(tagged, 1);
     }
 
     #[test]

@@ -222,6 +222,8 @@ export const api = {
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   /** データのエクスポート：選んだ項目を path に書き出す。screen は画面の設定 */
+  /** 選んだファイルのメタデータを書き出す（データのエクスポートと同じ形）。書き出した曲の数を返す */
+  exportFiles: (path: string, fileIds: number[]) => invoke<number>("export_files", { path, fileIds }),
   exportData: (path: string, sections: DataSections, screen: Record<string, unknown> | null) =>
     invoke<ExportSummary>("export_data", { path, sections, screen }),
   /** インポートの見込み */

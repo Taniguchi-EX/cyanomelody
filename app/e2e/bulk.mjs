@@ -263,4 +263,27 @@ await step("B11", "チェックしたファイルをライブラリから外す�
 });
 
 
+await step("B14", "一括操作の欄の「情報を書き出す…」：対象のファイルのタグ・出典・ライセンス・曲名を、データのエクスポートと同じ形の JSON に書き出す", async () => {
+  await clearFilter();
+  await ui.clearChecks();
+  await ui.check("chime.wav");
+  await ui.check("chime.mp3");
+  await checkToolbar().getByRole("button", { name: "一括操作" }).click();
+  const panel = page.getByTestId("bulk-panel");
+  await panel.waitFor({ timeout: 3000 });
+  const out = path.join(shotDir, "files.json");
+  fs.rmSync(out, { force: true });
+  await ui.setDialogReply(out);
+  await panel.getByRole("button", { name: "情報を書き出す…" }).click();
+  await ui.waitStatus("件のファイルの情報を書き出しました");
+  await ui.setDialogReply(null);
+  const data = JSON.parse(fs.readFileSync(out, "utf8"));
+  expect(data.app === "cyanomelody" && data.sections.tags && data.sections.credits && !data.sections.playlists, JSON.stringify(data.sections));
+  const rels = data.files.map((f) => f.relPath).sort();
+  expect(rels.join(",") === "chime.mp3,chime.wav", rels.join(","));
+  expect(data.files.every((f) => f.title === "チャイム"), data.files.map((f) => f.title).join(","));
+  expect((await status()).includes("2件のファイルの情報を書き出しました"), await status());
+  await ui.clearChecks();
+});
+
 await ui.finish();
