@@ -379,4 +379,24 @@ await step("T02", "色：ライブラリの行と右の欄のタグのチップ�
   expect((await colors(rowChip("chime.mp3", "Cat"))) === before, `外した後 ${await colors(rowChip("chime.mp3", "Cat"))}`);
 });
 
+await step("T03", "開閉の印の押せる所は、行の左端から印まで（字下げの分も含む）。左端を押すと開閉し、絞り込まない。子の行でも同じ", async () => {
+  for (const name of ["動物", "いぬ"]) {
+    const item = tagItem(name);
+    const twisty = item.getByTestId("tag-twisty");
+    const r = await item.boundingBox();
+    const t = await twisty.boundingBox();
+    expect(Math.abs(t.x - r.x) < 1, `${name}：印の押せる所が左端から始まらない（行 ${r.x}・印 ${t.x}）`);
+    // 左端を押すと、たたむ（絞り込まない）
+    expect((await twisty.getAttribute("aria-label")) === `${name}をたたむ`, await twisty.getAttribute("aria-label"));
+    await page.mouse.click(r.x + 2, r.y + r.height / 2);
+    await page.waitForTimeout(200);
+    expect((await twisty.getAttribute("aria-label")) === `${name}を開く`, `${name}：左端でたためない`);
+    expect(!(await item.getAttribute("class")).includes("active"), `${name}：左端で絞り込んだ`);
+    await page.mouse.click(r.x + 2, r.y + r.height / 2);
+    await page.waitForTimeout(200);
+    expect((await twisty.getAttribute("aria-label")) === `${name}をたたむ`, `${name}：開き直せない`);
+  }
+  await shot("T03_開閉の印");
+});
+
 await ui.finish();

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Facets, FileFilter, MoveTarget, Tag } from "../api";
 import { useStoredIdSet } from "../storage";
-import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
+import { descendantsAndSelf, indentOf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
 import { NameInput, RowActions, Twisty } from "./TreeParts";
@@ -129,7 +129,7 @@ export function TagPanel({
               data-node-id={t.id}
               data-tag-name={t.name}
               data-depth={t.depth}
-              style={{ paddingLeft: 6 + t.depth * 14 }}
+              style={{ paddingLeft: indentOf(t.depth) }}
               {...drag.rowProps(t.id)}
             >
               <Twisty
@@ -138,6 +138,7 @@ export function TagPanel({
                 hasChildren={!search && parents.has(t.id)}
                 collapsed={collapsed.has(t.id)}
                 onToggle={() => toggleCollapsed(t.id)}
+                indent={indentOf(t.depth)}
               />
               <span className="tag-name" title={t.synonyms.length > 0 ? `${t.name}\nシノニム：${t.synonyms.join("、")}` : undefined}>
                 {t.name}

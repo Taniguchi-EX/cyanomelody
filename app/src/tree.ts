@@ -59,3 +59,6 @@ export function searchNodes<T extends TreeNode & { name: string; synonyms?: stri
     dimmed: new Set([...keep].filter((id) => !matched.has(id))),
   };
 }
+
+/** 木の行の左の字下げ（px）。深さ1つで14px */
+export const indentOf = (depth: number) => 6 + depth * 14;

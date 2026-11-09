@@ -7,13 +7,20 @@ type TwistyProps = {
   hasChildren: boolean;
   collapsed: boolean;
   onToggle: () => void;
+  /** 行の左の字下げ（px）。印の押せる所を、行の左端まで広げる */
+  indent: number;
 };
 
-/** 開く・たたむの印。子のない節では空白になり、押すと行を押したことになる */
-export function Twisty({ name, hasChildren, collapsed, onToggle }: TwistyProps) {
+/**
+ * 開く・たたむの印。押せる所は行の左端から印まで（字下げの分も含む）。
+ * 子のない節では空白になり、押すと行を押したことになる
+ */
+export function Twisty({ name, hasChildren, collapsed, onToggle, indent }: TwistyProps) {
   return (
     <span
       className="twisty"
+      // 行の字下げ（padding）の分だけ左へ広げ、印は右端に置く
+      style={{ marginLeft: -indent, paddingLeft: indent, boxSizing: "content-box" }}
       onClick={(e) => {
         if (!hasChildren) return;
         e.stopPropagation();

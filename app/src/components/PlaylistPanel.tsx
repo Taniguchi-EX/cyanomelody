@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { MoveTarget, PlaylistNode } from "../api";
 import { reachable } from "../playlistGraph";
 import { useStoredIdSet } from "../storage";
-import { descendantsAndSelf, parentIds, searchNodes, visibleNodes } from "../tree";
+import { descendantsAndSelf, indentOf, parentIds, searchNodes, visibleNodes } from "../tree";
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
 import { NameInput, RowActions, Twisty } from "./TreeParts";
@@ -105,7 +105,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
             data-node-id={p.id}
             data-playlist-name={p.name}
             data-depth={p.depth}
-            style={{ paddingLeft: 6 + p.depth * 14 }}
+            style={{ paddingLeft: indentOf(p.depth) }}
             {...drag.rowProps(p.id)}
           >
             <Twisty
@@ -114,6 +114,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
               hasChildren={!search && parents.has(p.id)}
               collapsed={collapsed.has(p.id)}
               onToggle={() => toggleCollapsed(p.id)}
+              indent={indentOf(p.depth)}
             />
             {editingId === p.id ? (
               <NameInput
