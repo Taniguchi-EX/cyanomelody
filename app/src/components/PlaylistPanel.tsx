@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { MoveTarget, PlaylistNode } from "../api";
 import { reachable } from "../playlistGraph";
 import { useStoredIdSet } from "../storage";
@@ -6,6 +6,9 @@ import { descendantsAndSelf, indentOf, parentIds, searchNodes, visibleNodes } fr
 import { useTreeDrag } from "../treeDrag";
 import { Collapsible } from "./Collapsible";
 import { NameInput, RowActions, Twisty } from "./TreeParts";
+
+/** 選んでいる行を押してから選択を外すまでの待ち（ms）。その間にダブルクリックが来たら外さない */
+const DOUBLE_CLICK_MS = 300;
 
 type Props = {
   playlists: PlaylistNode[];
@@ -30,6 +33,26 @@ type Props = {
 export function PlaylistPanel({ playlists, selectedId, busy, onSelect, onEdit, onCreate, onDelete, onMove, query }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
+  /**
+   * 選んでいる行を押したときの、選択を外す処理の予約。ダブルクリック（編集画面を開く）の1回目の押しで外れないよう、
+   * 少し待ってから外し、その間にダブルクリックが来たら取りやめる
+   */
+  const pendingClear = useRef<number | null>(null);
+  const cancelClear = () => {
+    if (pendingClear.current !== null) window.clearTimeout(pendingClear.current);
+    pendingClear.current = null;
+  };
+  const clickRow = (id: number) => {
+    cancelClear();
+    if (selectedId !== id) {
+      onSelect(id);
+      return;
+    }
+    pendingClear.current = window.setTimeout(() => {
+      pendingClear.current = null;
+      onSelect(id);
+    }, DOUBLE_CLICK_MS);
+  };
 
   const parents = useMemo(() => parentIds(playlists), [playlists]);
   const byId = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists]);
@@ -108,9 +131,11 @@ export function PlaylistPanel({ playlists, selectedId, busy, onSelect, onEdit, o
                 drag.dropClass(p.id)
               }
               // ダブルクリック（編集画面を開く）の2回目の押しでは、選択を切り替えない
-              onClick={(e) => e.detail < 2 && !disabled && onSelect(p.id)}
+              onClick={(e) => e.detail < 2 && !disabled && clickRow(p.id)}
               onDoubleClick={(e) => {
-                if (!(e.target as HTMLElement).closest("button, input")) onEdit(p.id);
+                if ((e.target as HTMLElement).closest("button, input")) return;
+                cancelClear();
+                onEdit(p.id);
               }}
               data-testid="playlist"
               data-tree="playlists"

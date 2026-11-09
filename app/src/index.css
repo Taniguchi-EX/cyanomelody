@@ -271,6 +271,8 @@ h2:first-child {
 /* ===== 下の欄（処理の結果、ハッシュ値の計算、再生の欄） ===== */
 
 .status-bar {
+  position: relative;
+  z-index: 11;
   grid-column: 1 / -1;
   display: flex;
   gap: 16px;
@@ -312,7 +314,10 @@ h2:first-child {
 /* 再生の欄。左・中央・右の欄をまたぐ。左に曲の名前、中央にボタンとシークバー。
    左右は同じ幅（1fr）にして中央を真ん中に置く。ただし右は中身が収まる幅より狭くしない。
    狭くなって右の幅が足りなくなると、左が縮み、中央が少しずつ左へずれる */
+/* 再生の欄と一番下の行は、重ねて出す画面（編集画面など）より上に出し、開いている間も操作できるようにする */
 .play-area {
+  position: relative;
+  z-index: 11;
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 480px) minmax(max-content, 1fr);
@@ -1147,7 +1152,8 @@ button.filter-chip:hover .chip-x {
 /* 編集画面は重ねて出す。項目と追加の欄だけがスクロールする */
 .playlist-dialog {
   width: min(960px, calc(100% - 32px));
-  height: calc(100% - 96px);
+  /* 下の再生の欄と一番下の行に重ならない高さ */
+  height: calc(100% - 170px);
   max-height: none;
   padding: 0;
   display: flex;

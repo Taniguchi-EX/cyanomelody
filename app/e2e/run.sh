@@ -27,6 +27,8 @@ for s in "${scripts[@]}"; do
   mkdir -p "$work/$name/appdata"
   # アップデートの確認は、update.mjs のときだけ、見せかけの新しい版（9.9.9）が見つかったことにする（開発用のビルドだけ）
   # ファイルの削除は、使っている PC のごみ箱の代わりに、このフォルダへ移す（テストのファイルがごみ箱にたまらないように）
+  # プレイリストの抽選は、乱数の種を決めて毎回同じ結果にする
+  CYANOMELODY_DRAW_SEED=1 \
   CYANOMELODY_TRASH_DIR="$work/$name/trash" \
   CYANOMELODY_FAKE_UPDATE="$([ "$name" = update ] && echo 9.9.9)" \
   CYANOMELODY_DATA_DIR="$work/$name/appdata" \

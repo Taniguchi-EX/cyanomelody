@@ -882,8 +882,11 @@ export default function App() {
    * 選んでいなければ、選んで（抽選して）から
    */
   const selectedRows = async (id: number) => {
-    if (selectedPlaylistId !== id) await selection.select(id);
-    return api.listFiles({ ...listRequest(), draw: true });
+    if (selectedPlaylistId === id) return api.listFiles(listRequest());
+    await selection.select(id);
+    // 選んだばかりなので、並び順はプレイリストのもの
+    const sort = PLAYLIST_SORTS.find((x) => x.value === playlistSortValue) ?? PLAYLIST_SORTS[0];
+    return api.listFiles({ ...listRequest(), draw: true, sort: sort.sort, sortDesc: sort.desc });
   };
 
   /** プレイリストを書き出し始める（中央の一覧に出ている曲。選んでいなければ選んでから） */

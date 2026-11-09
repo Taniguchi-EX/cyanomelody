@@ -13,11 +13,24 @@ fs.mkdirSync(out, { recursive: true });
 const ui = await connect(shotDir);
 const { page, step, shot, status, row, waitIdle, addFolder } = ui;
 
-const openPlaylist = (name) => page.locator(`[data-testid=playlist][data-playlist-name="${name}"] .tag-name`).click();
+const editor = () => page.getByTestId("playlist-editor");
+/** 編集画面を開いていれば閉じる */
+async function closeEditor() {
+  if ((await editor().count()) === 0) return;
+  await editor().getByRole("button", { name: "閉じる", exact: true }).click();
+  await editor().waitFor({ state: "detached", timeout: 3000 });
+}
+/** 左の欄の行のダブルクリックで、選んで編集画面を開く */
+async function openPlaylist(name) {
+  await closeEditor();
+  await page.locator(`[data-testid=playlist][data-playlist-name="${name}"] .tag-name`).dblclick();
+  await editor().waitFor({ timeout: 3000 });
+}
 async function addToPlaylist(rel, name) {
-  // 詳細画面を開いているときだけ戻る（ないボタンを押そうとすると、30秒待ってから失敗する）
-  const back = page.getByRole("button", { name: "ファイルの一覧に戻る" });
-  if (await back.count()) await back.click();
+  await closeEditor();
+  // プレイリストを選んでいれば外す（ライブラリの一覧から加える）
+  const chip = page.getByTestId("playlist-filter");
+  if ((await chip.count()) > 0) await ui.filtered(() => chip.getByRole("button").last().click());
   await row(rel).click();
   await ui.addToPlaylistHere(name);
 }
@@ -55,19 +68,19 @@ await step("X01", "準備：別名とエフェクトを付けたプレイリス�
   await openPlaylist("TRPG: 第1話");
   await page.getByLabel("シーン1のエフェクト").selectOption({ label: "新しいfxを作る" });
   // 保存していない新しいエフェクトセットが出るので、名前を変えて保存する
-  await page.getByRole("dialog").waitFor({ timeout: 3000 });
+  await page.getByRole("dialog", { name: "エフェクトセットの管理" }).waitFor({ timeout: 3000 });
   await page.getByLabel("エフェクトセットの名前", { exact: true }).fill("小さく");
   await page.getByLabel("追加するエフェクト").selectOption("gain");
   await page.getByRole("button", { name: "追加", exact: true }).click();
   await page.getByLabel("1番目の増減").fill("-6");
-  await page.getByRole("dialog").getByRole("button", { name: "保存" }).click();
+  const effects = page.getByRole("dialog", { name: "エフェクトセットの管理" });
+  await effects.getByRole("button", { name: "保存" }).click();
   await waitIdle();
-  await page.getByRole("dialog").getByRole("button", { name: "閉じる" }).click();
-  await openPlaylist("TRPG: 第1話");
-  // 項目の行を押すと、右の欄に「プレイリスト上での名前」が出る
-  await page.getByTestId("playlist-item").filter({ hasText: "chime.wav" }).locator(".item-content").click();
-  await page.getByLabel("プレイリスト上での名前").fill("激しめの雨");
-  await page.getByLabel("プレイリスト上での名前").press("Enter");
+  await effects.getByRole("button", { name: "閉じる" }).click();
+  // 項目の行の「✎」で、プレイリスト上での名前を付ける
+  await page.getByRole("button", { name: "chime.wavのプレイリスト上での名前を付ける" }).click();
+  await page.getByLabel("chime.wavのプレイリスト上での名前", { exact: true }).fill("激しめの雨");
+  await page.getByLabel("chime.wavのプレイリスト上での名前", { exact: true }).press("Enter");
   await waitIdle();
   expect((await page.getByLabel("シーン1のエフェクト").inputValue()) !== "", "作ったエフェクトセットが付いていない");
 });
@@ -92,10 +105,10 @@ await step("X05", "書き出し先のフォルダがないときはエラーを�
   await ui.waitStatus("書き出し先のフォルダがありません").catch(() => {});
   expect((await status()).includes("書き出し先のフォルダがありません"), await status());
   expect(!fs.existsSync(path.join(out, "ない")), "フォルダを作った");
-  // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）
+  // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）。選んでいる行のダブルクリックでも選択は外れない
   const field = page.getByLabel("書き出し先のフォルダ");
-  await page.getByRole("button", { name: "ファイルの一覧に戻る" }).click();
-  await page.locator("[data-testid=playlist][data-playlist-name^=TRPG] .tag-name").first().click();
+  await openPlaylist("TRPG: 第1話");
+  expect((await page.getByTestId("playlist-filter").count()) === 1, "ダブルクリックで選択が外れた");
   await page.getByRole("button", { name: "書出" }).click();
   const v = await field.inputValue();
   expect(v === out, v);
@@ -105,6 +118,23 @@ await step("X06", "書き出し終わると、書き出したフォルダがリ�
   const link = page.getByTestId("export-folder");
   const text = await link.innerText();
   expect(text === path.join(out, "TRPG_ 第1話"), text);
+});
+
+await step("X07", "中央の一覧に出ている曲だけを、見えている順に書き出す（タグで絞り込むと、その曲だけ）", async () => {
+  await closeEditor();
+  await row("chime.mp3").waitFor({ timeout: 3000 });
+  // シーン1の chime.mp3 だけになるよう、ファイル名で絞り込む
+  await ui.filtered(() => page.getByLabel("ファイル名で検索").fill("mp3"));
+  expect((await ui.fileCount()) === 1, `${await ui.fileCount()}`);
+  await openPlaylist("TRPG: 第1話");
+  await exportTo(out);
+  await page.waitForFunction(() => document.querySelector("[data-testid=export-status]")?.textContent?.includes("（1件）"), null, {
+    timeout: 30000,
+  });
+  const root = path.join(out, "TRPG_ 第1話 (2)");
+  expect(fs.existsSync(path.join(root, "001_シーン1", "001_chime.wav")), fs.readdirSync(root).join(","));
+  expect(!fs.existsSync(path.join(root, "001_激しめの雨.wav")), "絞り込みで隠れた曲まで書き出した");
+  await closeEditor();
 });
 
 await ui.finish();

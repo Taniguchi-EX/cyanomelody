@@ -59,7 +59,7 @@ await step("S02", "ライブラリの画面（タグで絞り込み、1曲を選
   await ui.clearFilter();
 });
 
-await step("S03", "プレイリストの画面", async () => {
+await step("S03", "プレイリストの画面（選んだプレイリストの一覧を再生）", async () => {
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("森の探索シーン");
   await page.getByLabel("新しいプレイリストの名前").press("Enter");
@@ -68,14 +68,16 @@ await step("S03", "プレイリストの画面", async () => {
   await ui.check("足音/足音_砂利.wav");
   await ui.dragChecked(playlistItem("森の探索シーン"));
   await ui.clearChecks();
-  await playlistItem("森の探索シーン").locator(".tag-name").click();
-  await page.getByTestId("playlist-title").waitFor({ timeout: 3000 });
-  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
-  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
+  // ダブルクリックで編集画面を開き、雨のタグの組み合わせ（🎲 1曲）を加える
+  await playlistItem("森の探索シーン").locator(".tag-name").dblclick();
+  await page.getByTestId("playlist-editor").waitFor({ timeout: 3000 });
+  await page.getByLabel("組み合わせに加えるタグ").fill("雨");
+  await page.getByLabel("組み合わせに加えるタグ").press("Enter");
+  await page.getByRole("button", { name: "タグの組み合わせを追加" }).click();
   await waitIdle();
   await page.getByLabel("雨の再生方法").selectOption("random");
   await waitIdle();
-  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
+  await page.getByTestId("playlist-editor").getByRole("button", { name: "閉じる", exact: true }).click();
   await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   await page.waitForTimeout(1500);
@@ -85,6 +87,8 @@ await step("S03", "プレイリストの画面", async () => {
 });
 
 await step("S04", "エフェクトの画面", async () => {
+  await playlistItem("森の探索シーン").locator(".tag-name").dblclick();
+  await page.getByTestId("playlist-editor").waitFor({ timeout: 3000 });
   await page.getByLabel("足音_砂利.wavのエフェクト").selectOption({ label: "新しいfxを作る" });
   const dialog = page.getByRole("dialog", { name: "エフェクトセットの管理" });
   await dialog.waitFor({ timeout: 3000 });

@@ -99,16 +99,26 @@ await step("PF03", "3万件をすべてチェックして、ドラッグでま�
   return `${ms}ms`;
 });
 
-await step("PF04", "3万件が対象のタグの組み合わせを再生し始めるまでの時間", async () => {
+await step("PF04", "3万件が対象のタグの組み合わせのプレイリストを選ぶ（抽選して一覧を出す）までの時間と、再生し始めるまでの時間", async () => {
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("大量");
   await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
-  await page.locator('[data-testid=playlist][data-playlist-name="大量"] .tag-name').click();
-  await ui.filtered(() => tagItem("大量").locator(".tag-name").click());
-  await page.getByRole("button", { name: "選択タグをリストに追加" }).click();
+  const node = page.locator('[data-testid=playlist][data-playlist-name="大量"] .tag-name');
+  // 0曲のプレイリストは選べないので、ダブルクリックで編集画面を開いてタグの組み合わせを加える
+  await node.dblclick();
+  const editor = page.getByTestId("playlist-editor");
+  await editor.waitFor({ timeout: 3000 });
+  await page.getByLabel("組み合わせに加えるタグ").fill("大量");
+  await page.getByLabel("組み合わせに加えるタグ").press("Enter");
+  await page.getByRole("button", { name: "タグの組み合わせを追加" }).click();
   await waitIdle();
-  await ui.filtered(() => tagItem("大量").locator(".tag-name").click());
+  await editor.getByRole("button", { name: "閉じる", exact: true }).click();
+  // 選ぶ（抽選して一覧を出す）までの時間
+  const s0 = Date.now();
+  await ui.filtered(() => node.click());
+  const selectMs = Date.now() - s0;
+  expect((await ui.fileCount()) === 30005, `${await ui.fileCount()}`);
   const t0 = Date.now();
   await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying(30000);
@@ -116,7 +126,7 @@ await step("PF04", "3万件が対象のタグの組み合わせを再生し始�
   const position = await page.getByTestId("player-position").innerText();
   expect(position === "1/30005", position);
   await page.getByRole("button", { name: "停止", exact: true }).click();
-  return `${ms}ms`;
+  return `選ぶ ${selectMs}ms、再生 ${ms}ms`;
 });
 
 await ui.finish();

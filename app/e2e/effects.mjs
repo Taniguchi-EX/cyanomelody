@@ -1,6 +1,6 @@
 // 「エフェクト」の画面テスト。準備と実行の方法は tag-management.mjs と同じ。
 //   node e2e/effects.mjs <テストデータ> <スクリーンショットの保存先>
-// エフェクトセットの管理画面は、プレイリストの詳細画面の項目の fx のプルダウン（「新しいfxを作る」「このfxを編集」）から開く。
+// エフェクトセットの管理画面は、プレイリストの編集画面（左の欄の行のダブルクリック）の項目の fx のプルダウン（「新しいfxを作る」「このfxを編集」）から開く。
 import path from "node:path";
 import { connect, expect, parseArgs } from "./helpers.mjs";
 
@@ -46,7 +46,8 @@ await step("E01", "準備：フォルダを登録し、プレイリストにフ�
   await ui.check("chime.mp3");
   await ui.dragChecked(page.locator('[data-testid=playlist][data-playlist-name="シナリオ"]'));
   await ui.clearChecks();
-  await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
+  // ダブルクリック：選んで、編集画面を開く
+  await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).dblclick();
   await fx("chime.wav").waitFor({ timeout: 3000 });
   const options = await fx("chime.wav").locator("option").allInnerTexts();
   expect(options.join(",") === "fx なし,新しいfxを作る", options.join(","));
@@ -229,7 +230,8 @@ await step("E12", "再生の欄のエフェクトセット：項目のエフェ�
   await ui.reload();
   expect((await playerFx.locator("option:checked").innerText()) === "新しいエフェクトセット", "再読み込みで消えた");
   await playerFx.selectOption({ label: "fx なし" });
-  await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).click();
+  // ダブルクリック：選んで、編集画面を開く
+  await page.locator(`[data-testid=playlist][data-playlist-name="シナリオ"] .tag-name`).dblclick();
   await page.getByRole("button", { name: "再生を始める" }).click();
   await ui.waitPlaying();
   expect(!(await audioSrc()).includes("effects-cache"), `fx なし: ${await audioSrc()}`);
@@ -292,11 +294,13 @@ await step("E14", "簡易オフボーカル：追加するエフェクトにあ�
 
 await step("E15", "入れ子で項目のエフェクトが2つかかる曲では、再生の欄に「内側 → 外側」の順で名前を出す", async () => {
   // 親のプレイリストに「シナリオ」を参照で入れ、その項目に「再生の欄の fx」を付ける（シナリオの chime.wav には「カラオケ」が付いている）
+  const editor = page.getByTestId("playlist-editor");
+  if ((await editor.count()) > 0) await editor.getByRole("button", { name: "閉じる", exact: true }).click();
   await page.getByRole("button", { name: "プレイリストを作る" }).click();
   await page.getByLabel("新しいプレイリストの名前").fill("親");
   await page.getByLabel("新しいプレイリストの名前").press("Enter");
   await waitIdle();
-  await page.locator(`[data-testid=playlist][data-playlist-name="親"] .tag-name`).click();
+  await page.locator(`[data-testid=playlist][data-playlist-name="親"] .tag-name`).dblclick();
   await page.getByTestId("playlist-title").filter({ hasText: "親" }).waitFor({ timeout: 3000 });
   await page.getByLabel("加えるプレイリスト").selectOption({ label: "シナリオ" });
   await waitIdle();
