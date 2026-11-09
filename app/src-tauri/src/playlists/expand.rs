@@ -304,6 +304,7 @@ pub enum ExportNode {
     Folder { name: String, children: Vec<ExportNode> },
 }
 
+#[cfg(test)]
 pub(super) fn expand_with(conn: &Connection, id: i64, mode: PlayMode, rng: &mut Rng) -> Result<Vec<PlayEntry>> {
     ensure_exists(conn, id)?;
     let mut cat = Catalog::load(conn)?;
@@ -385,6 +386,8 @@ pub(super) fn track_counts(conn: &Connection) -> Result<HashMap<i64, i64>> {
     Ok(memo)
 }
 
+/// プレイリスト全体の再生順（画面では使わない。展開の決まりを単体テスト・計測で確かめるため）
+#[cfg(test)]
 pub fn expand_playlist(conn: &Connection, id: i64, mode: PlayMode) -> Result<Vec<PlayEntry>> {
     expand_with(conn, id, mode, &mut Rng::from_time())
 }

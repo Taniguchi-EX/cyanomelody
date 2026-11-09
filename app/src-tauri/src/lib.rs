@@ -369,11 +369,6 @@ async fn cancel_autotag(state: State<'_, AppState>) -> Result<()> {
     Ok(())
 }
 
-#[tauri::command]
-async fn autotag_progress(state: State<'_, AppState>) -> Result<AutotagProgress> {
-    Ok(state.autotag.progress.lock().unwrap_or_else(|e| e.into_inner()).clone())
-}
-
 /// 新しい版があれば、その版。開発用のビルドや、探せなかったときは None
 #[tauri::command]
 async fn check_update(app: AppHandle) -> Result<Option<String>> {
@@ -788,12 +783,6 @@ async fn set_playlist_item_mode(state: State<'_, AppState>, item_id: i64, mode: 
     playlists::set_item_mode(&state.conn(), item_id, mode)
 }
 
-/// 再生順を決める
-#[tauri::command]
-async fn expand_playlist(state: State<'_, AppState>, id: i64, mode: PlayMode) -> Result<Vec<PlayEntry>> {
-    playlists::expand_playlist(&state.conn(), id, mode)
-}
-
 #[tauri::command]
 async fn expand_playlist_item(state: State<'_, AppState>, item_id: i64) -> Result<Vec<PlayEntry>> {
     playlists::expand_playlist_item(&state.conn(), item_id)
@@ -1110,7 +1099,6 @@ pub fn run() {
             autotag_file,
             start_autotag,
             cancel_autotag,
-            autotag_progress,
             install_update,
             relink_files,
             license_types,
@@ -1144,7 +1132,6 @@ pub fn run() {
             start_export,
             start_export_files,
             cancel_export,
-            expand_playlist,
             expand_playlist_item,
             playlists_with_file,
             existing_file_ids,

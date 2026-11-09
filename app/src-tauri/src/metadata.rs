@@ -178,6 +178,7 @@ fn parse_year(text: &str) -> Option<i32> {
 
 /// 長さ（秒）。音声ファイルの情報（全体のフレーム数）から求め、情報にないとき（一部の MP3 など）は
 /// 音声データのパケットを最後までたどって（デコードはせずに）足し合わせる。読めないファイルでは None
+#[cfg(test)]
 pub fn duration(path: &Path) -> Option<f64> {
     duration_of(probe(path)?.format)
 }

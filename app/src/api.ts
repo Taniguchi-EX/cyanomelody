@@ -417,7 +417,6 @@ export const playlistApi = {
   setItemMode: (itemId: number, mode: PlayMode) => invoke<void>("set_playlist_item_mode", { itemId, mode }),
   /** 空なら外す */
   setItemAlias: (itemId: number, alias: string) => invoke<void>("set_playlist_item_alias", { itemId, alias }),
-  expand: (id: number, mode: PlayMode) => invoke<PlayEntry[]>("expand_playlist", { id, mode }),
   /** 項目1つだけの再生順 */
   expandItem: (itemId: number) => invoke<PlayEntry[]>("expand_playlist_item", { itemId }),
   /** ファイルを項目として直接入れているプレイリストのid */

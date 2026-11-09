@@ -563,7 +563,9 @@ pub fn playlists_with_file(conn: &Connection, file_id: i64) -> Result<Vec<i64>> 
         .collect::<rusqlite::Result<_>>()?)
 }
 
-pub use expand::{expand_playlist, expand_playlist_item, item_files, ExportNode};
+#[cfg(test)]
+pub use expand::expand_playlist;
+pub use expand::{expand_playlist_item, item_files, ExportNode};
 use expand::{count_item, track_counts, Catalog};
 
 pub fn get_playlist(conn: &Connection, id: i64) -> Result<PlaylistDetail> {
