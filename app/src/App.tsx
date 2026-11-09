@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { pickPath, pickSavePath } from "./dialogs";
+import { pickJsonSavePath, pickPath } from "./dialogs";
+import { todayStamp } from "./paths";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   api,
@@ -64,12 +65,6 @@ import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { SearchBox } from "./components/SearchBox";
 import { useStoredNumber, useStoredString } from "./storage";
-
-/** 今日の日付（YYYYMMDD。書き出すファイル・フォルダの名前に使う） */
-function today() {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-}
 
 /** ファイルの一覧を再生するときの、再生の欄の名前 */
 const LIST_NAME = "ファイルの一覧";
@@ -487,10 +482,7 @@ export default function App() {
    * fileIds が関数なら、保存先を選んだ後に呼んで対象を決める（プレイリストの一覧など）
    */
   const exportFileInfo = async (name: string, fileIds: number[] | (() => Promise<number[]>)) => {
-    const path = await pickSavePath({
-      defaultPath: `${name}.json`,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    }).catch(showError);
+    const path = await pickJsonSavePath(name).catch(showError);
     if (!path) return;
     run(async () => {
       const ids = typeof fileIds === "function" ? await fileIds() : fileIds;
@@ -504,7 +496,7 @@ export default function App() {
     const dest = await pickPath({ directory: true }).catch(showError);
     if (typeof dest !== "string") return;
     try {
-      const folder = await playlistApi.startExportFiles(bulkFileIds, dest, `cyanomelody-files-${today()}`);
+      const folder = await playlistApi.startExportFiles(bulkFileIds, dest, `cyanomelody-files-${todayStamp()}`);
       showInfo(`書き出しを始めました: ${folder}`);
     } catch (e) {
       showError(e);
@@ -1312,7 +1304,7 @@ export default function App() {
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onDelete={() => startDelete(bulkFileIds)}
             onExportFiles={exportCheckedFiles}
-            onExportInfo={() => exportFileInfo(`cyanomelody-files-${today()}`, bulkFileIds)}
+            onExportInfo={() => exportFileInfo(`cyanomelody-files-${todayStamp()}`, bulkFileIds)}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
             onOpenPlaylist={(id) => openEditor(id)}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}

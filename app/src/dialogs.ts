@@ -21,3 +21,13 @@ export async function pickSavePath(options: SaveDialogOptions): Promise<string |
   if (window.__dialogReply !== undefined) return window.__dialogReply;
   return await save(options);
 }
+
+/** データ（JSON）のファイルを選ぶダイアログの絞り込み */
+const JSON_FILTERS = [{ name: "JSON", extensions: ["json"] }];
+
+/** データ（JSON）を書き出す保存先を選ぶ。defaultName は拡張子を除いた名前の初期値 */
+export const pickJsonSavePath = (defaultName: string) =>
+  pickSavePath({ defaultPath: `${defaultName}.json`, filters: JSON_FILTERS });
+
+/** 取り込むデータ（JSON）のファイルを選ぶ */
+export const pickJsonOpenPath = () => pickPath({ filters: JSON_FILTERS });

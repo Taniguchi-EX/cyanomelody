@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { api, type DataSections, type ImportPreview, type ImportResult } from "../api";
 import { confirmDialog } from "../confirm";
-import { pickPath, pickSavePath } from "../dialogs";
+import { pickJsonOpenPath, pickJsonSavePath } from "../dialogs";
+import { todayStamp } from "../paths";
 
 /** 画面の設定のうち、エクスポートするもの（localStorage の key） */
 const SCREEN_KEYS = [
@@ -48,11 +49,6 @@ function writeScreen(screen: Record<string, unknown>) {
     if (key in screen) localStorage.setItem(key, JSON.stringify(screen[key]));
   }
 }
-
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-};
 
 const dateText = (seconds: number) => new Date(seconds * 1000).toLocaleString("ja-JP");
 
@@ -122,10 +118,7 @@ export function DataTab({ onError, onImported }: Props) {
   const [result, setResult] = useState<string[] | null>(null);
 
   const exportData = async () => {
-    const path = await pickSavePath({
-      defaultPath: `cyanomelody-${today()}.json`,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
+    const path = await pickJsonSavePath(`cyanomelody-${todayStamp()}`);
     if (!path) return;
     setBusy(true);
     try {
@@ -142,7 +135,7 @@ export function DataTab({ onError, onImported }: Props) {
   };
 
   const chooseFile = async () => {
-    const path = await pickPath({ filters: [{ name: "JSON", extensions: ["json"] }] });
+    const path = await pickJsonOpenPath();
     if (!path) return;
     setResult(null);
     try {
