@@ -166,6 +166,8 @@ pub fn apply(tx: &Transaction, file_id: i64, meta: &FileMeta, ignore: &[String],
             let tag = tag_id(tx, &name, Some(parent), &mut result.created)?;
             let n = tx.execute("INSERT OR IGNORE INTO file_tags (file_id, tag_id) VALUES (?1, ?2)", params![file_id, tag])?;
             if n > 0 {
+                // シノニムで見つけたときは、付けたタグの名前を出す
+                let name = tx.query_row("SELECT name FROM tags WHERE id = ?1", [tag], |r| r.get(0)).unwrap_or(name);
                 result.added.push(AddedTag { field: field.to_string(), name });
             }
         }
@@ -229,9 +231,15 @@ mod tests {
         // 何度行っても同じ（増えない）
         let again = run(&mut conn, 1, &meta("米津玄師", "STRAY SHEEP", "J-POP", "米津玄師"), &[]);
         assert!(again.added.is_empty() && again.created == 0 && again.has_info);
-        // 大文字・小文字の違う名前は、今のタグを付ける
+        // 大文字・小文字の違う名前は、今のタグを付ける（結果には付けたタグの名前を出す）
         let r = run(&mut conn, 2, &meta("", "stray sheep", "", ""), &[]);
-        assert_eq!(r.added[0].name, "stray sheep");
+        assert_eq!(r.added[0].name, "STRAY SHEEP");
+        assert_eq!(r.created, 0);
+        // シノニムと同じ値は、そのタグを付ける（新しいタグは作らない）
+        let yonezu = crate::tags::find_tag(&conn, "米津玄師").unwrap().unwrap();
+        crate::tags::set_tag_synonyms(&mut conn, yonezu, &["ハチ".into()], "米津玄師").unwrap();
+        let r = run(&mut conn, 2, &meta("ハチ", "", "", ""), &[]);
+        assert_eq!(r.added.iter().map(|a| format!("{}:{}", a.field, a.name)).collect::<Vec<_>>(), vec!["アーティスト:米津玄師"]);
         assert_eq!(r.created, 0);
     }
 

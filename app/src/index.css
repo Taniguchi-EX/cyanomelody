@@ -1590,3 +1590,9 @@ button.danger {
 .update-versions a {
   color: var(--accent);
 }
+
+/* タグの詳細画面のシノニムの一覧：無視する値の一覧と同じ形で、文字はふつうの色。字下げはしない */
+.synonym-list .ignore-list {
+  margin-left: 0;
+  color: var(--fg);
+}

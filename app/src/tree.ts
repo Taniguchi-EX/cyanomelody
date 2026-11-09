@@ -35,14 +35,17 @@ export const nameMatches = (name: string, query: string) => name.toLowerCase().i
  * 左の欄の検索。名前があてはまる節と、その祖先を出す（祖先は、あてはまらなければ dimmed）。
  * たたんでいる節の中でも出す。query が空なら null（検索していない）
  */
-export function searchNodes<T extends TreeNode & { name: string }>(
+export function searchNodes<T extends TreeNode & { name: string; synonyms?: string[] }>(
   nodes: T[],
   query: string,
 ): { shown: T[]; dimmed: Set<number> } | null {
   const q = query.trim().toLowerCase();
   if (!q) return null;
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const matched = new Set(nodes.filter((n) => nameMatches(n.name, q)).map((n) => n.id));
+  // シノニムがあれば、シノニムでも引っかける（タグ）
+  const matched = new Set(
+    nodes.filter((n) => nameMatches(n.name, q) || n.synonyms?.some((s) => nameMatches(s, q))).map((n) => n.id),
+  );
   const keep = new Set(matched);
   for (const id of matched) {
     let parent = byId.get(id)?.parentId ?? null;

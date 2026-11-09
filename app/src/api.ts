@@ -123,6 +123,8 @@ export type Tag = {
   /** 子のタグを実際に並べる順。親の設定を引き継ぐなら、引き継いだもの */
   shownChildSort: ChildSort;
   shownChildSortDesc: boolean;
+  /** シノニム（別の名前）。決めた順 */
+  synonyms: string[];
 } & TagSettings;
 
 /** 子のタグの並び順。manual はドラッグで決めた順 */
@@ -178,6 +180,9 @@ export const api = {
   createTag: (name: string) => invoke<number>("create_tag", { name }),
   renameTag: (tagId: number, name: string, merge: boolean) =>
     invoke<RenameResult>("rename_tag", { tagId, name, merge }),
+  /** タグのシノニムを置き換える。name はこれから付けるタグの名前（同じものは入れない）。ほかのタグの名前・シノニムと重なればエラー */
+  setTagSynonyms: (tagId: number, synonyms: string[], name: string) =>
+    invoke<void>("set_tag_synonyms", { tagId, synonyms, name }),
   setTagSettings: (tagId: number, settings: TagSettings) =>
     invoke<void>("set_tag_settings", { tagId, settings }),
   deleteTag: (tagId: number) => invoke<void>("delete_tag", { tagId }),

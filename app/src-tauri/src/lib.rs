@@ -515,6 +515,12 @@ async fn rename_tag(
     tags::rename_tag(&mut state.conn(), tag_id, &name, merge)
 }
 
+/// タグのシノニムを置き換える。name はこれから付けるタグの名前（同じものは入れない）
+#[tauri::command]
+async fn set_tag_synonyms(state: State<'_, AppState>, tag_id: i64, synonyms: Vec<String>, name: String) -> Result<()> {
+    tags::set_tag_synonyms(&mut state.conn(), tag_id, &synonyms, &name)
+}
+
 #[tauri::command]
 async fn set_tag_settings(state: State<'_, AppState>, tag_id: i64, settings: TagSettings) -> Result<()> {
     tags::set_tag_settings(&state.conn(), tag_id, &settings)
@@ -953,6 +959,7 @@ pub fn run() {
             create_tag,
             rename_tag,
             set_tag_settings,
+            set_tag_synonyms,
             new_tag_settings,
             export_data,
             inspect_import,

@@ -130,7 +130,7 @@ export function SelectionPanel({
       <Collapsible id="detail-tags" title="タグ" count={file.tags.length}>
         <TagInput
           candidates={candidates}
-          attachedNames={file.tags.map((t) => t.name)}
+          attachedNames={tags.filter((t) => attached.has(t.id)).flatMap((t) => [t.name, ...t.synonyms])}
           busy={busy}
           onAdd={onAddTag}
         />

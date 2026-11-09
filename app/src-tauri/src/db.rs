@@ -166,6 +166,15 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE audio_files ADD COLUMN release_year INTEGER;
     ALTER TABLE audio_files ADD COLUMN release_year_done INTEGER NOT NULL DEFAULT 0;
     "#,
+    // 14: タグのシノニム（別の名前）。表全体で重ならない（大文字・小文字は区別しない）。タグを消すと消える
+    r#"
+    CREATE TABLE tag_synonyms (
+        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        position INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX tag_synonyms_tag ON tag_synonyms(tag_id);
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EditableList } from "./EditableList";
 import type { ChildSort, Tag, TagSettings } from "../api";
 import { DEFAULT_BG, DEFAULT_FG, SORTS } from "../tagSettings";
 import { useEscape } from "../hooks/useEscape";
@@ -7,9 +8,11 @@ type Props = {
   tag: Tag;
   /** 親のタグ（色の引き継ぎの見本に使う）。最上位なら null */
   parent: Tag | null;
+  /** すべてのタグ（シノニムがほかのタグの名前・シノニムと重ならないか確かめる） */
+  tags: Tag[];
   busy: boolean;
   /** 保存する。終わったら true（画面を閉じる） */
-  onSubmit: (name: string, settings: TagSettings) => Promise<boolean>;
+  onSubmit: (name: string, settings: TagSettings, synonyms: string[]) => Promise<boolean>;
   onClose: () => void;
 };
 
@@ -52,9 +55,25 @@ export function ColorRow({ id, label, value, fallback, onChange }: ColorRowProps
   );
 }
 
-/** タグの詳細画面。名前、子のタグの並び順、背景色・文字色を決める */
-export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
+/** シノニムの一覧に value を入れられないなら理由。自分の名前・ほかのタグの名前・シノニムと同じものは入れない */
+function synonymProblem(value: string, name: string, tag: Tag, tags: Tag[]): string | null {
+  const key = value.toLowerCase();
+  if (key === name.trim().toLowerCase()) return "タグ名と同じです";
+  for (const t of tags) {
+    if (t.id === tag.id) continue;
+    if (t.name.toLowerCase() === key) return `「${value}」は、タグ「${t.name}」の名前です`;
+    if (t.synonyms.some((s) => s.toLowerCase() === key)) return `「${value}」は、タグ「${t.name}」のシノニムです`;
+  }
+  return null;
+}
+
+/** タグの詳細画面。名前、シノニム、子のタグの並び順、背景色・文字色を決める */
+export function TagDetail({ tag, parent, tags, busy, onSubmit, onClose }: Props) {
   const [name, setName] = useState(tag.name);
+  const [synonyms, setSynonyms] = useState(tag.synonyms);
+  // シノニムの一覧は「保存」でまとめて保存する（一覧の中ではこの画面の値を変えるだけ）
+  const [loadSynonyms] = useState(() => () => Promise.resolve(tag.synonyms));
+  const [editingSynonyms, setEditingSynonyms] = useState(false);
   const [settings, setSettings] = useState<TagSettings>({
     childSort: tag.childSort,
     childSortDesc: tag.childSortDesc,
@@ -66,7 +85,7 @@ export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
   useEscape(onClose);
 
   const submit = async () => {
-    if (await onSubmit(name, settings)) onClose();
+    if (await onSubmit(name, settings, synonyms)) onClose();
   };
 
   // 引き継ぐときに、実際に並べる順（親が実際に並べる順）
@@ -91,8 +110,21 @@ export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && submit()}
+            onKeyDown={(e) => e.key === "Enter" && !busy && name.trim() && !editingSynonyms && submit()}
           />
+          <span>シノニム</span>
+          <div className="synonym-list">
+            <EditableList
+              load={loadSynonyms}
+              save={async (values) => setSynonyms(values)}
+              off={false}
+              what="シノニム"
+              testId="synonym-list"
+              onEditing={setEditingSynonyms}
+              validate={(value) => synonymProblem(value, name, tag, tags)}
+            />
+            <span className="sub">別の名前。付けるタグ名の候補・検索・ファイルの情報からのタグ付けで、このタグとして扱う</span>
+          </div>
           <label htmlFor="tag-detail-sort">子のタグの並び順</label>
           <span className="row">
             <select
@@ -149,7 +181,7 @@ export function TagDetail({ tag, parent, busy, onSubmit, onClose }: Props) {
         </div>
         <div className="row" style={{ justifyContent: "flex-end", marginTop: 6 }}>
           <button onClick={onClose}>やめる</button>
-          <button onClick={submit} disabled={busy || !name.trim()}>
+          <button onClick={submit} disabled={busy || !name.trim() || editingSynonyms}>
             保存
           </button>
         </div>

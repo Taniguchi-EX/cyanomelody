@@ -35,6 +35,8 @@ pub struct Tag {
     /// 子のタグを実際に並べる順。親の設定を引き継ぐなら、引き継いだもの
     pub shown_child_sort: ChildSort,
     pub shown_child_sort_desc: bool,
+    /// シノニム（別の名前）。決めた順
+    pub synonyms: Vec<String>,
 }
 
 /// 子のタグの並び順。設定では None が「親の設定を引き継ぐ」
@@ -229,6 +231,7 @@ fn tree_order(conn: &Connection) -> Result<(Vec<Row>, Vec<(usize, i64)>)> {
 pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
     let (rows, order) = tree_order(conn)?;
     let counts = file_counts(conn)?;
+    let mut synonyms = synonym_map(conn)?;
     // 親は子より先に出てくるので、表示の色は前から順に引き継げる
     let mut shown: HashMap<i64, (Option<String>, Option<String>)> = HashMap::new();
     Ok(order
@@ -250,6 +253,7 @@ pub fn list_tags(conn: &Connection) -> Result<Vec<Tag>> {
                 shown_fg_color: fg,
                 shown_child_sort: r.shown_sort.0,
                 shown_child_sort_desc: r.shown_sort.1,
+                synonyms: synonyms.remove(&r.id).unwrap_or_default(),
             }
         })
         .collect())
@@ -305,9 +309,88 @@ pub fn normalize_tag_name(name: &str) -> Result<String> {
 }
 
 
-/// 名前でタグを探す。大文字・小文字は区別しない。
+/// 名前でタグを探す。大文字・小文字は区別しない。タグの名前になければ、シノニムから探す
 pub(crate) fn find_tag(conn: &Connection, name: &str) -> Result<Option<i64>> {
-    find_by_name(conn, "tags", name)
+    match find_by_name(conn, "tags", name)? {
+        Some(id) => Ok(Some(id)),
+        None => synonym_owner(conn, name),
+    }
+}
+
+/// name をシノニムに持つタグ
+fn synonym_owner(conn: &Connection, name: &str) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row("SELECT tag_id FROM tag_synonyms WHERE name = ?1", [name], |r| r.get(0))
+        .optional()?)
+}
+
+/// タグのidから、シノニムの一覧（決めた順）を引く表
+pub(crate) fn synonym_map(conn: &Connection) -> Result<HashMap<i64, Vec<String>>> {
+    let mut map: HashMap<i64, Vec<String>> = HashMap::new();
+    let mut stmt = conn.prepare("SELECT tag_id, name FROM tag_synonyms ORDER BY tag_id, position, rowid")?;
+    for row in stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
+        let (id, name) = row?;
+        map.entry(id).or_default().push(name);
+    }
+    Ok(map)
+}
+
+fn tag_name(conn: &Connection, tag_id: i64) -> Result<String> {
+    conn.query_row("SELECT name FROM tags WHERE id = ?1", [tag_id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| crate::names::not_found("タグ"))
+}
+
+/// name を、tag_id のタグ（None なら新しいタグ）の名前かシノニムとして使えるか。ほかのタグの名前・シノニムと重なればエラー
+fn ensure_free_name(conn: &Connection, name: &str, tag_id: Option<i64>) -> Result<()> {
+    if let Some(other) = find_by_name(conn, "tags", name)?.filter(|o| Some(*o) != tag_id) {
+        return Err(Error::invalid(format!("「{name}」は、タグ「{}」の名前です", tag_name(conn, other)?)));
+    }
+    if let Some(other) = synonym_owner(conn, name)?.filter(|o| Some(*o) != tag_id) {
+        return Err(Error::invalid(format!("「{name}」は、タグ「{}」のシノニムです", tag_name(conn, other)?)));
+    }
+    Ok(())
+}
+
+/// タグのシノニムを、names に置き換える（並びもこの順）。own_name（これから付けるタグの名前）と同じもの・重なるものは入れない。
+/// ほかのタグの名前・シノニムと同じものがあればエラー（何も変えない）
+pub fn set_tag_synonyms(conn: &mut Connection, tag_id: i64, names: &[String], own_name: &str) -> Result<()> {
+    ensure_exists(conn, tag_id)?;
+    let own = own_name.trim().to_lowercase();
+    let mut seen = HashSet::new();
+    let mut list = vec![];
+    for n in names {
+        let name = normalize_tag_name(n)?;
+        let key = name.to_lowercase();
+        if key == own || !seen.insert(key) {
+            continue;
+        }
+        ensure_free_name(conn, &name, Some(tag_id))?;
+        list.push(name);
+    }
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM tag_synonyms WHERE tag_id = ?1", [tag_id])?;
+    for (i, name) in list.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO tag_synonyms (tag_id, name, position) VALUES (?1, ?2, ?3)",
+            params![tag_id, name, i as i64],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// tag_id のシノニムの最後に name を加える（もう誰かの名前・シノニムなら加えない）
+fn push_synonym(conn: &Connection, tag_id: i64, name: &str) -> Result<()> {
+    if find_tag(conn, name)?.is_some() {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO tag_synonyms (tag_id, name, position)
+         VALUES (?1, ?2, (SELECT coalesce(max(position) + 1, 0) FROM tag_synonyms WHERE tag_id = ?1))",
+        params![tag_id, name],
+    )?;
+    Ok(())
 }
 
 /// 親の子の最後に入れるときの順番
@@ -374,6 +457,9 @@ pub fn create_tag_under(conn: &Connection, name: &str, parent: Option<i64>) -> R
 pub fn create_tag(conn: &Connection, name: &str) -> Result<i64> {
     let name = normalize_tag_name(name)?;
     ensure_unique_name(conn, "tags", "タグ", &name, None)?;
+    if let Some(other) = synonym_owner(conn, &name)? {
+        return Err(Error::invalid(format!("「{name}」は、タグ「{}」のシノニムです", tag_name(conn, other)?)));
+    }
     insert_tag(conn, &name)
 }
 
@@ -432,8 +518,9 @@ fn ensure_exists(conn: &Connection, tag_id: i64) -> Result<()> {
     parent_of(conn, tag_id).map(|_| ())
 }
 
-/// タグの名前を変える。別の既存のタグと同じ名前のときは、merge が true なら統合し、false ならエラー。
-/// 統合すると、統合元の子は統合先の子の最後に移る。
+/// タグの名前を変える。別の既存のタグと同じ名前（またはそのシノニム）のときは、merge が true なら統合し、false ならエラー。
+/// 統合すると、統合元の子は統合先の子の最後に移り、統合元の名前とシノニムは統合先のシノニムに加わる。
+/// 自分のシノニムの1つに変えたときは、そのシノニムを外す
 pub fn rename_tag(conn: &mut Connection, tag_id: i64, new_name: &str, merge: bool) -> Result<RenameResult> {
     let name = normalize_tag_name(new_name)?;
     ensure_exists(conn, tag_id)?;
@@ -460,12 +547,19 @@ pub fn rename_tag(conn: &mut Connection, tag_id: i64, new_name: &str, merge: boo
             let mut ids = siblings(&tx, Some(other))?;
             ids.extend(siblings(&tx, Some(tag_id))?);
             write_children(&tx, Some(other), &ids)?;
+            // 統合元の名前とシノニムは、統合先のシノニムにする（統合元を消してから加える）
+            let old_name = tag_name(&tx, tag_id)?;
+            let old_synonyms = synonym_map(&tx)?.remove(&tag_id).unwrap_or_default();
             tx.execute("DELETE FROM tags WHERE id = ?1", [tag_id])?;
+            for s in std::iter::once(old_name).chain(old_synonyms) {
+                push_synonym(&tx, other, &s)?;
+            }
             RenameResult { tag_id: other, merged: true }
         }
         // 自分自身（大文字・小文字だけの変更を含む）か、新しい名前
         _ => {
             tx.execute("UPDATE tags SET name = ?2 WHERE id = ?1", params![tag_id, name])?;
+            tx.execute("DELETE FROM tag_synonyms WHERE tag_id = ?1 AND name = ?2", params![tag_id, name])?;
             RenameResult { tag_id, merged: false }
         }
     };
@@ -817,5 +911,56 @@ mod tests {
         assert_eq!(r, RenameResult { tag_id: boom, merged: true });
         assert_eq!(tree(&conn), vec![t("環境音", 0), t("雨", 1), t("爆発", 0), t("強風", 1)]);
         let _ = gale;
+    }
+
+    fn synonyms_of(conn: &Connection, id: i64) -> Vec<String> {
+        synonym_map(conn).unwrap().remove(&id).unwrap_or_default()
+    }
+
+    #[test]
+    fn synonyms_are_unique_and_found_by_name() {
+        let mut conn = setup();
+        let a = create_tag(&conn, "歌手A").unwrap();
+        let b = create_tag(&conn, "歌手B").unwrap();
+        // 自分の名前と同じもの・重なるものは入れない。並びは決めた順
+        let names = ["Aの別名義", "歌手A", "aの別名義", "Second"].map(String::from);
+        set_tag_synonyms(&mut conn, a, &names, "歌手A").unwrap();
+        assert_eq!(synonyms_of(&conn, a), vec!["Aの別名義", "Second"]);
+        assert_eq!(list_tags(&conn).unwrap().iter().find(|t| t.id == a).unwrap().synonyms, vec!["Aの別名義", "Second"]);
+        // ほかのタグの名前・シノニムと同じものはエラーで、何も変えない
+        assert!(set_tag_synonyms(&mut conn, b, &["歌手A".into()], "歌手B").is_err());
+        let err = set_tag_synonyms(&mut conn, b, &["ok".into(), "SECOND".into()], "歌手B").unwrap_err();
+        assert!(err.to_string().contains("歌手A"), "{err}");
+        assert!(synonyms_of(&conn, b).is_empty());
+        // シノニムでも探せる。シノニムと同じ名前のタグは作れない（名前から探すと、そのタグを使う）
+        assert_eq!(find_tag(&conn, "second").unwrap(), Some(a));
+        assert!(create_tag(&conn, "Aの別名義").is_err());
+        assert_eq!(get_or_create_tag(&conn, "Aの別名義").unwrap(), a);
+        // 自分のシノニムに名前を変えると、そのシノニムは外れる
+        rename_tag(&mut conn, a, "Second", false).unwrap();
+        assert_eq!(synonyms_of(&conn, a), vec!["Aの別名義"]);
+        // タグを消すと、シノニムも消える
+        delete_tag(&mut conn, a).unwrap();
+        assert_eq!(find_tag(&conn, "Aの別名義").unwrap(), None);
+    }
+
+    #[test]
+    fn merge_moves_name_and_synonyms() {
+        let mut conn = setup();
+        let a = create_tag(&conn, "歌手A").unwrap();
+        let b = create_tag(&conn, "歌手B").unwrap();
+        let c = create_tag(&conn, "歌手C").unwrap();
+        set_tag_synonyms(&mut conn, a, &["A別名".into()], "歌手A").unwrap();
+        set_tag_synonyms(&mut conn, b, &["B別名".into()], "歌手B").unwrap();
+        set_tag_synonyms(&mut conn, c, &["C別名".into()], "歌手C").unwrap();
+        // ほかのタグの名前に変えて統合：統合元の名前とシノニムが、統合先のシノニムの後ろに入る
+        let r = rename_tag(&mut conn, b, "歌手a", true).unwrap();
+        assert_eq!(r, RenameResult { tag_id: a, merged: true });
+        assert_eq!(synonyms_of(&conn, a), vec!["A別名", "歌手B", "B別名"]);
+        // ほかのタグのシノニムに変えても、そのタグへの統合になる
+        assert!(rename_tag(&mut conn, c, "A別名", false).is_err());
+        let r = rename_tag(&mut conn, c, "A別名", true).unwrap();
+        assert_eq!(r.tag_id, a);
+        assert_eq!(synonyms_of(&conn, a), vec!["A別名", "歌手B", "B別名", "歌手C", "C別名"]);
     }
 }

@@ -557,15 +557,23 @@ export default function App() {
     });
 
   /** タグの詳細画面の保存。名前が別のタグと同じなら統合を確認する（統合したときは、並び順と色は保存しない） */
-  const saveTagDetail = async (tag: Tag, name: string, settings: TagSettings) => {
+  const saveTagDetail = async (tag: Tag, name: string, settings: TagSettings, synonyms: string[]) => {
     const newName = name.trim();
-    const other = tags.find((t) => t.id !== tag.id && t.name.toLowerCase() === newName.toLowerCase());
+    // ほかのタグの名前かシノニムと同じ名前にしたときは、そのタグへの統合
+    const key = newName.toLowerCase();
+    const other = tags.find(
+      (t) => t.id !== tag.id && (t.name.toLowerCase() === key || t.synonyms.some((s) => s.toLowerCase() === key)),
+    );
     if (
       other &&
       !(await confirmDialog(
-        `タグ「${other.name}」が既にあります。\n「${tag.name}」を「${other.name}」に統合しますか？\n` +
+        (other.name.toLowerCase() === key
+          ? `タグ「${other.name}」が既にあります。`
+          : `「${newName}」は、タグ「${other.name}」のシノニムです。`) +
+          `\n「${tag.name}」を「${other.name}」に統合しますか？\n` +
           `「${tag.name}」が付いたファイルに「${other.name}」が付き、「${tag.name}」は削除されます。` +
-          "\n子のタグがあれば、統合先の子の最後に移ります。この画面で決めた並び順と色は保存しません。",
+          `\n「${tag.name}」の名前とシノニムは、「${other.name}」のシノニムになります。` +
+          "\n子のタグがあれば、統合先の子の最後に移ります。この画面で決めた並び順・色・シノニムは保存しません。",
       ))
     ) {
       return false;
@@ -577,6 +585,8 @@ export default function App() {
         showInfo(`タグ「${tag.name}」を「${other.name}」に統合しました`);
         return;
       }
+      // シノニムを先に確かめて保存する（重なりがあれば、ほかは変えずにエラーを出す）
+      await api.setTagSynonyms(tag.id, synonyms, newName);
       await api.setTagSettings(tag.id, settings);
       if (newName !== tag.name) await api.renameTag(tag.id, newName, false);
       showInfo(`タグ「${newName}」の詳細を保存しました`);
@@ -1383,7 +1393,8 @@ export default function App() {
           tag={tagDetail}
           parent={tags.find((t) => t.id === tagDetail.parentId) ?? null}
           busy={busy}
-          onSubmit={(name, settings) => saveTagDetail(tagDetail, name, settings)}
+          tags={tags}
+          onSubmit={(name, settings, synonyms) => saveTagDetail(tagDetail, name, settings, synonyms)}
           onClose={() => setTagDetailId(null)}
         />
       )}

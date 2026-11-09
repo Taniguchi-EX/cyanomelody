@@ -139,7 +139,9 @@ export function TagPanel({
                 collapsed={collapsed.has(t.id)}
                 onToggle={() => toggleCollapsed(t.id)}
               />
-              <span className="tag-name">{t.name}</span>
+              <span className="tag-name" title={t.synonyms.length > 0 ? `${t.name}\nシノニム：${t.synonyms.join("、")}` : undefined}>
+                {t.name}
+              </span>
               <RowActions
                 name={t.name}
                 busy={busy}

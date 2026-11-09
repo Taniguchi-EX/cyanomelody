@@ -97,7 +97,7 @@ export function BulkPanel({
           <Collapsible id="bulk-tags" title="タグ" count={data.tags.length}>
             <TagInput
               candidates={candidates}
-              attachedNames={tags.filter((t) => fullyAttached.has(t.id)).map((t) => t.name)}
+              attachedNames={tags.filter((t) => fullyAttached.has(t.id)).flatMap((t) => [t.name, ...t.synonyms])}
               busy={busy}
               onAdd={onAddTag}
             />

@@ -91,6 +91,8 @@ pub struct XTag {
     pub child_sort_desc: bool,
     pub bg_color: Option<String>,
     pub fg_color: Option<String>,
+    /// シノニム（決めた順）
+    pub synonyms: Vec<String>,
 }
 
 /// 出典・ライセンス（ライセンスだけが種類と条項を持つ）
@@ -227,9 +229,15 @@ pub fn export(
                     child_sort_desc: r.get(5)?,
                     bg_color: r.get(6)?,
                     fg_color: r.get(7)?,
+                    synonyms: vec![],
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut synonyms = crate::tags::synonym_map(conn)?;
+        let all: Vec<XTag> = all
+            .into_iter()
+            .map(|t| XTag { synonyms: synonyms.remove(&t.id).unwrap_or_default(), ..t })
+            .collect();
         data.tags = if sections.tags {
             all
         } else {
@@ -731,7 +739,8 @@ fn import_tags(tx: &Transaction, tags: &[XTag], result: &mut ImportResult) -> Re
             if name.is_empty() {
                 continue;
             }
-            if let Some(id) = find_id(tx, "tags", name)? {
+            // 同じ名前（今あるタグのシノニムを含む）のタグがあれば、それを使う（変えない）
+            if let Some(id) = crate::tags::find_tag(tx, name)? {
                 map.insert(t.id, id);
                 continue;
             }
@@ -742,7 +751,17 @@ fn import_tags(tx: &Transaction, tags: &[XTag], result: &mut ImportResult) -> Re
                  VALUES (?1, ?2, ?3, (SELECT coalesce(max(position) + 1, 0) FROM tags WHERE parent_id IS ?3), ?4, ?5, ?6, ?7)",
                 params![name, now(), local_parent, sort, t.child_sort_desc, valid_color(&t.bg_color), valid_color(&t.fg_color)],
             )?;
-            map.insert(t.id, tx.last_insert_rowid());
+            let id = tx.last_insert_rowid();
+            // シノニムは、ほかのタグの名前・シノニムと重ならないものだけ付ける
+            for (i, s) in t.synonyms.iter().map(|s| s.trim()).filter(|s| !s.is_empty()).enumerate() {
+                if crate::tags::find_tag(tx, s)?.is_none() {
+                    tx.execute(
+                        "INSERT INTO tag_synonyms (tag_id, name, position) VALUES (?1, ?2, ?3)",
+                        params![id, s, i as i64],
+                    )?;
+                }
+            }
+            map.insert(t.id, id);
             result.tags_added += 1;
         }
         if rest.len() == before {
@@ -925,6 +944,7 @@ mod tests {
             "UPDATE audio_files SET size = id * 100, hash = 'h' || id;
              INSERT INTO tags (id, name, created_at, parent_id, position) VALUES (1, '環境音', 0, NULL, 0), (2, '雨', 0, 1, 0), (3, '風', 0, 1, 1), (4, '屋外', 0, NULL, 1);
              UPDATE tags SET bg_color = '#ff0000', child_sort = 'romaji' WHERE id = 1;
+             INSERT INTO tag_synonyms (tag_id, name, position) VALUES (3, 'そよ風', 0), (3, 'ウィンド', 1), (4, '外', 0);
              INSERT INTO file_tags VALUES (1, 2), (1, 4), (2, 3);
              INSERT INTO sources (id, name, url, note, created_at, position) VALUES (1, '素材サイト', 'https://example.com', '', 0, 0);
              INSERT INTO licenses (id, name, url, note, license_type, commercial, created_at, position) VALUES (1, 'CC0', '', '', 'cc0', 1, 0, 0);
@@ -1061,6 +1081,10 @@ mod tests {
         // 足す：同じ名前のタグは今のもの（色も位置も変えない）、同じ名前のプレイリストは「(2)」、曲の出典は今のまま
         let r = import(&mut dest, &data, ALL, false);
         assert_eq!(r.tags_added, 3);
+        // 新しく作ったタグにだけシノニムを付ける（今ある「雨」は変えない）
+        let synonyms = crate::tags::synonym_map(&dest).unwrap();
+        let wind: i64 = dest.query_row("SELECT id FROM tags WHERE name = '風'", [], |r| r.get(0)).unwrap();
+        assert_eq!(synonyms.get(&wind).cloned().unwrap_or_default(), vec!["そよ風", "ウィンド"]);
         let rain: (Option<i64>, Option<String>) =
             dest.query_row("SELECT parent_id, bg_color FROM tags WHERE id = 10", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
         assert_eq!(rain, (None, Some("#0000ff".into())));
