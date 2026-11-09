@@ -10,9 +10,9 @@ type Props = {
   player: Player | null;
   /** 再生中の位置と長さ（秒） */
   time: { current: number; duration: number };
-  /** 何も再生していないときに「▶」で再生するものがあるか（開いているプレイリストか、表示中のファイルの一覧） */
+  /** 何も再生していないときに「▶」で再生するものがあるか（表示中の中央の一覧に鳴らせる曲があるか） */
   canPlayOpen: boolean;
-  /** 開いているプレイリスト（なければ表示中のファイルの一覧）を、選んでいる再生方法で再生する */
+  /** 表示中の中央の一覧を、選んでいる再生方法で再生する（プレイリストを選んでいればプレイリストとして） */
   onPlayOpen: () => void;
   /** 再生方法（再生方法のボタンで、押すたびに変わる） */
   playMode: PlayerMode;
@@ -126,7 +126,7 @@ export function PlayerBar({
   const mode = PLAYER_MODES[modeIndex];
   const nextMode = PLAYER_MODES[(modeIndex + 1) % PLAYER_MODES.length];
 
-  // 中央の「▶」：再生中は一時停止・再開。何も再生していなければ、開いているプレイリストを順に再生する
+  // 中央の「▶」：再生中は一時停止・再開。何も再生していなければ、表示中の中央の一覧を再生する
   const main = player
     ? {
         label: player.paused ? "再開" : "一時停止",

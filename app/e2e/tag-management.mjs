@@ -22,7 +22,7 @@ await step("T01", "フォルダを登録すると、スキャンして5つの形
   expect(s.includes("5件"), `status: ${s}`);
   expect((await fileCount()) === 5, `件数 ${await fileCount()}`);
   expect((await row("サブフォルダ/チャイム.m4a").count()) === 1, "サブフォルダのm4aがない");
-  // ファイルの一覧の上には、プレイリストの詳細画面の名前と同じ位置に「ライブラリ」と出す
+  // ファイルの一覧の上には「ライブラリ」と出す（プレイリストを選んでいるときは、その名前）
   expect((await page.getByTestId("list-title").innerText()) === "ライブラリ", await page.getByTestId("list-title").innerText());
   // 一覧の行にはファイル名だけを出し、マウスを乗せると相対パスを出す
   const name = row("サブフォルダ/チャイム.m4a").locator(".file-name");

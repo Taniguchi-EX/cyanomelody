@@ -1008,7 +1008,7 @@ export default function App() {
 
   /**
    * 再生の順番を作って鳴らす。鳴らすファイルがなければ、そのことを出す。
-   * name は再生の欄に出す名前、sourceId は再生しているプレイリスト（詳細画面で再生中の項目を示すのに使う）。
+   * name は再生の欄に出す名前、sourceId は再生しているプレイリスト（編集画面で再生中の項目を示し、曲名から編集画面を開くのに使う）。
    * 読み込んだ並び（中の項目の再生方法は当てはめたもの）に、再生の欄で選んだ再生方法を当てはめて鳴らす
    */
   const startQueue = async (name: string, load: () => Promise<PlayEntry[]>, sourceId: number | null, empty: string) => {

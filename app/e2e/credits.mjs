@@ -96,7 +96,7 @@ await step("C02", "見出しの「＋」で出典を作成できる（名前・U
   await openEdit("source", "効果音サイトA");
   expect((await page.getByLabel("URL").inputValue()) === "https://example.com/", "URLが保存されない");
   await page.keyboard.press("Escape");
-  // 行の記号はマウスを乗せたときだけ出る。名前の欄で Enter を押しても作れる（旧 C20）
+  // 行の記号はマウスを乗せたときだけ出る。名前の欄で Enter を押しても作れる
   const actions = leftItem("source", "効果音サイトA").getByTestId("row-actions");
   await row("chime.wav").hover();
   expect(!(await actions.isVisible()), "マウスを乗せる前から出ている");
