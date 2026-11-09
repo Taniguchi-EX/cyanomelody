@@ -9,10 +9,11 @@ fn update_error(e: tauri_plugin_updater::Error) -> Error {
     Error::invalid(format!("更新できませんでした: {e}"))
 }
 
-/// 新しい版があれば、その版（"1.0.1" など）。開発用のビルドでは探さない。探せなかったとき（オフラインなど）は None
+/// 新しい版があれば、その版（"1.0.1" など）。探せなかったとき（オフラインなど）は None。
+/// 開発用のビルドでは探さない。ただし画面テストのため、環境変数 CYANOMELODY_FAKE_UPDATE に版があれば、その版が見つかったことにする
 pub async fn check(app: &AppHandle) -> Option<String> {
     if cfg!(debug_assertions) {
-        return None;
+        return std::env::var("CYANOMELODY_FAKE_UPDATE").ok().filter(|v| !v.is_empty());
     }
     match app.updater().ok()?.check().await {
         Ok(update) => update.map(|u| u.version),

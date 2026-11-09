@@ -1371,6 +1371,7 @@ export default function App() {
           busy={updating}
           onUpdate={installUpdate}
           onLater={() => setUpdate(null)}
+          onError={showError}
           onSkip={() => {
             setSkippedUpdate(update);
             setUpdate(null);

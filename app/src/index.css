@@ -1581,3 +1581,12 @@ button.danger {
   overflow-y: auto;
   overflow-wrap: anywhere;
 }
+
+/* アップデートの確認の「現在」「最新」の版（リリースノートへのリンク） */
+.update-versions {
+  font-variant-numeric: tabular-nums;
+}
+
+.update-versions a {
+  color: var(--accent);
+}
