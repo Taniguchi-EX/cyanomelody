@@ -6,6 +6,7 @@ import {
   api,
   describeScan,
   FILE_SORTS,
+  PLAYLIST_SORTS,
   type AudioFile,
   type Credit,
   type CreditInput,
@@ -22,6 +23,7 @@ import {
   type PlayMode,
   type PlaylistDetail,
   type PlayEntry,
+  type FileFilter,
   type PlaylistItem,
   type PlaylistNode,
   type Tag,
@@ -40,13 +42,13 @@ import { PlaylistEditor } from "./components/PlaylistEditor";
 import { PlayerBar } from "./components/PlayerBar";
 import { useAudioPlayer, type PreviewTarget } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
+import { usePlaylistSelection } from "./hooks/usePlaylistSelection";
 import { EMPTY_FILTER, FILTER_KEYS, useFileFilter } from "./hooks/useFileFilter";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
 import { SelectionPanel } from "./components/SelectionPanel";
 import { CheckBar } from "./components/CheckBar";
 import { StatusBar, type Status } from "./components/StatusBar";
-import { AliasField, ItemDetail } from "./components/ItemDetail";
 import { CreditPanel } from "./components/CreditPanel";
 import { OtherPanel } from "./components/OtherPanel";
 import { CreditForm } from "./components/CreditForm";
@@ -82,17 +84,25 @@ export default function App() {
   /** 絞り込みの条件 */
   const fileFilter = useFileFilter();
   const { filter, text, setText, toggleTag, toggleUntagged, toggleCredit, toggleCreditNone, toggleOther } = fileFilter;
-  /** ライブラリの一覧の並び順（FILE_SORTS の value）。アプリを閉じても覚えておく */
-  const [fileSortValue, setFileSortValue] = useStoredString("cyanomelody.fileSort");
-  const fileSort = FILE_SORTS.find((s) => s.value === fileSortValue) ?? FILE_SORTS[0];
-  /** クリックして右の欄に出しているファイル */
-  const [focusedId, setFocusedId] = useState<number | null>(null);
+  /** 左の欄で選んでいるプレイリスト（絞り込みの条件の1つ。選ぶと抽選し、中央の一覧はその並びになる） */
+  // 抽選したとき：そのプレイリストの、抽選で変わりうる曲（🎲・🔀の項目の曲）を鳴らしていれば止める（再生のフックは後で作るので ref で呼ぶ）
+  const onDrawnRef = useRef<(id: number) => void>(() => {});
+  const selection = usePlaylistSelection((id) => onDrawnRef.current(id));
+  const selectedPlaylistId = selection.selectedId;
+  /** 一覧の並び順（FILE_SORTS・PLAYLIST_SORTS の value）。ライブラリとプレイリストで別々に、アプリを閉じても覚えておく */
+  const [librarySortValue, setLibrarySortValue] = useStoredString("cyanomelody.fileSort");
+  const [playlistSortValue, setPlaylistSortValue] = useStoredString("cyanomelody.fileSort.playlist");
+  const sorts = selectedPlaylistId !== null ? PLAYLIST_SORTS : FILE_SORTS;
+  const fileSortValue = selectedPlaylistId !== null ? playlistSortValue : librarySortValue;
+  const setFileSortValue = selectedPlaylistId !== null ? setPlaylistSortValue : setLibrarySortValue;
+  const fileSort = sorts.find((s) => s.value === fileSortValue) ?? sorts[0];
+  /** クリックして右の欄に出している行（AudioFile.key） */
+  const [focusedKey, setFocusedKey] = useState<number | null>(null);
   /**
    * 一覧のその行までスクロールする（再生の欄の曲名を押したとき）。seq は押すたびに変え、同じ行でもスクロールし直す。
    * スクロールし終えたら null に戻す
    */
-  const [revealFile, setRevealFile] = useState<{ id: number; seq: number } | null>(null);
-  const [revealItem, setRevealItem] = useState<{ id: number; seq: number } | null>(null);
+  const [revealFile, setRevealFile] = useState<{ key: number; seq: number } | null>(null);
   const [checkedOnly, setCheckedOnly] = useState(false);
   /** 左の欄の検索の文字（タグ・プレイリスト・出典・ライセンスを名前で絞り込む） */
   const [sideQuery, setSideQuery] = useState("");
@@ -128,13 +138,9 @@ export default function App() {
   const [hashProgress, setHashProgress] = useState<HashProgress | null>(null);
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
-  /** 中央で開いているプレイリスト（null ならファイルの一覧を出す） */
-  const [openPlaylistId, setOpenPlaylistId] = useState<number | null>(null);
-  const [playlistDetail, setPlaylistDetail] = useState<PlaylistDetail | null>(null);
-  /** 詳細画面で押して、右の欄に出している項目 */
-  const [focusedItemId, setFocusedItemId] = useState<number | null>(null);
-  /** 詳細画面でチェックした項目（一括操作の対象を求めるので、ここで持つ） */
-  const [itemChecks, setItemChecks] = useState<Set<number>>(new Set());
+  /** 開いている編集画面（重ねて出す）のプレイリストと、開いたときに選んでおく項目 */
+  const [editor, setEditor] = useState<{ id: number; itemId: number | null; seq: number } | null>(null);
+  const [editorDetail, setEditorDetail] = useState<PlaylistDetail | null>(null);
   /** 右の欄に一括操作を出しているか（出していなければファイルの詳細） */
   const [bulkOpen, setBulkOpen] = useState(false);
   /** 自動タグ付けの確認のダイアログ（対象のファイル。single はファイルの詳細から開いた） */
@@ -145,15 +151,13 @@ export default function App() {
     permanent: boolean;
     files: { id: number; relPath: string; reason?: string }[];
   } | null>(null);
-  /** 右の欄に出している項目のファイル（ファイルの一覧に出ていないこともあるので、別に読む） */
-  const [itemFile, setItemFile] = useState<AudioFile | null>(null);
-  /** データを読み直すたびに増える（右の欄の項目のファイルを読み直すのに使う） */
+  /** データを読み直すたびに増える（一括操作の欄の内訳を数え直すのに使う） */
   const [dataVersion, setDataVersion] = useState(0);
-  // 開いているプレイリスト。データを読み直すとき（reloadAll）に参照する
-  const openPlaylistRef = useRef<number | null>(null);
+  // 開いている編集画面のプレイリスト。データを読み直すとき（reloadAll）に参照する
+  const editorRef = useRef<number | null>(null);
   useEffect(() => {
-    openPlaylistRef.current = openPlaylistId;
-  }, [openPlaylistId]);
+    editorRef.current = editor?.id ?? null;
+  }, [editor]);
 
   const showError = (e: unknown) => setStatus({ text: String(e), error: true });
   const showInfo = (text: string) => setStatus({ text, error: false });
@@ -175,40 +179,63 @@ export default function App() {
     chainIds: chains.map((c) => c.id),
   });
 
+  useEffect(() => {
+    onDrawnRef.current = (id) => {
+      const p = audio.player;
+      if (p && p.sourceId === id && p.queue[p.index]?.drawn) {
+        audio.stop();
+        showInfo("プレイリストを抽選し直したので、再生を止めました");
+      }
+    };
+  });
+
   // 「チェックしたファイルだけ表示」のときだけ、チェックが変わったら読み直す
   const checkedFilter = checkedOnly ? checked : null;
-  const reloadFiles = useCallback(async () => {
-    const request = {
+  /** 一覧を読む条件。プレイリストを選んでいるときは、抽選した並びの中で絞り込む */
+  const draw = selectedPlaylistId !== null;
+  const drawSeq = selection.drawSeq;
+  const listRequest = useCallback(
+    (): FileFilter => ({
       ...filter,
       fileIds: checkedFilter ? [...checkedFilter] : null,
+      draw,
       sort: fileSort.sort,
       sortDesc: fileSort.desc,
-    };
+    }),
+    [filter, checkedFilter, draw, fileSort.sort, fileSort.desc],
+  );
+  const reloadFiles = useCallback(async () => {
+    const request = listRequest();
     const [list, counts] = await Promise.all([api.listFiles(request), api.facetCounts(request)]);
     setFiles(list);
     setFacets(counts);
     setListVersion((v) => v + 1);
-    // 絞り込みで消えたファイルは、右の欄からも消す
-    setFocusedId((prev) => (prev !== null && list.some((f) => f.id === prev) ? prev : null));
-  }, [filter, checkedFilter, fileSort.sort, fileSort.desc]);
+    // 絞り込みで消えた行は、右の欄からも消す
+    setFocusedKey((prev) => (prev !== null && list.some((f) => f.key === prev) ? prev : null));
+    // 抽選し直したとき（drawSeq が変わったとき）も読み直す
+    void drawSeq;
+  }, [listRequest, drawSeq]);
 
   useEffect(() => {
     reloadFilesRef.current = reloadFiles;
   }, [reloadFiles]);
 
-  /** 開いているプレイリストの中身を読み直す。削除されていたら、ファイルの一覧に戻る */
-  const reloadPlaylistDetail = async () => {
-    const id = openPlaylistRef.current;
+  /** 開いている編集画面の中身を読み直す。削除されていたら閉じる */
+  const reloadEditor = async () => {
+    const id = editorRef.current;
     if (id === null) return;
     try {
-      setPlaylistDetail(await playlistApi.get(id));
+      setEditorDetail(await playlistApi.get(id));
     } catch {
-      setOpenPlaylistId(null);
-      setPlaylistDetail(null);
+      setEditor(null);
+      setEditorDetail(null);
     }
   };
 
+  const refreshDraw = selection.refresh;
   const reloadAll = useCallback(async () => {
+    // 選んでいるプレイリストの中身が変わっていれば抽選し直し、消えていれば選択を外す（一覧を読む前に）
+    await refreshDraw();
     const [fs, ts, ss, ls, ps, cs] = await Promise.all([
       api.listFolders(),
       api.listTags(),
@@ -223,9 +250,9 @@ export default function App() {
     setLicenses(ls);
     setPlaylists(ps);
     setChains(cs);
-    await Promise.all([reloadFiles(), reloadPlaylistDetail()]);
+    await Promise.all([reloadFiles(), reloadEditor()]);
     setDataVersion((v) => v + 1);
-  }, [reloadFiles]);
+  }, [reloadFiles, refreshDraw]);
 
   useEffect(() => {
     reloadAll().catch(showError);
@@ -319,49 +346,14 @@ export default function App() {
     return ok;
   };
 
-  /** 詳細画面でチェックした項目に入る曲（一括操作の対象）。タグの組み合わせなどの項目は、当てはまる曲すべて */
-  const [itemCheckFiles, setItemCheckFiles] = useState<{ key: string; ids: number[] } | null>(null);
-  const checkedItemIds = playlistDetail ? playlistDetail.items.filter((i) => itemChecks.has(i.id)).map((i) => i.id) : [];
-  const checkedItemKey = checkedItemIds.join(",");
-  useEffect(() => {
-    if (!bulkOpen || checkedItemKey === "") return;
-    let alive = true;
-    Promise.all(checkedItemKey.split(",").map((id) => playlistApi.itemFiles(Number(id))))
-      .then((lists) => alive && setItemCheckFiles({ key: checkedItemKey, ids: [...new Set(lists.flat().map((e) => e.fileId))] }))
-      .catch(showSettingsError);
-    return () => {
-      alive = false;
-    };
-  }, [bulkOpen, checkedItemKey, dataVersion, showSettingsError]);
-  const bulkFileIds = playlistDetail
-    ? itemCheckFiles && itemCheckFiles.key === checkedItemKey
-      ? itemCheckFiles.ids
-      : []
-    : [...checked];
-  // チェックがなくなったら、ファイルの詳細に戻る
-  const bulkTargetCount = playlistDetail ? checkedItemIds.length : checked.size;
-  if (bulkOpen && bulkTargetCount === 0) setBulkOpen(false);
 
-  const listFocusedFile = useMemo(() => files.find((f) => f.id === focusedId) ?? null, [files, focusedId]);
-  const focusedItem = playlistDetail?.items.find((i) => i.id === focusedItemId) ?? null;
-  const itemFileId = focusedItem?.kind === "file" ? (focusedItem.file?.id ?? null) : null;
-  useEffect(() => {
-    if (itemFileId === null) return;
-    let alive = true;
-    api
-      .listFiles({ ...EMPTY_FILTER, fileIds: [itemFileId] })
-      .then((list) => alive && setItemFile(list[0] ?? null))
-      .catch(showError);
-    return () => {
-      alive = false;
-    };
-  }, [itemFileId, dataVersion]);
-  /** 右の欄に出しているファイル。プレイリストを開いているときは、押した項目のファイル */
-  const focusedFile = playlistDetail
-    ? itemFile && itemFile.id === itemFileId
-      ? itemFile
-      : null
-    : listFocusedFile;
+  /** 一括操作の対象：チェックしたファイルすべて */
+  const bulkFileIds = [...checked];
+  // チェックがなくなったら、ファイルの詳細に戻る
+  if (bulkOpen && checked.size === 0) setBulkOpen(false);
+
+  /** 右の欄に出しているファイル（押した行のファイル） */
+  const focusedFile = useMemo(() => files.find((f) => f.key === focusedKey) ?? null, [files, focusedKey]);
   const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
   const addFolder = (path: string) =>
     run(async () => {
@@ -369,7 +361,7 @@ export default function App() {
       showInfo(describeScan(path, r));
       // 取り込んだファイルを整理できるよう、そのフォルダだけを表示する
       clearAll();
-      fileFilter.reset({ folderId: r.folderId });
+      resetFilter({ folderId: r.folderId });
       startHashing();
     });
 
@@ -533,14 +525,20 @@ export default function App() {
 
   /** 絞り込み・チェック・右の欄の表示を、すべて解除する */
   const clearAll = () => {
-    fileFilter.reset();
+    resetFilter();
     setCheckedOnly(false);
     checks.clear();
-    setFocusedId(null);
+    setFocusedKey(null);
+  };
+
+  /** 絞り込みの条件をすべて外して next だけにする（選んでいるプレイリストも外す） */
+  const resetFilter = (next: Partial<FileFilter> = {}) => {
+    fileFilter.reset(next);
+    if (selectedPlaylistId !== null) selection.clear().catch(showError);
   };
 
   const showSameAudio = (hash: string) => {
-    fileFilter.reset({ hash });
+    resetFilter({ hash });
     setCheckedOnly(false);
   };
 
@@ -662,20 +660,27 @@ export default function App() {
   const creditKinds: CreditKind[] = ["source", "license"];
 
   // プレイリスト
-  const openPlaylist = (id: number) => {
-    if (id !== openPlaylistId) setItemChecks(new Set());
-    setBulkOpen(false);
-    setOpenPlaylistId(id);
-    setFocusedItemId(null);
-    playlistApi.get(id).then(setPlaylistDetail).catch(showError);
+  /** 左の欄の行を押したとき：選んで（抽選して）絞り込む。選んでいれば外す */
+  const togglePlaylist = (id: number) => selection.toggle(id).catch(showError);
+
+  /**
+   * 編集画面を開く。itemId があれば、その項目の行を選んだ状態にする。
+   * fileId があれば、そのファイルの項目（ファイルの項目として直接入れたもの）の最初の行を選ぶ
+   */
+  const openEditor = async (id: number, itemId: number | null = null, fileId: number | null = null) => {
+    try {
+      const detail = await playlistApi.get(id);
+      const initial = itemId ?? (fileId !== null ? (detail.items.find((i) => i.file?.id === fileId)?.id ?? null) : null);
+      setEditorDetail(detail);
+      setEditor({ id, itemId: initial, seq: Date.now() });
+    } catch (e) {
+      showError(e);
+    }
   };
 
-  const closePlaylist = () => {
-    setItemChecks(new Set());
-    setBulkOpen(false);
-    setOpenPlaylistId(null);
-    setFocusedItemId(null);
-    setPlaylistDetail(null);
+  const closeEditor = () => {
+    setEditor(null);
+    setEditorDetail(null);
   };
 
   const createPlaylist = async (name: string, parent: number | null = null) =>
@@ -729,15 +734,6 @@ export default function App() {
     else setCreditByDrop(target.kind, target.id, fileIds);
   };
 
-  /** プレイリストの項目を左の欄に落としたとき。対象は、その項目に入る曲すべて（再生方法にかかわらず） */
-  const dropItems = async (itemIds: number[], target: FileDropTarget) => {
-    try {
-      const lists = await Promise.all(itemIds.map((id) => playlistApi.itemFiles(id)));
-      dropFiles([...new Set(lists.flat().map((e) => e.fileId))], target);
-    } catch (e) {
-      showError(e);
-    }
-  };
 
   /** ファイルの行を出典・ライセンスに落としたとき。設定済みなら置き換わる。確認はしない */
   const setCreditByDrop = (kind: CreditKind, creditId: number, fileIds: number[]) => {
@@ -796,17 +792,18 @@ export default function App() {
   };
 
   const addTagsToPlaylist = async (tagIds: number[]) => {
-    if (!playlistDetail) return false;
+    if (!editor) return false;
+    const id = editor.id;
     return run(async () => {
-      await playlistApi.addTags(playlistDetail.id, tagIds);
+      await playlistApi.addTags(id, tagIds);
       showInfo("タグの組み合わせを加えました");
     });
   };
 
   const addRefToPlaylist = (refId: number) =>
-    playlistDetail &&
+    editor &&
     run(async () => {
-      await playlistApi.addRef(playlistDetail.id, refId);
+      await playlistApi.addRef(editor.id, refId);
       showInfo(`プレイリスト「${playlistName(refId)}」を加えました`);
     });
 
@@ -880,10 +877,20 @@ export default function App() {
     }
   };
 
-  /** プレイリストを書き出し始める */
+  /**
+   * 選んだ状態のプレイリストの、中央の一覧に出ている行（絞り込みと並び順のとおり）を読む。
+   * 選んでいなければ、選んで（抽選して）から
+   */
+  const selectedRows = async (id: number) => {
+    if (selectedPlaylistId !== id) await selection.select(id);
+    return api.listFiles({ ...listRequest(), draw: true });
+  };
+
+  /** プレイリストを書き出し始める（中央の一覧に出ている曲。選んでいなければ選んでから） */
   const exportPlaylist = async (id: number, dest: string) => {
     try {
-      const folder = await playlistApi.startExport(id, dest);
+      const rows = await selectedRows(id);
+      const folder = await playlistApi.startExport(id, rows.map((r) => r.key), dest);
       showInfo(`書き出しを始めました: ${folder}`);
       return true;
     } catch (e) {
@@ -929,26 +936,26 @@ export default function App() {
   };
 
   /**
-   * 再生の欄の曲名を押したとき：鳴らしている曲を中央の欄に出す。
-   * プレイリストを再生しているならその項目の行、ライブラリの一覧（試聴を含む）ならそのファイルの行へスクロールし、右の欄に出す
+   * 再生の欄の曲名を押したとき：鳴らしている曲を出す。
+   * 中央の一覧から鳴らしている曲なら、その行へスクロールして右の欄に出す（一覧になければ、そのことを出す）。
+   * 選んでいないプレイリストの曲（編集画面の項目の再生など）なら、そのプレイリストの編集画面を開いてその項目の行を選ぶ
    */
   const jumpToPlaying = () => {
     const sourceId = audio.player?.sourceId ?? null;
-    const itemId = playingEntry?.itemId ?? null;
-    if (sourceId !== null && itemId !== null && playlists.some((p) => p.id === sourceId)) {
-      if (openPlaylistId !== sourceId) openPlaylist(sourceId);
-      setFocusedItemId(itemId);
-      setRevealItem({ id: itemId, seq: Date.now() });
+    const rowKey = playingEntry?.rowKey;
+    if (sourceId !== null && sourceId !== selectedPlaylistId && playlists.some((p) => p.id === sourceId)) {
+      openEditor(sourceId, playingEntry?.itemId ?? null);
       return;
     }
     if (!playingTarget) return;
-    if (playlistDetail) closePlaylist();
-    if (!files.some((f) => f.id === playingTarget.id)) {
-      showInfo("鳴らしている曲は、今の絞り込みではライブラリの一覧に出ていません");
+    // 一覧から鳴らしている曲はその行、試聴（エフェクトの管理画面）はそのファイルの行
+    const key = rowKey ?? (selectedPlaylistId === null ? playingTarget.id : files.find((f) => f.id === playingTarget.id)?.key);
+    if (key === undefined || !files.some((f) => f.key === key)) {
+      showInfo("鳴らしている曲は、今の絞り込みでは一覧に出ていません");
       return;
     }
-    setFocusedId(playingTarget.id);
-    setRevealFile({ id: playingTarget.id, seq: Date.now() });
+    setFocusedKey(key);
+    setRevealFile({ key, seq: Date.now() });
   };
 
   const setPlaylistItemAlias = async (item: PlaylistItem, alias: string) =>
@@ -957,9 +964,10 @@ export default function App() {
       showInfo(alias.trim() ? `プレイリスト上での名前を「${alias.trim()}」にしました` : "プレイリスト上での名前を外しました");
     });
 
-  const setPlaylistItemMode = (item: PlaylistItem, mode: PlayMode) =>
+  const setPlaylistItemMode = (items: PlaylistItem[], mode: PlayMode) =>
     run(async () => {
-      await playlistApi.setItemMode(item.id, mode);
+      for (const item of items) await playlistApi.setItemMode(item.id, mode);
+      if (items.length > 1) showInfo(`${items.length}件の項目の再生方法を変えました`);
     });
 
   /**
@@ -977,45 +985,102 @@ export default function App() {
     }
   };
 
-  /** プレイリストを、再生の欄で選んだ再生方法で再生する（プレイリスト自体は順に展開してから当てはめる） */
-  const playPlaylist = (id: number) =>
-    startQueue(playlistName(id), () => playlistApi.expand(id, "order"), id, `「${playlistName(id)}」には再生するファイルがありません`);
 
   /**
-   * 表示中のファイルの一覧を、プレイリストのように再生する（試聴）。見つからないファイルは除く。
-   * 再生を始めたときの一覧で再生し、途中で絞り込みを変えても順番は変わらない。start があればその曲から（再生方法に従う）
+   * 中央の一覧（rows）を、再生の欄で選んだ再生方法で再生する。見つからないファイルは除く。
+   * 再生を始めたときの一覧で再生し、途中で絞り込みを変えても順番は変わらない。start があればその行から（再生方法に従う）。
+   * プレイリストを選んでいるときは、プレイリストとして再生する（各行の項目のエフェクトをかけ、プレイリスト上での名前を使う）
    */
-  const playList = (start?: AudioFile) => {
-    const source: PlayEntry[] = files
+  const playRows = (rows: AudioFile[], start?: AudioFile, playlistId: number | null = selectedPlaylistId) => {
+    const source: PlayEntry[] = rows
       .filter((f) => !f.missing)
-      .map((f) => ({ fileId: f.id, relPath: f.relPath, path: f.path, alias: null, chains: [], itemId: null }));
+      .map((f) => ({
+        fileId: f.id,
+        relPath: f.relPath,
+        path: f.path,
+        alias: f.alias,
+        chains: f.chains,
+        itemId: f.itemId,
+        rowKey: f.key,
+        drawn: f.drawn,
+      }));
     if (source.length === 0) {
       showInfo("再生するファイルがありません");
       return;
     }
-    const index = start ? source.findIndex((e) => e.fileId === start.id) : -1;
-    audio.playSource(LIST_NAME, source, index >= 0 ? index : null);
+    const index = start ? source.findIndex((e) => e.rowKey === start.key) : -1;
+    const name = playlistId !== null ? playlistName(playlistId) : LIST_NAME;
+    audio.playSource(name, source, index >= 0 ? index : null, playlistId);
+  };
+
+  /** 表示中の一覧を再生する（start の行から） */
+  const playList = (start?: AudioFile) => playRows(files, start);
+
+  /**
+   * 再生の欄の「▶」（何も再生していないとき）：表示中の一覧を再生する。
+   * 選んでいるプレイリストを最後まで再生した後なら、抽選し直してから
+   */
+  const playOpen = async () => {
+    const id = selectedPlaylistId;
+    if (id !== null && audio.finished && audio.finished.sourceId === id) {
+      try {
+        await selection.redraw();
+        playRows(await api.listFiles(listRequest()), undefined, id);
+      } catch (e) {
+        showError(e);
+      }
+      return;
+    }
+    playList();
+  };
+
+  /** 編集画面の「▶ 再生」：そのプレイリストを選んだ状態にして（選んでいなければ選んで抽選し）、一覧を頭から再生する */
+  const playFromEditor = async (id: number) => {
+    try {
+      playRows(await selectedRows(id), undefined, id);
+    } catch (e) {
+      showError(e);
+    }
   };
 
   /** 鳴らしているファイル（一覧の再生・プレイリストの再生・エフェクトの試聴） */
   const playingFileId = audio.previewId ?? audio.player?.queue[audio.player.index]?.fileId ?? null;
+  /**
+   * 一覧で鳴らしている印を付ける行。一覧から鳴らしているならその行。
+   * 試聴や、選んでいないプレイリストの再生では、ライブラリの一覧ならそのファイルの行（プレイリストを選んでいるときは付けない）
+   */
+  const playingRowKey = playingEntry?.rowKey ?? (selectedPlaylistId === null ? playingFileId : null);
 
   /** 一覧の行の「▶」：その行から一覧を再生する。鳴らしている行なら止める */
   const toggleRowPlay = (file: AudioFile) => {
-    if (playingFileId === file.id) audio.stop();
+    if (playingRowKey === file.key) audio.stop();
     else playList(file);
   };
 
+  /** 編集画面の項目の「▶」：その項目だけを再生する */
   const playPlaylistItem = (item: PlaylistItem) =>
-    startQueue(
-      playlistDetail?.name ?? "",
-      () => playlistApi.expandItem(item.id),
-      playlistDetail?.id ?? null,
-      "再生するファイルがありません",
-    );
+    editor &&
+    startQueue(playlistName(editor.id), () => playlistApi.expandItem(item.id), editor.id, "再生するファイルがありません");
 
   // 選んでいる絞り込みの条件（検索の欄の下にチップで出す。押すとその条件だけ外す）
-  const filterChips = fileFilter.chips({ folders, tags, credits: creditsOf });
+  const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId) ?? null;
+  const filterChips = [
+    ...(selectedPlaylist
+      ? [
+          {
+            key: "playlist",
+            icon: "📃",
+            label: selectedPlaylist.name,
+            title: "プレイリスト（抽選した並び）",
+            onRemove: () => {
+              selection.clear().catch(showError);
+            },
+            testId: "playlist-filter",
+          },
+        ]
+      : []),
+    ...fileFilter.chips({ folders, tags, credits: creditsOf }),
+  ];
 
   return (
     // ウィンドウを狭くしたときは、左・右の欄が最小の幅まで縮んでから中央の欄が縮む
@@ -1032,7 +1097,7 @@ export default function App() {
             {/* 左の欄のタグ・プレイリスト・出典・ライセンスを名前で絞り込む（ファイルの一覧は絞り込まない） */}
             <SearchBox value={sideQuery} onChange={setSideQuery} label="検索" testId="side-search" />
           </div>
-          <FilterChips chips={filterChips} onClearAll={() => fileFilter.reset()} />
+          <FilterChips chips={filterChips} onClearAll={() => resetFilter()} />
         </div>
         <FolderPanel
           folders={folders}
@@ -1058,11 +1123,11 @@ export default function App() {
         />
         <PlaylistPanel
           playlists={playlists}
-          openId={openPlaylistId}
+          selectedId={selectedPlaylistId}
           busy={busy}
-          onOpen={openPlaylist}
+          onSelect={togglePlaylist}
+          onEdit={(id) => openEditor(id)}
           onCreate={(name) => createPlaylist(name)}
-          onRename={renamePlaylist}
           onDelete={deletePlaylist}
           onMove={movePlaylist}
           query={sideQuery}
@@ -1097,51 +1162,10 @@ export default function App() {
       />
 
       <main className="main">
-        {playlistDetail ? (
-          <PlaylistEditor
-            key={playlistDetail.id}
-            detail={playlistDetail}
-            playlists={playlists}
-            tags={tags}
-            filterTagIds={filter.tagIds}
-            busy={busy}
-            onClose={closePlaylist}
-            onPlayItem={playPlaylistItem}
-            onRemoveItem={removePlaylistItem}
-            onMoveItem={movePlaylistItem}
-            onSetMode={setPlaylistItemMode}
-            focusedItemId={focusedItemId}
-            playingItemId={
-              audio.player && audio.player.sourceId === playlistDetail.id
-                ? (audio.player.queue[audio.player.index]?.itemId ?? null)
-                : null
-            }
-            onFocusItem={(item) => {
-              setFocusedItemId(item.id);
-              setBulkOpen(false);
-            }}
-            checked={itemChecks}
-            setChecked={setItemChecks}
-            bulkOpen={bulkOpen}
-            onToggleBulk={() => setBulkOpen((v) => !v)}
-            reveal={revealItem}
-            onRevealed={() => setRevealItem(null)}
-            chains={chains}
-            onSetChain={(items, chainId) => setItemsChain(items.map((i) => i.id), chainId)}
-            onOpenEffects={openEffects}
-            onRemoveItems={removePlaylistItems}
-            onDropItems={dropItems}
-            onAddTags={addTagsToPlaylist}
-            onAddRef={addRefToPlaylist}
-            onExport={(dest) => exportPlaylist(playlistDetail.id, dest)}
-            onBrowseFolder={browseFolder}
-          />
-        ) : (
-          <>
-            {/* プレイリストの詳細画面の名前と同じ位置に、ファイルの一覧であることを出す */}
+            {/* 見出し：プレイリストを選んでいればその名前、選んでいなければ「ライブラリ」 */}
             <div className="toolbar editor-head library-head">
-              <h2 className="editor-title" data-testid="list-title">
-                ライブラリ
+              <h2 className="editor-title" data-testid="list-title" title={selectedPlaylist?.name}>
+                {selectedPlaylist ? selectedPlaylist.name : "ライブラリ"}
               </h2>
               {/* ファイル名（相対パス）で一覧を絞り込む */}
               <SearchBox value={text} onChange={setText} label="ファイル名で検索" testId="file-search" />
@@ -1155,7 +1179,7 @@ export default function App() {
                 title={filter.recentOnly ? "直近で再生したものは、新しく再生した順に並べます" : "一覧の並び順"}
                 data-testid="file-sort"
               >
-                {FILE_SORTS.map((s) => (
+                {sorts.map((s) => (
                   <option key={s.value} value={s.value}>
                     {s.label}
                   </option>
@@ -1166,7 +1190,7 @@ export default function App() {
             {(checked.size > 0 || checkedOnly) && (
               <CheckBar
                 checked={checked}
-                allShownChecked={checks.shownChecked === files.length}
+                allShownChecked={checks.shownChecked === checks.shownFileCount}
                 checkedOnly={checkedOnly}
                 onCheckShown={() => checks.checkShown(true)}
                 onClear={checks.clear}
@@ -1177,12 +1201,12 @@ export default function App() {
             )}
             <FileList
               files={files}
-              focusedId={focusedId}
+              focusedKey={focusedKey}
               checked={checked}
-              playingId={playingFileId}
+              playingKey={playingRowKey}
               progress={audio.time.duration > 0 ? audio.time.current / audio.time.duration : 0}
               onFocus={(f) => {
-                setFocusedId(f.id);
+                setFocusedKey(f.key);
                 setBulkOpen(false);
               }}
               onCheck={checks.checkRow}
@@ -1194,9 +1218,8 @@ export default function App() {
               tagStyles={tagStyles}
               reveal={revealFile}
               onRevealed={() => setRevealFile(null)}
+              onOpenOrigin={(f) => selectedPlaylistId !== null && f.origin && openEditor(selectedPlaylistId, f.origin.itemId)}
             />
-          </>
-        )}
       </main>
       <Splitter
         label="右の欄の幅"
@@ -1212,7 +1235,7 @@ export default function App() {
         {bulkOpen && (
           <BulkPanel
             fileIds={bulkFileIds}
-            targetLabel={playlistDetail ? "チェックした項目の曲" : "チェックしたファイル"}
+            targetLabel="チェックしたファイル"
             tags={tags}
             playlists={playlists}
             creditsOf={creditsOf}
@@ -1223,7 +1246,7 @@ export default function App() {
             onAutotag={() => setAutotagDialog({ fileIds: bulkFileIds, single: false })}
             onDelete={() => startDelete(bulkFileIds)}
             onAddToPlaylist={(id) => addToPlaylist(id, bulkFileIds)}
-            onOpenPlaylist={openPlaylist}
+            onOpenPlaylist={(id) => openEditor(id)}
             onRemoveFromPlaylist={bulkRemoveFromPlaylist}
             onSetCredit={bulkSetCredit}
             onRelink={relink}
@@ -1232,29 +1255,8 @@ export default function App() {
             onError={showError}
           />
         )}
-        {/* ファイルの項目は、ファイルを読み終えてから右の欄に出す（読む間に別の欄を出すと、入力が消えるため） */}
-        {!bulkOpen && focusedItem && itemFileId === null && (
-          <ItemDetail
-            key={focusedItem.id}
-            item={focusedItem}
-            busy={busy}
-            onSave={(alias) => setPlaylistItemAlias(focusedItem, alias)}
-            dataVersion={dataVersion}
-          />
-        )}
         <SelectionPanel
           file={bulkOpen ? null : focusedFile}
-          top={
-            focusedItem &&
-            focusedFile && (
-              <AliasField
-                key={`${focusedItem.id}:${focusedItem.alias ?? ""}`}
-                item={focusedItem}
-                busy={busy}
-                onSave={(alias) => setPlaylistItemAlias(focusedItem, alias)}
-              />
-            )
-          }
           tags={tags}
           busy={busy}
           onAddTag={addTag}
@@ -1269,7 +1271,7 @@ export default function App() {
           onReveal={(path) => revealItemInDir(path).catch(showError)}
           playlists={playlists}
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
-          onOpenPlaylist={openPlaylist}
+          onOpenPlaylist={(id) => focusedFile && openEditor(id, null, focusedFile.id)}
           onRemoveFromPlaylist={removeFromPlaylist}
         >
           {creditKinds.map((kind) => (
@@ -1291,9 +1293,9 @@ export default function App() {
       <PlayerBar
         player={audio.player}
         time={audio.time}
-        // プレイリストを開いていればそのプレイリスト、開いていなければ表示中の一覧を再生する
-        canPlayOpen={playlistDetail !== null || files.some((f) => !f.missing)}
-        onPlayOpen={() => (playlistDetail ? playPlaylist(playlistDetail.id) : playList())}
+        // 表示中の一覧を再生する（プレイリストを選んでいれば、プレイリストとして）
+        canPlayOpen={files.some((f) => !f.missing)}
+        onPlayOpen={playOpen}
         playMode={audio.playMode}
         onPlayMode={audio.setPlayMode}
         onSeek={audio.seek}
@@ -1321,12 +1323,44 @@ export default function App() {
         fileCount={files.length}
         checkedCount={checked.size}
         shownChecked={checks.shownChecked}
+        songs={selectedPlaylistId !== null}
         exportProgress={exportProgress}
         hashProgress={hashProgress}
         autotagProgress={autotagProgress}
         onError={showError}
       />
       <audio {...audio.audioProps} />
+      {editor && editorDetail && editorDetail.id === editor.id && (
+        <PlaylistEditor
+          key={`${editor.id}:${editor.seq}`}
+          detail={editorDetail}
+          playlists={playlists}
+          tags={tags}
+          busy={busy}
+          // エフェクトの管理画面を重ねているときの Esc は、そちらだけを閉じる
+          onClose={() => !effectDialog && closeEditor()}
+          onRename={(name) => renamePlaylist(editor.id, name)}
+          onPlay={() => playFromEditor(editor.id)}
+          onPlayItem={playPlaylistItem}
+          onRemoveItem={removePlaylistItem}
+          onMoveItem={movePlaylistItem}
+          onSetMode={setPlaylistItemMode}
+          initialItemId={editor.itemId}
+          playingItemId={
+            audio.player && audio.player.sourceId === editor.id ? (audio.player.queue[audio.player.index]?.itemId ?? null) : null
+          }
+          chains={chains}
+          onSetChain={(items, chainId) => setItemsChain(items.map((i) => i.id), chainId)}
+          onOpenEffects={openEffects}
+          onRemoveItems={removePlaylistItems}
+          onSetAlias={setPlaylistItemAlias}
+          onAddTags={addTagsToPlaylist}
+          onAddRef={addRefToPlaylist}
+          onExport={(dest) => exportPlaylist(editor.id, dest)}
+          onBrowseFolder={browseFolder}
+          onError={showError}
+        />
+      )}
       {effectDialog && (
         <EffectManager
           chains={chains}

@@ -22,6 +22,8 @@ type Props = {
   fileCount: number;
   checkedCount: number;
   shownChecked: number;
+  /** プレイリストを選んでいる：一覧は行（曲）の数、チェックはファイルの数なので、単位を「曲」「ファイル」にして分ける */
+  songs: boolean;
   exportProgress: ExportProgress | null;
   hashProgress: HashProgress | null;
   autotagProgress: AutotagProgress | null;
@@ -37,6 +39,7 @@ export function StatusBar({
   fileCount,
   checkedCount,
   shownChecked,
+  songs,
   exportProgress,
   hashProgress,
   autotagProgress,
@@ -49,9 +52,14 @@ export function StatusBar({
       </div>
       {/* 一覧の件数と、チェックしている件数（0件のときも常に出す） */}
       <div className="counts" data-testid="counts" data-list-version={listVersion}>
-        <span data-testid="file-count">{fileCount}件</span>
+        <span data-testid="file-count">
+          {fileCount}
+          {songs ? "曲" : "件"}
+        </span>
         <span className="checked-count" data-testid="checked-count">
-          チェック {checkedCount}件（表示中 {shownChecked}件）
+          {songs
+            ? `チェック ${checkedCount}ファイル（表示中 ${shownChecked}ファイル）`
+            : `チェック ${checkedCount}件（表示中 ${shownChecked}件）`}
         </span>
       </div>
       {exportProgress && (

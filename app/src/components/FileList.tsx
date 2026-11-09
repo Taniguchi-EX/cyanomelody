@@ -1,6 +1,7 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
+import { originText } from "../playlistItem";
 import { baseName } from "../paths";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 import { RowTags } from "./RowTags";
@@ -12,12 +13,13 @@ const hashColor = (hash: string) => `hsl(${parseInt(hash.slice(0, 6), 16) % 360}
 
 type Props = {
   files: AudioFile[];
-  /** クリックして右の欄に出しているファイル */
-  focusedId: number | null;
+  /** クリックして右の欄に出している行（AudioFile.key） */
+  focusedKey: number | null;
   /** チェックしたファイル（表示していないものも含む） */
   checked: Set<number>;
-  playingId: number | null;
-  /** 鳴らしているファイル（playingId）の進み具合（0〜1） */
+  /** 鳴らしている行（AudioFile.key） */
+  playingKey: number | null;
+  /** 鳴らしている行の進み具合（0〜1） */
   progress: number;
   onFocus: (file: AudioFile) => void;
   /** 行のチェックボックス。range が true なら前に押した行との間をまとめて同じ状態にする */
@@ -34,16 +36,18 @@ type Props = {
   onDrop: (fileIds: number[], target: FileDropTarget) => void;
   /** タグのidから、チップの色を引く表（色のないタグは入らない） */
   tagStyles: Map<number, CSSProperties>;
-  /** この行までスクロールする（seq が変わるたびに）。スクロールしたら onRevealed を呼ぶ */
-  reveal: { id: number; seq: number } | null;
+  /** この行（AudioFile.key）までスクロールする（seq が変わるたびに）。スクロールしたら onRevealed を呼ぶ */
+  reveal: { key: number; seq: number } | null;
   onRevealed: () => void;
+  /** 行の来た項目のアイコンを押したとき（プレイリストを選んでいるときだけ出す） */
+  onOpenOrigin: (file: AudioFile) => void;
 };
 
 export function FileList({
   files,
-  focusedId,
+  focusedKey,
   checked,
-  playingId,
+  playingKey,
   progress,
   onFocus,
   onCheck,
@@ -55,6 +59,7 @@ export function FileList({
   tagStyles,
   reveal,
   onRevealed,
+  onOpenOrigin,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -67,7 +72,7 @@ export function FileList({
 
   useEffect(() => {
     if (!reveal) return;
-    const index = files.findIndex((f) => f.id === reveal.id);
+    const index = files.findIndex((f) => f.key === reveal.key);
     if (index >= 0) virtualizer.scrollToIndex(index, { align: "center" });
     onRevealed();
   }, [reveal, files, virtualizer, onRevealed]);
@@ -90,18 +95,18 @@ export function FileList({
             // ↑↓：右の欄に出すファイルを移す。試聴中なら、移った先を続けて試聴する（聞き比べ）
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
-              const cur = files.findIndex((f) => f.id === focusedId);
+              const cur = files.findIndex((f) => f.key === focusedKey);
               const next =
                 cur < 0 ? 0 : Math.min(Math.max(cur + (e.key === "ArrowDown" ? 1 : -1), 0), files.length - 1);
               const f = files[next];
               onFocus(f);
               virtualizer.scrollToIndex(next);
-              if (playingId !== null && playingId !== f.id && !f.missing) onPlay(f);
+              if (playingKey !== null && playingKey !== f.key && !f.missing) onPlay(f);
             }
             // スペース：右の欄に出しているファイルの試聴を始める・止める（ボタンなどの上では、そちらの操作にする）
             if (e.key === " " && !(e.target as HTMLElement).closest("button, input")) {
               e.preventDefault();
-              const f = files.find((x) => x.id === focusedId);
+              const f = files.find((x) => x.key === focusedKey);
               if (f && !f.missing) onPlay(f);
             }
           }}
@@ -110,12 +115,13 @@ export function FileList({
             {virtualizer.getVirtualItems().map((item) => {
               const f = files[item.index];
               const classes = ["file-row"];
-              if (focusedId === f.id) classes.push("selected");
+              const playing = playingKey === f.key;
+              if (focusedKey === f.key) classes.push("selected");
               if (checked.has(f.id)) classes.push("checked");
               if (f.missing) classes.push("missing");
               return (
                 <div
-                  key={f.id}
+                  key={f.key}
                   className={classes.join(" ")}
                   style={{ top: item.start, height: ROW_HEIGHT }}
                   data-testid="file-row"
@@ -128,17 +134,33 @@ export function FileList({
                   onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
                 >
                   <button
-                    className={playingId === f.id ? "play playing" : "play"}
+                    className={playing ? "play playing" : "play"}
                     disabled={f.missing}
-                    title={playingId === f.id ? "停止" : "再生"}
-                    aria-label={playingId === f.id ? "停止" : "再生"}
+                    title={playing ? "停止" : "再生"}
+                    aria-label={playing ? "停止" : "再生"}
                     onClick={(e) => {
                       e.stopPropagation();
                       onPlay(f);
                     }}
                   >
-                    {playingId === f.id ? "■" : "▶"}
+                    {playing ? "■" : "▶"}
                   </button>
+                  {/* プレイリストを選んでいるとき：タグの組み合わせ・プレイリストの項目から来た曲に、その項目のアイコン。押すと編集画面のその行 */}
+                  {f.origin && (
+                    <button
+                      className="icon row-origin"
+                      title={originText(f)}
+                      aria-label={originText(f)}
+                      data-testid="row-origin"
+                      data-origin-kind={f.origin.kind}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenOrigin(f);
+                      }}
+                    >
+                      {f.origin.kind === "tags" ? "🏷" : "📃"}
+                    </button>
+                  )}
                   {f.missing && (
                     <span className="warn" title="ファイルが見つかりません">
                       ⚠
@@ -152,12 +174,12 @@ export function FileList({
                       data-hash={f.hash ?? ""}
                     />
                   )}
-                  {/* ファイル名だけを出す。マウスを乗せると相対パス（サブフォルダの同じ名前を見分ける） */}
-                  <span className="file-name" title={f.relPath}>
-                    {baseName(f.relPath)}
+                  {/* ファイル名だけ（プレイリスト上での名前があればそれ）を出す。マウスを乗せると相対パス（サブフォルダの同じ名前を見分ける） */}
+                  <span className="file-name" title={f.relPath} data-testid="file-name">
+                    {f.alias ?? baseName(f.relPath)}
                   </span>
                   <RowTags tags={f.tags} tagStyles={tagStyles} />
-                  {playingId === f.id && (
+                  {playing && (
                     <div className="row-progress" data-testid="row-progress" style={{ width: `${progress * 100}%` }} />
                   )}
                   <label className="check-cell" onClick={(e) => e.stopPropagation()}>

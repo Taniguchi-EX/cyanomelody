@@ -9,11 +9,14 @@ type Props = {
   busy: boolean;
   /** 付ける。付けられたら true（入力欄を空にする） */
   onAdd: (name: string) => Promise<boolean>;
+  /** 入力欄の名前と、空のときに出す文字（ほかの画面で使うとき） */
+  label?: string;
+  placeholder?: string;
 };
 
 /** タグの名前を入れて付ける欄。候補から選ぶとすぐ付け、Enter で入れた名前を付ける（まだない名前なら作る）。
  *  候補はシノニムでも引っかかり（候補の横にシノニムを出す）、シノニムを入れて Enter ならそのタグを付ける */
-export function TagInput({ candidates, attachedNames, busy, onAdd }: Props) {
+export function TagInput({ candidates, attachedNames, busy, onAdd, label = "付けるタグ名", placeholder = "名前（Enterで付ける）" }: Props) {
   const [name, setName] = useState("");
   const listId = useId();
   /** 付ける。既にあるタグ名かシノニム（大文字・小文字は区別しない）ならそのタグを、なければ新しいタグを作って付ける */
@@ -34,7 +37,7 @@ export function TagInput({ candidates, attachedNames, busy, onAdd }: Props) {
       <input
         type="text"
         list={listId}
-        placeholder="名前（Enterで付ける）"
+        placeholder={placeholder}
         value={name}
         onChange={(e) => {
           // 候補の一覧から選んだとき（打ち込みではなく置き換え）は、すぐに付ける
@@ -44,7 +47,7 @@ export function TagInput({ candidates, attachedNames, busy, onAdd }: Props) {
           else setName(e.target.value);
         }}
         onKeyDown={(e) => e.key === "Enter" && add(name)}
-        aria-label="付けるタグ名"
+        aria-label={label}
       />
       <datalist id={listId}>
         {candidates.map((t) => (

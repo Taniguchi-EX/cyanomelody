@@ -15,7 +15,9 @@ export function useChecks(files: AudioFile[], onError: (e: unknown) => void) {
     onErrorRef.current = onError;
   });
 
-  const shownChecked = useMemo(() => files.reduce((n, f) => n + (checked.has(f.id) ? 1 : 0), 0), [files, checked]);
+  // 表示中のうちチェックしたファイルの数（プレイリストを選んでいるときは同じファイルが2行出ることがあるので、ファイルで数える）
+  const shownFiles = useMemo(() => new Set(files.map((f) => f.id)), [files]);
+  const shownChecked = useMemo(() => [...shownFiles].reduce((n, id) => n + (checked.has(id) ? 1 : 0), 0), [shownFiles, checked]);
 
   // ライブラリから消えたファイル（登録解除など）は、チェックから外す
   useEffect(() => {
@@ -68,5 +70,5 @@ export function useChecks(files: AudioFile[], onError: (e: unknown) => void) {
     setAnchor(null);
   };
 
-  return { checked, ids: () => [...checked], shownChecked, checkRow, checkShown, clear };
+  return { checked, ids: () => [...checked], shownChecked, shownFileCount: shownFiles.size, checkRow, checkShown, clear };
 }

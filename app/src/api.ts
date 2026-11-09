@@ -27,6 +27,27 @@ export type AudioFile = {
   hashError: string | null;
   sourceId: number | null;
   licenseId: number | null;
+  /** 一覧の中で行を見分ける値。ライブラリの一覧ではファイルの id、抽選した並びでは行の番号（同じファイルが2行出ることがある） */
+  key: number;
+  /** 抽選した並びの行だけ：ファイルの項目の別名（プレイリスト上での名前） */
+  alias: string | null;
+  /** 抽選した並びの行だけ：この曲を出した、選んだプレイリストの直下の項目（ファイルの項目から来た曲は null） */
+  origin: RowOrigin | null;
+  /** 抽選した並びの行だけ：選んだプレイリストの直下の項目の id（ファイルの項目も含む） */
+  itemId: number | null;
+  /** 抽選した並びの行だけ：かけるエフェクトセット（内側から外側の順） */
+  chains: number[];
+  /** 抽選した並びの行だけ：🎲・🔀の項目を通った曲（抽選し直すと変わりうる） */
+  drawn: boolean;
+};
+
+/** 抽選した並びの行が、どの項目から来たか（行のアイコンと説明に使う） */
+export type RowOrigin = {
+  itemId: number;
+  kind: "tags" | "playlist";
+  mode: PlayMode;
+  /** タグの組み合わせは「雨 ＋ 風」、プレイリストは別名かその名前 */
+  label: string;
 };
 
 export type FileFilter = {
@@ -54,13 +75,15 @@ export type FileFilter = {
   /** リリース年がこれ以上・以下のファイルだけ（年のないファイルは出ない）。null なら絞り込まない */
   minYear: number | null;
   maxYear: number | null;
+  /** 抽選した並び（プレイリストを選んでいるとき）の中で絞り込む。行ごとに返る */
+  draw?: boolean;
   /** 一覧の並び順（絞り込みには使わない）。なければパス順 */
   sort?: FileSort;
   sortDesc?: boolean;
 };
 
 /** ファイルの一覧の並び順 */
-export type FileSort = "path" | "name" | "added" | "modified" | "duration";
+export type FileSort = "path" | "name" | "added" | "modified" | "duration" | "playlist";
 
 /** ライブラリの並び順のプルダウンの選び肢。同じ値どうしはパス順 */
 export const FILE_SORTS: { value: string; sort: FileSort; desc: boolean; label: string }[] = [
@@ -71,6 +94,12 @@ export const FILE_SORTS: { value: string; sort: FileSort; desc: boolean; label: 
   { value: "modified-desc", sort: "modified", desc: true, label: "更新日時順（新しい順）" },
   { value: "duration", sort: "duration", desc: false, label: "長さ順（短い順）" },
   { value: "duration-desc", sort: "duration", desc: true, label: "長さ順（長い順）" },
+];
+
+/** プレイリストを選んでいるときの並び順のプルダウンの選び肢。最初は「プレイリストの順」（抽選した順） */
+export const PLAYLIST_SORTS: typeof FILE_SORTS = [
+  { value: "playlist", sort: "playlist", desc: false, label: "プレイリストの順" },
+  ...FILE_SORTS,
 ];
 
 /** ひも付けた結果。ライブラリに登録したフォルダがあれば、そのパス */
@@ -325,6 +354,8 @@ export type PlaylistNode = {
   parentId: number | null;
   depth: number;
   itemCount: number;
+  /** 通しで流したときに鳴る曲の数（🎲の項目は1曲）。左の欄の行の件数 */
+  trackCount: number;
   /** 項目として直接入れているプレイリスト（子と参照） */
   refs: number[];
 };
@@ -363,6 +394,10 @@ export type PlayEntry = {
   chains: number[];
   /** この曲を出した、再生したプレイリストの（いちばん外側の）項目。ファイルの一覧の再生では null */
   itemId: number | null;
+  /** 中央の一覧から再生したとき：その行（AudioFile.key）。鳴らしている行の印と、曲名から一覧へ移るのに使う */
+  rowKey?: number;
+  /** 抽選し直すと変わりうる曲（🎲・🔀の項目を通った曲） */
+  drawn?: boolean;
 };
 
 export const playlistApi = {
@@ -392,7 +427,15 @@ export const playlistApi = {
   /** プレイリストから、ファイルの項目をまとめて外す。外した項目の数を返す */
   removeFiles: (id: number, fileIds: number[]) => invoke<number>("remove_files_from_playlist", { id, fileIds }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
-  startExport: (id: number, dest: string) => invoke<string>("start_export", { id, dest }),
+  /** rows は抽選した並びの行の番号（中央の一覧に見えている順） */
+  startExport: (id: number, rows: number[], dest: string) => invoke<string>("start_export", { id, rows, dest }),
+  /** プレイリストを選んで抽選する */
+  select: (id: number) => invoke<void>("select_playlist", { id }),
+  clearSelection: () => invoke<void>("clear_playlist_selection"),
+  /** 選んでいるプレイリストを抽選し直す */
+  redraw: () => invoke<void>("redraw_playlist"),
+  /** データを読み直すときに呼ぶ。中身が変わっていれば抽選し直し、消えていれば選択を外す */
+  refreshDraw: () => invoke<"unchanged" | "redrawn" | "cleared">("refresh_draw"),
   cancelExport: () => invoke<void>("cancel_export"),
 };
 

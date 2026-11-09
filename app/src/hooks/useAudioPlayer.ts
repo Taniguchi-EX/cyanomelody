@@ -117,6 +117,11 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
   const [player, setPlayerState] = useState<Player | null>(null);
+  /**
+   * 最後まで再生して止まった再生（順に連続・ランダムのとき）の、再生していたプレイリスト（一覧なら null）。
+   * 次に「▶」で再生するとき、プレイリストを抽選し直すのに使う。別の再生を始めると null に戻る
+   */
+  const [finished, setFinished] = useState<{ sourceId: number | null } | null>(null);
   // audio のイベントから今の再生の状態を見るため、状態と同じものを ref にも持つ
   const playerRef = useRef<Player | null>(null);
   /** 再生中の位置と長さ（秒） */
@@ -182,6 +187,10 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     if (index < 0 || index >= p.queue.length) {
       audio.pause();
       setPlayer(null);
+      // 一曲だけ・ランダムセレクトで1曲鳴らして止まったときは、最後まで再生したことにしない
+      if (index >= p.queue.length && (playModeRef.current === "order" || playModeRef.current === "shuffle")) {
+        setFinished({ sourceId: p.sourceId });
+      }
       onInfo(`「${p.name}」の再生が終わりました`);
       return;
     }
@@ -232,6 +241,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
    */
   const playSource = (name: string, source: PlayEntry[], start: number | null = null, sourceId: number | null = null) => {
     if (source.length === 0) return;
+    setFinished(null);
     const { positions, index } = arrange(playModeRef.current, source.length, start);
     const queue = positions.map((i) => source[i]);
     playAt({ name, sourceId, source, positions, queue, startIndex: index, index, paused: false, preparing: false }, index);
@@ -315,6 +325,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     stopPreview,
     previewPath,
     playSource,
+    finished,
     playMode,
     setPlayMode,
     next: () => move(1),

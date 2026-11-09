@@ -134,7 +134,7 @@ export function BulkPanel({
               <div className="filter-chips detail-chips" data-testid="bulk-playlists">
                 {data.playlists.map((p) => (
                   <span key={p.id} className="chip filter-chip" data-playlist-name={p.name}>
-                    <button className="chip-part" onClick={() => onOpenPlaylist(p.id)} title="開く" aria-label={`${p.name}を開く`}>
+                    <button className="chip-part" onClick={() => onOpenPlaylist(p.id)} title="編集画面を開く" aria-label={`${p.name}を開く`}>
                       <span className="chip-icon">📃</span>
                       {p.name}
                       <span className="chip-count">{p.count}</span>

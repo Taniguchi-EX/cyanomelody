@@ -9,24 +9,27 @@ import { NameInput, RowActions, Twisty } from "./TreeParts";
 
 type Props = {
   playlists: PlaylistNode[];
-  /** 中央で開いているプレイリスト */
-  openId: number | null;
+  /** 選んでいる（絞り込みの条件にしている）プレイリスト */
+  selectedId: number | null;
   busy: boolean;
-  onOpen: (id: number) => void;
+  /** 行を押したとき：選ぶ（抽選する）・外す */
+  onSelect: (id: number) => void;
+  /** 行のダブルクリックと「✎」：編集画面を開く */
+  onEdit: (id: number) => void;
   onCreate: (name: string) => Promise<boolean>;
-  /** 名前を変える。終わったら true */
-  onRename: (id: number, name: string) => Promise<boolean>;
   onDelete: (id: number) => void;
   onMove: (id: number, target: MoveTarget) => void;
   /** 左の欄の検索の文字。あてはまるプレイリスト（と、薄くした祖先）だけを出す */
   query: string;
 };
 
-/** 左の欄の「プレイリスト」。階層表示、開く・たたむ、取っ手での並べ替え、作成・名前変更・削除（再生は中央の詳細画面で行う） */
-export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRename, onDelete, onMove, query }: Props) {
+/**
+ * 左の欄の「プレイリスト」。押すと選んで（抽選して）絞り込み、もう一度押すと外す。
+ * 階層表示、開く・たたむ、ドラッグでの並べ替え、作成・削除。中身と名前は編集画面（「✎」・ダブルクリック）で直す
+ */
+export function PlaylistPanel({ playlists, selectedId, busy, onSelect, onEdit, onCreate, onDelete, onMove, query }: Props) {
   const [collapsed, toggleCollapsed] = useStoredIdSet("cyanomelody.playlistTree.collapsed");
   const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
 
   const parents = useMemo(() => parentIds(playlists), [playlists]);
   const byId = useMemo(() => new Map(playlists.map((p) => [p.id, p])), [playlists]);
@@ -60,7 +63,7 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
     <Collapsible
       id="playlists"
       title="プレイリスト"
-      selectedCount={0}
+      selectedCount={selectedId !== null ? 1 : 0}
       actions={(expand) => (
         <span className="row">
           <button
@@ -90,54 +93,55 @@ export function PlaylistPanel({ playlists, openId, busy, onOpen, onCreate, onRen
         />
       )}
       <ul className={`tag-list tag-tree${drag.dragId !== null ? " dragging" : ""}`}>
-        {shown.map((p) => (
-          <li
-            key={p.id}
-            className={
-              (openId === p.id ? "active" : "") +
-              (moving.has(p.id) ? " drag-source" : "") +
-              (search?.dimmed.has(p.id) ? " search-parent" : "") +
-              drag.dropClass(p.id)
-            }
-            onClick={() => onOpen(p.id)}
-            data-testid="playlist"
-            data-tree="playlists"
-            data-node-id={p.id}
-            data-playlist-name={p.name}
-            data-depth={p.depth}
-            style={{ paddingLeft: indentOf(p.depth) }}
-            {...drag.rowProps(p.id)}
-          >
-            <Twisty
-              name={p.name}
-              // 検索しているときは、開閉の印を出さない（あてはまるものをすべて開いて見せる）
-              hasChildren={!search && parents.has(p.id)}
-              collapsed={collapsed.has(p.id)}
-              onToggle={() => toggleCollapsed(p.id)}
-              indent={indentOf(p.depth)}
-            />
-            {editingId === p.id ? (
-              <NameInput
-                label="プレイリストの新しい名前"
-                initial={p.name}
-                onCommit={async (name) => {
-                  if (name.trim() === p.name || (await onRename(p.id, name))) setEditingId(null);
-                }}
-                onCancel={() => setEditingId(null)}
+        {shown.map((p) => {
+          const selected = selectedId === p.id;
+          // 通しで流して1曲も鳴らないプレイリストは選べない（編集画面はダブルクリック・「✎」で開ける）
+          const disabled = p.trackCount === 0 && !selected;
+          return (
+            <li
+              key={p.id}
+              className={
+                (selected ? "active" : "") +
+                (disabled ? " disabled" : "") +
+                (moving.has(p.id) ? " drag-source" : "") +
+                (search?.dimmed.has(p.id) ? " search-parent" : "") +
+                drag.dropClass(p.id)
+              }
+              // ダブルクリック（編集画面を開く）の2回目の押しでは、選択を切り替えない
+              onClick={(e) => e.detail < 2 && !disabled && onSelect(p.id)}
+              onDoubleClick={(e) => {
+                if (!(e.target as HTMLElement).closest("button, input")) onEdit(p.id);
+              }}
+              data-testid="playlist"
+              data-tree="playlists"
+              data-node-id={p.id}
+              data-playlist-name={p.name}
+              data-depth={p.depth}
+              style={{ paddingLeft: indentOf(p.depth) }}
+              {...drag.rowProps(p.id)}
+            >
+              <Twisty
+                name={p.name}
+                // 検索しているときは、開閉の印を出さない（あてはまるものをすべて開いて見せる）
+                hasChildren={!search && parents.has(p.id)}
+                collapsed={collapsed.has(p.id)}
+                onToggle={() => toggleCollapsed(p.id)}
+                indent={indentOf(p.depth)}
               />
-            ) : (
               <span className="tag-name">{p.name}</span>
-            )}
-            <RowActions
-              name={p.name}
-              busy={busy}
-              editLabel="名前を変える"
-              onEdit={() => setEditingId(p.id)}
-              onDelete={() => onDelete(p.id)}
-            />
-            <span className="sub">{p.itemCount}</span>
-          </li>
-        ))}
+              <RowActions
+                name={p.name}
+                busy={busy}
+                editLabel="編集"
+                onEdit={() => onEdit(p.id)}
+                onDelete={() => onDelete(p.id)}
+              />
+              <span className="sub" title="通しで流したときに鳴る曲の数">
+                {p.trackCount}
+              </span>
+            </li>
+          );
+        })}
       </ul>
       {playlists.length > 0 && (
         <div
