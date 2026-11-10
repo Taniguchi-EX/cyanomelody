@@ -255,6 +255,18 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
     Ok(result)
 }
 
+/// ファイルの絶対パス（ライブラリフォルダのパスと相対パスから）
+pub fn file_path(conn: &Connection, file_id: i64) -> Result<PathBuf> {
+    let (folder, rel): (String, String) = conn
+        .query_row(
+            "SELECT f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id WHERE a.id = ?1",
+            [file_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| Error::invalid("ファイルが見つかりません"))?;
+    Ok(absolute_path(&folder, &rel))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
