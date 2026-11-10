@@ -1,0 +1,3 @@
+# シェルスクリプトは、Windows で取り出しても LF のまま（Docker の中で動かすため）
+*.sh text eol=lf
+app/src-tauri/gen/android/gradlew text eol=lf
