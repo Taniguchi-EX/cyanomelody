@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, playlistApi, type AudioFile, type PlaylistNode, type Tag } from "../api";
 import { stem } from "../paths";
 import { tagStyle } from "../tagColors";
@@ -8,6 +8,8 @@ import { PlaylistPicker } from "./PlaylistPicker";
 import { TagInput } from "./TagInput";
 
 type Props = {
+  /** 右の欄の読み込みに失敗したとき（下の行にエラーを出す） */
+  onError: (e: unknown) => void;
   /** 一覧でクリックしたファイル。なければ null */
   file: AudioFile | null;
   tags: Tag[];
@@ -60,6 +62,7 @@ export function SelectionPanel({
   onAddToPlaylist,
   onOpenPlaylist,
   onRemoveFromPlaylist,
+  onError,
 }: Props) {
   // このファイルを直接入れているプレイリスト。プレイリストが変わったら（項目の数が変わる）求め直す
   const [usedIn, setUsedIn] = useState<{ fileId: number; ids: number[] } | null>(null);
@@ -67,13 +70,18 @@ export function SelectionPanel({
   const [title, setTitle] = useState<{ path: string; title: string | null } | null>(null);
   const fileId = file?.id;
   const filePath = file && !file.missing ? file.path : null;
+  // onError は描画のたびに作られる関数なので、読み直すきっかけにしないよう ref で持つ
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onErrorRef.current = onError;
+  });
   useEffect(() => {
     if (fileId === undefined) return;
     let alive = true;
     playlistApi
       .withFile(fileId)
       .then((ids) => alive && setUsedIn({ fileId, ids }))
-      .catch(() => {});
+      .catch((e) => alive && onErrorRef.current(e));
     return () => {
       alive = false;
     };
@@ -81,6 +89,7 @@ export function SelectionPanel({
   useEffect(() => {
     if (filePath === null) return;
     let alive = true;
+    // 曲名を読めないときは、ファイル名を出す（エラーにしない）
     api
       .trackTitle(filePath)
       .then((t) => alive && setTitle({ path: filePath, title: t }))

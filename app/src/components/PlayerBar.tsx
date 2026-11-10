@@ -100,6 +100,7 @@ export function PlayerBar({
   useEffect(() => {
     if (playingPath === null) return;
     let alive = true;
+    // 曲名を読めないときは、ファイル名を出す（エラーにしない）
     api
       .trackTitle(playingPath)
       .then((t) => alive && setTitle({ path: playingPath, title: t }))

@@ -279,6 +279,7 @@ export default function App() {
   const [skippedUpdate, setSkippedUpdate] = useStoredString("cyanomelody.skippedUpdate");
   const [updating, setUpdating] = useState(false);
   useEffect(() => {
+    // 調べられなかったとき（オフラインなど）は、何も出さない（「アップデート」の決まり）
     api
       .checkUpdate()
       .then((v) => v && setUpdate(v))
@@ -949,6 +950,7 @@ export default function App() {
    * chainId を選んだ状態で開き、作ったエフェクトセットは itemIds の項目に付ける
    */
   const openEffects = async (item: PlaylistItem, chainId: number | null, itemIds: number[]) => {
+    // 項目の曲を読めないときは、試聴できない状態で開く（管理画面は使える）
     const first = (await playlistApi.itemFiles(item.id).catch(() => []))[0];
     const target = first ? { id: first.fileId, relPath: first.relPath, path: first.path } : null;
     setEffectDialog({ target, itemIds, chainId, forPlayer: false });
@@ -1333,6 +1335,7 @@ export default function App() {
           onAddToPlaylist={(id) => addToPlaylist(id, focusedIds())}
           onOpenPlaylist={(id) => focusedFile && openEditor(id, null, focusedFile.id)}
           onRemoveFromPlaylist={removeFromPlaylist}
+          onError={showError}
         >
           {creditKinds.map((kind) => (
             <CreditField
