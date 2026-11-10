@@ -1,7 +1,10 @@
 import { useRef } from "react";
+import { lockTouchScroll, waitForHold } from "../touch";
 
 /** この距離（px）より動かしたらドラッグとみなす（クリックと区別する） */
 const DRAG_THRESHOLD = 6;
+
+const noop = () => {};
 
 /** ファイルを落とせる先：左の欄のプレイリスト（加える）、タグ（付ける）、出典・ライセンス（設定する） */
 export type FileDropTarget = { kind: "playlists" | "tags" | "source" | "license"; id: number };
@@ -35,6 +38,9 @@ export function useFileDrag(onDrop: (ids: number[], target: FileDropTarget) => v
     local: LocalDrop | undefined;
     ghost: HTMLElement | null;
     target: HTMLElement | null;
+    /** 指のとき：長押しになったか、スクロールを止めたのを戻す関数 */
+    held: boolean;
+    unlock: () => void;
   } | null>(null);
 
   const targetAt = (x: number, y: number) =>
@@ -44,16 +50,25 @@ export function useFileDrag(onDrop: (ids: number[], target: FileDropTarget) => v
     const s = state.current;
     s?.ghost?.remove();
     s?.target?.classList.remove("drop-target");
+    s?.unlock();
     state.current = null;
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onCancel);
+  };
+
+  /** スクロールなどで、ドラッグがやめになったとき */
+  const onCancel = () => {
+    state.current?.local?.end();
+    cleanup();
   };
 
   const onMove = (e: PointerEvent) => {
     const s = state.current;
-    if (!s) return;
+    if (!s || !s.held) return;
     if (!s.ghost) {
-      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < DRAG_THRESHOLD) return;
+      // 指のとき（長押しの後）は、少しでも動かしたらドラッグにする
+      if (s.unlock === noop && Math.hypot(e.clientX - s.x, e.clientY - s.y) < DRAG_THRESHOLD) return;
       s.ghost = document.createElement("div");
       s.ghost.className = "drag-ghost";
       s.ghost.textContent = `♪ ${s.ids.length}`;
@@ -90,9 +105,19 @@ export function useFileDrag(onDrop: (ids: number[], target: FileDropTarget) => v
     // ボタン・チェックボックス・プルダウンを押したときはドラッグにしない
     if ((e.target as HTMLElement).closest("button, input, label, select")) return;
     cleanup();
-    state.current = { x: e.clientX, y: e.clientY, ids, local, ghost: null, target: null };
+    const touch = e.pointerType === "touch";
+    state.current = { x: e.clientX, y: e.clientY, ids, local, ghost: null, target: null, held: !touch, unlock: noop };
+    // 指のときは、長押しになるまでドラッグにしない（すぐに動かしたらスクロール）。長押しの後は、スクロールさせない
+    if (touch)
+      waitForHold(e, () => {
+        const s = state.current;
+        if (!s) return;
+        s.held = true;
+        s.unlock = lockTouchScroll();
+      });
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
 
   return begin;

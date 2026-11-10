@@ -6,6 +6,7 @@ import { displayFileName } from "../paths";
 import { useDisplay } from "../displaySettings";
 import { useCover } from "../covers";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
+import { waitForHold } from "../touch";
 import { RowTags } from "./RowTags";
 
 /** 一覧の行の高さ（文字の大きさが標準のとき。大きくすると合わせて高くする） */
@@ -79,7 +80,17 @@ type Props = {
   onOpenEffect: (file: AudioFile) => void;
   /** 見せ方（一覧・グリッド）。操作はどちらも同じ */
   view: ListView;
+  /**
+   * 指で使う狭い画面（Android）：行は名前だけ（タグとチェックボックスは出さない）、グリッドは横に最大3つ、
+   * ファイルを左の欄へ落とすドラッグはしない。長押しで onLongPress（チェックを始める）
+   */
+  touch?: { checking: boolean; onLongPress: (index: number) => void };
 };
+
+/** 指で使う狭い画面の、一覧の行の高さ（指で押しやすい高さ） */
+const TOUCH_ROW_HEIGHT = 48;
+/** 指で使う狭い画面のグリッドで、横に並べる最大の数 */
+const TOUCH_GRID_COLUMNS = 3;
 
 export function FileList({
   files,
@@ -101,8 +112,11 @@ export function FileList({
   chainNames,
   onOpenEffect,
   view,
+  touch,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
+  // 指の長押しの後の click（行を押したこと）を、行を押したことにしない
+  const suppressClick = useRef(false);
   const parentRef = useRef<HTMLDivElement>(null);
   const grid = view === "grid";
   const display = useDisplay();
@@ -119,8 +133,8 @@ export function FileList({
     observer.observe(el);
     return () => observer.disconnect();
   }, [empty]);
-  const layout = gridLayout(width, display.gridColumns, display.textScale);
-  const rowHeight = Math.round(ROW_HEIGHT * Math.max(1, display.textScale));
+  const layout = gridLayout(width, touch ? Math.min(display.gridColumns, TOUCH_GRID_COLUMNS) : display.gridColumns, display.textScale);
+  const rowHeight = Math.round((touch ? TOUCH_ROW_HEIGHT : ROW_HEIGHT) * Math.max(1, display.textScale));
   const perRow = grid ? layout.columns : 1;
   const bandHeight = grid ? layout.tileHeight + layout.gap : rowHeight;
   // 仮想化は段（グリッドではカードを横に並べた1段、一覧では1行）を単位にする
@@ -302,12 +316,33 @@ export function FileList({
                   }
                   data-testid="file-row"
                   data-rel-path={f.relPath}
-                  onClick={() => onFocus(f)}
+                  onClick={() => {
+                    if (suppressClick.current) {
+                      suppressClick.current = false;
+                      return;
+                    }
+                    // チェックしている間（指の画面）は、行を押すとチェックを付け外しする
+                    if (touch?.checking) onCheck(item.index, false);
+                    else onFocus(f);
+                  }}
                   // ボタン・チェックボックスの上のダブルクリックは、そちらの操作だけにする
                   onDoubleClick={(e) => {
-                    if (!f.missing && !(e.target as HTMLElement).closest("button, input, label")) onPlayFrom(f);
+                    if (!touch && !f.missing && !(e.target as HTMLElement).closest("button, input, label")) onPlayFrom(f);
                   }}
-                  onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
+                  onPointerDown={(e) => {
+                    if (!touch) {
+                      beginDrag(e, checked.has(f.id) ? [...checked] : [f.id]);
+                      return;
+                    }
+                    // 指の画面：長押しでチェックを始める（チェックしている間は、押すだけで付け外しするので待たない）
+                    if (touch.checking || (e.target as HTMLElement).closest("button, input, label")) return;
+                    const index = item.index;
+                    waitForHold(e, () => {
+                      suppressClick.current = true;
+                      touch.onLongPress(index);
+                    });
+                  }}
+                  onContextMenu={touch ? (e) => e.preventDefault() : undefined}
                 >
                   {grid ? (
                     // カード：上に曲名、真ん中にジャケット（なければタグ）、左下に再生ボタン・来た項目・印、右下にチェック
@@ -315,24 +350,24 @@ export function FileList({
                       {nameLabel}
                       <TileMedia file={f} tagStyles={tagStyles} />
                       <div className="tile-foot">
-                        {playButton}
+                        {touch?.checking ? checkCell : playButton}
                         {originButton}
                         {fxButton}
                         {marks}
-                        {checkCell}
+                        {!touch && checkCell}
                       </div>
                       {progressBar}
                     </>
                   ) : (
                     <>
-                      {playButton}
+                      {touch?.checking ? checkCell : playButton}
                       {originButton}
                       {fxButton}
                       {marks}
                       {nameLabel}
-                      <RowTags tags={f.tags} tagStyles={tagStyles} />
+                      {!touch && <RowTags tags={f.tags} tagStyles={tagStyles} />}
                       {progressBar}
-                      {checkCell}
+                      {!touch && checkCell}
                     </>
                   )}
                 </div>

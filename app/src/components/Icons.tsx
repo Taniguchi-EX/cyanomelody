@@ -74,3 +74,22 @@ export function ListIcon() {
     </svg>
   );
 }
+
+/** 絞り込み：漏斗 */
+export function FunnelIcon() {
+  return (
+    <svg className="svg-icon" width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" data-icon="funnel">
+      <path d="M1.5 2.5h13l-5 6v5l-3-1.5v-3.5z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** 検索：虫眼鏡 */
+export function SearchIcon() {
+  return (
+    <svg className="svg-icon" width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" data-icon="search">
+      <circle cx="6.8" cy="6.8" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M10.2 10.2l4.3 4.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}

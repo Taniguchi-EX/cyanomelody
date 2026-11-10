@@ -217,3 +217,79 @@
   border-top: none;
   background: none;
 }
+
+/* ファイルの一覧：検索のときの見出しの行、並び順と見せ方の行 */
+.m-search .search-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.m-search .search-box input {
+  width: 100%;
+}
+
+.m-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.m-toolbar .file-sort {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.m-count {
+  flex: 1;
+}
+
+/* 一覧の行：名前を大きめに */
+.m-app .file-row .file-name {
+  font-size: calc(15px * var(--text-scale, 1));
+}
+
+.m-app .check-bar {
+  flex-wrap: wrap;
+}
+
+/* 行の「⋮」と、その選び肢 */
+.row-menu {
+  flex: none;
+  margin-left: auto;
+}
+
+.row-menu-items {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
+}
+
+.row-menu-items button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+
+.row-menu-items button.danger {
+  color: var(--danger, #d33);
+}
+
+/* 絞り込みの行：押しやすい高さ */
+.m-filter .tag-list li > .tag-row,
+.m-filter [data-node-id],
+.m-filter .folder {
+  min-height: 40px;
+}

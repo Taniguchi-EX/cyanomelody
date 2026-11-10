@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 /** Android の動的エリアに出す画面 */
 export type Screen =
   | { kind: "list" }
+  /** ファイルの一覧で、チェックしているとき（長押しで始める。戻るとチェックをすべて外す） */
+  | { kind: "check" }
   | { kind: "filter" }
   | { kind: "detail" }
   | { kind: "bulk" }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MoveTarget } from "./api";
+import { lockTouchScroll, waitForHold } from "./touch";
 
 /** ドラッグ中に、どこに落とすかの表示 */
 export type Drop = { id: number; pos: "before" | "after" | "child" } | { id: null; pos: "root" };
@@ -21,6 +22,7 @@ type Options = {
 /**
  * 木（タグ・プレイリスト）と一覧（出典・ライセンス）の行を、行そのもののドラッグアンドドロップで並べ替える。
  * 少し動かしてからドラッグにする（押しただけなら行を押したことになる）。行の中のボタン・入力欄からは始めない。
+ * 指で触ったとき（Android）は、長押ししてから始める（すぐに動かしたらスクロール）。始めた後は、スクロールさせない。
  * HTMLのドラッグアンドドロップはTauri（Windows）で動かないことがあるので、pointerイベントで作る。
  * 行には data-tree と data-node-id を、一覧の下の空いた所には data-tree-root を付ける。
  */
@@ -56,8 +58,18 @@ export function useTreeDrag(options: Options) {
       if (opts.current.busy || e.button !== 0) return;
       // 開く・たたむ、✎、🗑、名前の入力欄などは、その操作だけにする
       if ((e.target as HTMLElement).closest("button, input, select, label, [role=button]")) return;
-      const s = { x: e.clientX, y: e.clientY, moving: false };
+      const touch = e.pointerType === "touch";
+      const s = { x: e.clientX, y: e.clientY, moving: false, held: !touch, unlock: () => {} };
+      // 指のときは、長押しになるまでドラッグにしない
+      if (touch)
+        waitForHold(e, () => {
+          s.held = true;
+          s.moving = true;
+          s.unlock = lockTouchScroll();
+          setDragId(id);
+        });
       const move = (ev: PointerEvent) => {
+        if (!s.held) return;
         if (!s.moving) {
           if (Math.hypot(ev.clientX - s.x, ev.clientY - s.y) < DRAG_THRESHOLD) return;
           s.moving = true;
@@ -69,6 +81,7 @@ export function useTreeDrag(options: Options) {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
         window.removeEventListener("pointercancel", cancel);
+        s.unlock();
         setDragId(null);
         setDrop(null);
         if (!s.moving) return;

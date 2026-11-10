@@ -1,4 +1,6 @@
 import { useState, type MouseEvent } from "react";
+import { isAndroid } from "../platform";
+import { RowMenu } from "./RowMenu";
 
 // 左の欄の行（タグ・プレイリスト・出典・ライセンス）に共通の部品
 
@@ -44,8 +46,22 @@ type RowActionsProps = {
   onDelete: () => void;
 };
 
-/** 行の「✎」「🗑」。行にマウスを乗せたとき（行の中にフォーカスがあるとき）だけ出す。押しても行を押したことにしない */
+/**
+ * 行の「✎」「🗑」。行にマウスを乗せたとき（行の中にフォーカスがあるとき）だけ出す。押しても行を押したことにしない。
+ * Android では、マウスを乗せられないので、行の右端の「⋮」の選び肢にする
+ */
 export function RowActions({ name, busy, editLabel, onEdit, onDelete }: RowActionsProps) {
+  if (isAndroid)
+    return (
+      <RowMenu
+        label={`${name}の操作`}
+        disabled={busy}
+        items={[
+          { label: editLabel, onClick: onEdit },
+          { label: "削除", onClick: onDelete, danger: true },
+        ]}
+      />
+    );
   const click = (action: () => void) => (e: MouseEvent) => {
     e.stopPropagation();
     action();

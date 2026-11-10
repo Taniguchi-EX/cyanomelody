@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useAppController } from "../hooks/useAppController";
 import { PlayerBar } from "../components/PlayerBar";
 import { FilterSections } from "../views/FilterSections";
-import { ListArea } from "../views/ListArea";
 import { DetailArea } from "../views/DetailArea";
 import { Overlays } from "../views/Overlays";
 import { MobileHeader } from "./MobileHeader";
+import { ListIcon } from "../components/Icons";
 import { MiniPlayer } from "./MiniPlayer";
+import { MobileList } from "./MobileList";
 import { useScreenStack } from "./useScreenStack";
 import "./mobile.css";
 
@@ -23,8 +24,6 @@ export function MobileApp() {
   const { top } = nav;
   const {
     files,
-    filterChips,
-    selectedPlaylist,
     selectedPlaylistId,
     bulkOpen,
     setBulkOpen,
@@ -34,6 +33,7 @@ export function MobileApp() {
     setSettingsOpen,
     chains,
     checked,
+    checks,
     playback,
     effectActions,
   } = c;
@@ -45,9 +45,18 @@ export function MobileApp() {
     prevPlaylist.current = selectedPlaylistId;
   }, [selectedPlaylistId, top.kind, nav]);
 
+  // チェック：長押しで始め（画面を積む）、戻ったらチェックをすべて外す。チェックがなくなったら戻る
+  const inCheck = nav.stack.some((s) => s.kind === "check");
+  useEffect(() => {
+    if (!inCheck && checked.size > 0) checks.clear();
+  }, [inCheck, checked.size, checks]);
+  useEffect(() => {
+    if (top.kind === "check" && checked.size === 0) nav.back();
+  }, [top.kind, checked.size, nav]);
+
   // 一括操作：チェックの行の「一括操作」で開き、戻ったら閉じる
   useEffect(() => {
-    if (bulkOpen && top.kind === "list") nav.push({ kind: "bulk" });
+    if (bulkOpen && top.kind === "check") nav.push({ kind: "bulk" });
   }, [bulkOpen, top.kind, nav]);
   const inBulk = nav.stack.some((s) => s.kind === "bulk");
   useEffect(() => {
@@ -77,19 +86,14 @@ export function MobileApp() {
     return () => window.clearTimeout(t);
   }, [status]);
 
-  const listTitle = selectedPlaylist ? selectedPlaylist.name : "ライブラリ";
-  const toFilter = (
-    <button className="icon m-switch" onClick={() => nav.push({ kind: "filter" })} aria-label="絞り込み" title="絞り込み" data-testid="m-to-filter">
-      ⏷{filterChips.length > 0 && <span className="m-badge">{filterChips.length}</span>}
-    </button>
-  );
   const toList = (
     <>
       <button className="icon" onClick={() => setSettingsOpen(true)} aria-label="設定" title="設定">
         ⚙
       </button>
       <button className="icon m-switch" onClick={nav.back} aria-label="一覧" title="一覧" data-testid="m-to-list">
-        ☰<span className="m-badge">{files.length}</span>
+        <ListIcon />
+        <span className="m-badge">{files.length}</span>
       </button>
     </>
   );
@@ -97,13 +101,15 @@ export function MobileApp() {
   return (
     <div className="m-app" data-testid="m-app">
       <div className="m-dynamic">
-        {top.kind === "list" && (
-          <section className="m-screen">
-            <MobileHeader title={listTitle} right={toFilter} />
-            <div className="m-body m-list">
-              <ListArea c={c} onOpenFile={() => nav.push({ kind: "detail" })} />
-            </div>
-          </section>
+        {(top.kind === "list" || top.kind === "check") && (
+          <MobileList
+            c={c}
+            checking={top.kind === "check"}
+            onStartChecking={() => nav.push({ kind: "check" })}
+            onStopChecking={nav.back}
+            onOpenFile={() => nav.push({ kind: "detail" })}
+            onOpenFilter={() => nav.push({ kind: "filter" })}
+          />
         )}
         {top.kind === "filter" && (
           <section className="m-screen">
