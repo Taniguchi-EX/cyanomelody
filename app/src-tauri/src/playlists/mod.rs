@@ -82,7 +82,6 @@ pub struct PlaylistNode {
     /// 親（このプレイリストを子として持つプレイリスト）。最上位なら None
     pub parent_id: Option<i64>,
     pub depth: i64,
-    pub item_count: i64,
     /// 通しで流したときに鳴る曲の数（🎲の項目は1曲。見つからないファイルは数えない）。左の欄の行の件数
     pub track_count: i64,
     /// 項目として直接入れているプレイリスト（子と参照）。画面でループになる候補を外すのに使う
@@ -229,10 +228,6 @@ pub fn list_playlists(conn: &Connection) -> Result<Vec<PlaylistNode>> {
         .prepare("SELECT id, name FROM playlists")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<rusqlite::Result<_>>()?;
-    let counts: HashMap<i64, i64> = conn
-        .prepare("SELECT playlist_id, count(*) FROM playlist_items GROUP BY playlist_id")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
     let tracks = track_counts(conn)?;
     let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
     let mut refs: HashMap<i64, Vec<i64>> = HashMap::new();
@@ -265,7 +260,6 @@ pub fn list_playlists(conn: &Connection) -> Result<Vec<PlaylistNode>> {
             name: names.get(&id).cloned().unwrap_or_default(),
             parent_id,
             depth,
-            item_count: counts.get(&id).copied().unwrap_or(0),
             track_count: tracks.get(&id).copied().unwrap_or(0),
             refs: refs.get(&id).cloned().unwrap_or_default(),
         });
@@ -667,7 +661,8 @@ mod tests {
         assert_eq!(nodes[1].name, "足音2");
         assert_eq!(nodes[1].parent_id, Some(a));
         assert_eq!(nodes[0].refs, vec![b]);
-        assert_eq!(nodes[0].item_count, 1);
+        // 通しの曲数：A の項目は子の B だけで、B は空
+        assert_eq!(nodes[0].track_count, 0);
     }
 
     #[test]

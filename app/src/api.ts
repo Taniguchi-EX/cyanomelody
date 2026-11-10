@@ -76,7 +76,7 @@ export type FileFilter = {
   minYear: number | null;
   maxYear: number | null;
   /** 抽選した並び（プレイリストを選んでいるとき）の中で絞り込む。行ごとに返る */
-  draw?: boolean;
+  draw: boolean;
   /** 一覧の並び順（絞り込みには使わない）。なければパス順 */
   sort?: FileSort;
   sortDesc?: boolean;
@@ -358,7 +358,6 @@ export type PlaylistNode = {
   /** 親（このプレイリストを子として持つプレイリスト）。最上位なら null */
   parentId: number | null;
   depth: number;
-  itemCount: number;
   /** 通しで流したときに鳴る曲の数（🎲の項目は1曲）。左の欄の行の件数 */
   trackCount: number;
   /** 項目として直接入れているプレイリスト（子と参照） */

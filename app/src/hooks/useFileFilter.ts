@@ -31,6 +31,7 @@ export const EMPTY_FILTER: FileFilter = {
   maxDuration: null,
   minYear: null,
   maxYear: null,
+  draw: false,
 };
 
 /** 出典・ライセンスの絞り込みの条件を持つ FileFilter の項目 */
