@@ -30,67 +30,67 @@ export function DetailArea({ c }: { c: AppController }) {
   } = c;
   return (
     <>
-        {bulkOpen && (
-          <BulkPanel
-            fileIds={bulkFileIds}
-            targetLabel="チェックしたファイル"
-            tags={tags}
-            playlists={playlists}
-            creditsOf={creditsOf}
+      {bulkOpen && (
+        <BulkPanel
+          fileIds={bulkFileIds}
+          targetLabel="チェックしたファイル"
+          tags={tags}
+          playlists={playlists}
+          creditsOf={creditsOf}
+          busy={busy}
+          dataVersion={dataVersion}
+          onAddTag={tagActions.bulkAddTag}
+          onRemoveTag={tagActions.bulkRemoveTag}
+          onAutotag={() => fileOps.openAutotag(bulkFileIds, false)}
+          onDelete={() => fileOps.startDelete(bulkFileIds)}
+          onExportFiles={fileOps.exportCheckedFiles}
+          onExportMetadata={fileOps.exportCheckedMetadata}
+          onAddToPlaylist={(id) => playlistActions.addToPlaylist(id, bulkFileIds)}
+          onOpenPlaylist={(id) => playlistEditor.open(id)}
+          onRemoveFromPlaylist={playlistActions.bulkRemoveFromPlaylist}
+          onSetCredit={creditActions.bulkSetCredit}
+          onRelink={library.relink}
+          onFindInFolder={library.findManyInFolder}
+          onRemoveMissing={(ids) => library.removeMissing(ids, ids.length)}
+          onError={showError}
+        />
+      )}
+      <SelectionPanel
+        file={bulkOpen ? null : focusedFile}
+        tags={tags}
+        busy={busy}
+        onAddTag={tagActions.addTag}
+        onRemoveTag={tagActions.removeTag}
+        onAutotag={() => focusedFile && fileOps.openAutotag([focusedFile.id], true)}
+        onDelete={() => focusedFile && fileOps.startDelete([focusedFile.id])}
+        onRemoveMissing={() => library.removeMissing(focusedIds(), 1)}
+        onRelink={() => library.relink(focusedIds())}
+        onLinkFile={() => focusedFile && library.linkMissingFile(focusedFile)}
+        onFindInFolder={() => focusedFile && library.findMissingInFolder(focusedFile)}
+        onShowSameAudio={showSameAudio}
+        onReveal={(path) =>
+          isAndroid ? showError("この端末では、ファイルの場所を開けません") : revealItemInDir(path).catch(showError)
+        }
+        playlists={playlists}
+        onAddToPlaylist={(id) => playlistActions.addToPlaylist(id, focusedIds())}
+        onOpenPlaylist={(id) => focusedFile && playlistEditor.open(id, null, focusedFile.id)}
+        onRemoveFromPlaylist={playlistActions.removeFromPlaylist}
+        onError={showError}
+      >
+        {CREDIT_KINDS.map((kind) => (
+          <CreditField
+            key={kind}
+            kind={kind}
+            currentId={focusedFile ? (kind === "source" ? focusedFile.sourceId : focusedFile.licenseId) : null}
+            credits={creditsOf(kind)}
+            licenseTypes={licenseTypes}
             busy={busy}
-            dataVersion={dataVersion}
-            onAddTag={tagActions.bulkAddTag}
-            onRemoveTag={tagActions.bulkRemoveTag}
-            onAutotag={() => fileOps.openAutotag(bulkFileIds, false)}
-            onDelete={() => fileOps.startDelete(bulkFileIds)}
-            onExportFiles={fileOps.exportCheckedFiles}
-            onExportMetadata={fileOps.exportCheckedMetadata}
-            onAddToPlaylist={(id) => playlistActions.addToPlaylist(id, bulkFileIds)}
-            onOpenPlaylist={(id) => playlistEditor.open(id)}
-            onRemoveFromPlaylist={playlistActions.bulkRemoveFromPlaylist}
-            onSetCredit={creditActions.bulkSetCredit}
-            onRelink={library.relink}
-            onFindInFolder={library.findManyInFolder}
-            onRemoveMissing={(ids) => library.removeMissing(ids, ids.length)}
+            onSet={(name) => creditActions.setFileCredit(kind, name)}
+            onClear={() => creditActions.clearFileCredit(kind)}
             onError={showError}
           />
-        )}
-        <SelectionPanel
-          file={bulkOpen ? null : focusedFile}
-          tags={tags}
-          busy={busy}
-          onAddTag={tagActions.addTag}
-          onRemoveTag={tagActions.removeTag}
-          onAutotag={() => focusedFile && fileOps.openAutotag([focusedFile.id], true)}
-          onDelete={() => focusedFile && fileOps.startDelete([focusedFile.id])}
-          onRemoveMissing={() => library.removeMissing(focusedIds(), 1)}
-          onRelink={() => library.relink(focusedIds())}
-          onLinkFile={() => focusedFile && library.linkMissingFile(focusedFile)}
-          onFindInFolder={() => focusedFile && library.findMissingInFolder(focusedFile)}
-          onShowSameAudio={showSameAudio}
-          onReveal={(path) =>
-            isAndroid ? showError("この端末では、ファイルの場所を開けません") : revealItemInDir(path).catch(showError)
-          }
-          playlists={playlists}
-          onAddToPlaylist={(id) => playlistActions.addToPlaylist(id, focusedIds())}
-          onOpenPlaylist={(id) => focusedFile && playlistEditor.open(id, null, focusedFile.id)}
-          onRemoveFromPlaylist={playlistActions.removeFromPlaylist}
-          onError={showError}
-        >
-          {CREDIT_KINDS.map((kind) => (
-            <CreditField
-              key={kind}
-              kind={kind}
-              currentId={focusedFile ? (kind === "source" ? focusedFile.sourceId : focusedFile.licenseId) : null}
-              credits={creditsOf(kind)}
-              licenseTypes={licenseTypes}
-              busy={busy}
-              onSet={(name) => creditActions.setFileCredit(kind, name)}
-              onClear={() => creditActions.clearFileCredit(kind)}
-              onError={showError}
-            />
-          ))}
-        </SelectionPanel>
+        ))}
+      </SelectionPanel>
     </>
   );
 }

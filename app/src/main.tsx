@@ -3,12 +3,15 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { applyDisplay } from './displaySettings'
+import { isAndroid } from './platform'
+import { MobileApp } from './mobile/MobileApp'
 
 // 設定画面の「表示」で決めた文字の大きさ・フォントを、最初の描画の前に当てる
 applyDisplay()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* Android では、狭い画面のための組み立て（MobileApp）を使う。Windows の画面は App */}
+    {isAndroid ? <MobileApp /> : <App />}
   </StrictMode>,
 )
