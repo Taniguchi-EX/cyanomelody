@@ -4,7 +4,10 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+#[cfg(test)]
 use std::path::Path;
+
+use crate::source::FileSource;
 
 /// 計算できなかった理由
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,8 +45,8 @@ struct Reader {
 }
 
 impl Reader {
-    fn open(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
+    fn open<S: FileSource + ?Sized>(path: &S) -> Result<Self> {
+        let mut file = path.open()?;
         let len = file.metadata()?.len();
         let source = if len <= IN_MEMORY_LIMIT {
             let mut buf = Vec::with_capacity(len as usize);
@@ -109,7 +112,7 @@ impl Reader {
 }
 
 /// 音声データ部分のハッシュ値を16進数の文字列で返す
-pub fn audio_hash(path: &Path) -> Result<String> {
+pub fn audio_hash<S: FileSource + ?Sized>(path: &S) -> Result<String> {
     let mut r = Reader::open(path)?;
     let mut hasher = blake3::Hasher::new();
     let head = r.read_at(0, 12)?;

@@ -3,7 +3,10 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
+#[cfg(test)]
 use std::path::Path;
+
+use crate::source::FileSource;
 
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -12,12 +15,12 @@ use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTagKey};
 use symphonia::core::probe::{Hint, ProbeResult};
 
 /// ファイルを開いて、形式を調べる。読めないファイルでは None
-fn probe(path: &Path) -> Option<ProbeResult> {
-    let file = File::open(path).ok()?;
+fn probe<S: FileSource + ?Sized>(path: &S) -> Option<ProbeResult> {
+    let file = path.open().ok()?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    if let Some(ext) = path.extension() {
+        hint.with_extension(&ext);
     }
     symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
@@ -25,8 +28,8 @@ fn probe(path: &Path) -> Option<ProbeResult> {
 }
 
 /// ID3 の ISO-8859-1 の項目を読み直すのは MP3 だけ（ほかの形式のタグは UTF-8 と決まっている）
-fn is_mp3(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("mp3"))
+fn is_mp3<S: FileSource + ?Sized>(path: &S) -> bool {
+    path.has_extension("mp3")
 }
 
 /// WAV の INFO の項目の文字。文字コードを判定する（どちらでもなければ UTF-8 として読み、読めない部分は「�」）
@@ -37,7 +40,7 @@ fn riff_text(info: &HashMap<[u8; 4], Vec<u8>>, id: &[u8; 4]) -> Option<String> {
 }
 
 /// トラック名（タイトル）。読めないファイルや、タイトルがないファイルでは None
-pub fn track_title(path: &Path) -> Option<String> {
+pub fn track_title<S: FileSource + ?Sized>(path: &S) -> Option<String> {
     // WAV の INFO は、symphonia が UTF-8 として読む（Shift_JIS の文字が失われる）ので、ファイルから直接読む
     if let Some(title) = riff_info(path).and_then(|info| riff_text(&info, b"INAM")) {
         return Some(title);
@@ -55,7 +58,7 @@ pub fn track_title(path: &Path) -> Option<String> {
 
 /// ファイルの中のジャケット（アートワーク）の画像と、拡張子（jpg・png など）。表紙（front cover）があればそれ、なければ最初の画像。
 /// 形式の外側のタグ（MP3 の先頭の ID3v2 など）を先に見て、なければ形式の中のタグを見る。ないとき・読めないときは None
-pub fn track_cover(path: &Path) -> Option<(Vec<u8>, &'static str)> {
+pub fn track_cover<S: FileSource + ?Sized>(path: &S) -> Option<(Vec<u8>, &'static str)> {
     let mut probed = probe(path)?;
     let pick = |revision: &MetadataRevision| -> Option<(Vec<u8>, &'static str)> {
         let visuals = revision.visuals();
@@ -91,7 +94,7 @@ pub struct FileMeta {
 
 /// アーティスト・アルバム・ジャンル・作曲者を読む。読めないファイルでは None。
 /// 文字コードは曲名と同じく読み直す（MP3 の ISO-8859-1 の項目、WAV の INFO）
-pub fn file_meta(path: &Path) -> Option<FileMeta> {
+pub fn file_meta<S: FileSource + ?Sized>(path: &S) -> Option<FileMeta> {
     let id3 = is_mp3(path);
     let mut probed = probe(path)?;
     let mut meta = FileMeta::default();
@@ -163,7 +166,7 @@ pub struct AudioInfo {
 }
 
 /// 長さとリリース年を、ファイルを1回開いて調べる。読めないファイルでは両方とも None
-pub fn audio_info(path: &Path) -> AudioInfo {
+pub fn audio_info<S: FileSource + ?Sized>(path: &S) -> AudioInfo {
     let Some(mut probed) = probe(path) else { return AudioInfo::default() };
     // 形式の外側のタグ（MP3 の先頭の ID3v2 など）と、形式の中のタグの両方から、項目の順に探す
     let mut dates: Vec<(StandardTagKey, String)> = Vec::new();
@@ -185,7 +188,7 @@ pub fn audio_info(path: &Path) -> AudioInfo {
         .find_map(|key| dates.iter().filter(|(k, _)| k == key).find_map(|(_, v)| parse_year(v)))
         // WAV の INFO の日付（ICRD）は、ファイルから直接読む（WAV でないファイルは開き直さない）
         .or_else(|| {
-            let wav = path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("wav"));
+            let wav = path.has_extension("wav");
             wav.then(|| riff_info(path)).flatten().and_then(|info| riff_text(&info, b"ICRD")).and_then(|v| parse_year(&v))
         });
     AudioInfo { duration: duration_of(probed.format), year }
@@ -205,7 +208,7 @@ fn parse_year(text: &str) -> Option<i32> {
 /// 長さ（秒）。音声ファイルの情報（全体のフレーム数）から求め、情報にないとき（一部の MP3 など）は
 /// 音声データのパケットを最後までたどって（デコードはせずに）足し合わせる。読めないファイルでは None
 #[cfg(test)]
-pub fn duration(path: &Path) -> Option<f64> {
+pub fn duration<S: FileSource + ?Sized>(path: &S) -> Option<f64> {
     duration_of(probe(path)?.format)
 }
 
@@ -272,8 +275,8 @@ fn reinterpret_latin1(text: String) -> String {
 }
 
 /// WAV（RIFF）の LIST/INFO の項目（INAM・IART など）のバイト列。WAV でないファイルや、INFO がないときは None
-fn riff_info(path: &Path) -> Option<HashMap<[u8; 4], Vec<u8>>> {
-    let mut file = BufReader::new(File::open(path).ok()?);
+fn riff_info<S: FileSource + ?Sized>(path: &S) -> Option<HashMap<[u8; 4], Vec<u8>>> {
+    let mut file = BufReader::new(path.open().ok()?);
     let mut header = [0u8; 12];
     file.read_exact(&mut header).ok()?;
     if &header[0..4] != b"RIFF" || &header[8..12] != b"WAVE" {

@@ -25,6 +25,7 @@ mod playlists;
 mod recent;
 mod romaji;
 mod settings;
+mod source;
 mod state;
 mod tags;
 mod transfer;
@@ -51,16 +52,18 @@ fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Android の試作：SAF（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル。
+    // プロトコルは画面を作る前に登録が要るので、setup の中ではなく、ここで加える
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_fs::builder().build());
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // 自動アップデートは、デスクトップだけ（Android は APK を入れ直す）
             #[cfg(desktop)]
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
-            // Android の試作：SAF（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル
-            #[cfg(target_os = "android")]
-            app.handle().plugin(tauri_plugin_android_fs::builder().build())?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

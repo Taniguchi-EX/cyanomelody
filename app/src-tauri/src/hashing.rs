@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::audio_hash::{audio_hash, HashError};
+use crate::source::FileSource;
 use crate::error::{Error, Result};
 use crate::library::absolute_path;
 use crate::metadata;
@@ -30,7 +31,7 @@ pub struct Analysis {
 }
 
 /// ファイルのハッシュ値と、長さ・リリース年を調べる
-pub fn analyze(path: &Path) -> Analysis {
+pub fn analyze<S: FileSource + ?Sized>(path: &S) -> Analysis {
     let info = metadata::audio_info(path);
     Analysis { hash: audio_hash(path), duration: info.duration, year: info.year }
 }

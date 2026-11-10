@@ -1,6 +1,6 @@
 //! Android の試作（技術的に怪しい所の確認用。本実装では作り直す）。
 //! Storage Access Framework（SAF）でフォルダを選び、権限を残し、中の音声ファイルを列挙・読み取り（ハッシュ値・長さ・曲名・ジャケット）する。
-//! 読み取りは、SAF のファイルを開いた番号（ファイルディスクリプタ）を `/proc/self/fd/番号` のパスにして、今のパスで読む処理に渡す
+//! 読み取りは、SAF のファイルを開いて、複製しながら今の処理（source::FileSource）に渡す
 
 use serde::Serialize;
 use tauri::AppHandle;
@@ -104,7 +104,6 @@ pub async fn proto_analyze(app: AppHandle, uri: String, rel_path: String) -> Res
 
 #[cfg(target_os = "android")]
 mod imp {
-    use std::os::fd::AsRawFd;
     use std::path::PathBuf;
     use std::time::Instant;
 
@@ -188,13 +187,13 @@ mod imp {
         let started = Instant::now();
         let uri = FsUri::from_json_str(uri).map_err(fs_error)?;
         let file = app.android_fs_async().open_file_readable(&uri).await.map_err(fs_error)?;
-        let path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+        // パスから開き直せない（/proc/self/fd も拒まれる）ので、開いたファイルを複製して読む
+        let name = rel_path.rsplit('/').next().unwrap_or(&rel_path).to_string();
+        let path = crate::source::OpenedFile { file, name };
         let report = tauri::async_runtime::spawn_blocking(move || {
             let analysis = crate::hashing::analyze(&path);
             let title = crate::metadata::track_title(&path);
             let cover = crate::metadata::track_cover(&path);
-            // 読み終わるまで開いておく
-            drop(file);
             AnalyzeReport {
                 rel_path,
                 hash: analysis.hash.map_err(|e| e.to_string()),
