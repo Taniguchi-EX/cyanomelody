@@ -60,9 +60,12 @@ export function MobileApp() {
     if (bulkOpen && !prevBulk.current) nav.push({ kind: "bulk" });
     prevBulk.current = bulkOpen;
   }, [bulkOpen, nav]);
+  // 戻る操作で一括操作の画面が外れた瞬間だけ閉じる（開いた直後は、まだ画面が積まれていないので、外れたことにしない）
   const inBulk = nav.stack.some((s) => s.kind === "bulk");
+  const wasInBulk = useRef(false);
   useEffect(() => {
-    if (!inBulk && bulkOpen) setBulkOpen(false);
+    if (wasInBulk.current && !inBulk && bulkOpen) setBulkOpen(false);
+    wasInBulk.current = inBulk;
   }, [inBulk, bulkOpen, setBulkOpen]);
 
   // プレイリストの編集：開いたら画面を積み、戻ったら閉じる。削除などで閉じたら画面も戻す
