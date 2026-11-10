@@ -73,6 +73,10 @@ type Props = {
   onRevealed: () => void;
   /** 行の来た項目のアイコンを押したとき（プレイリストを選んでいるときだけ出す） */
   onOpenOrigin: (file: AudioFile) => void;
+  /** エフェクトセットの id から名前を引く表（行の fx アイコンの説明に使う） */
+  chainNames: Map<number, string>;
+  /** 行の fx アイコンを押したとき（プレイリスト上でエフェクトがかかる行だけに出す） */
+  onOpenEffect: (file: AudioFile) => void;
   /** 見せ方（一覧・グリッド）。操作はどちらも同じ */
   view: ListView;
 };
@@ -94,6 +98,8 @@ export function FileList({
   reveal,
   onRevealed,
   onOpenOrigin,
+  chainNames,
+  onOpenEffect,
   view,
 }: Props) {
   const beginDrag = useFileDrag(onDrop);
@@ -210,7 +216,8 @@ export function FileList({
                 </button>
               );
               // プレイリストを選んでいるとき：タグの組み合わせ・プレイリストの項目から来た曲に、その項目のアイコン。押すと編集画面のその行
-              const originButton = f.origin && (
+              // ファイルの項目から来た行（来た項目のアイコンがない行）は、その場所を空けて、後ろの fx のアイコンの列をそろえる
+              const originButton = f.origin ? (
                 <button
                   className="icon row-origin"
                   title={origin}
@@ -223,6 +230,25 @@ export function FileList({
                   }}
                 >
                   {f.origin.kind === "tags" ? "🏷" : "📃"}
+                </button>
+              ) : (
+                f.itemId !== null && <span className="row-origin" aria-hidden="true" />
+              );
+              // プレイリスト上でエフェクトがかかる行：fx のアイコン。マウスを乗せるとエフェクトセットの名前（かける順）、押すと編集画面のその行の fx を選ぶ
+              const fxText =
+                f.chains.length > 0 ? `エフェクト：${f.chains.map((id) => chainNames.get(id) ?? "（不明）").join(" → ")}` : "";
+              const fxButton = f.chains.length > 0 && f.itemId !== null && (
+                <button
+                  className="icon row-fx"
+                  title={fxText}
+                  aria-label={fxText}
+                  data-testid="row-fx"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenEffect(f);
+                  }}
+                >
+                  fx
                 </button>
               );
               const marks = (
@@ -294,6 +320,7 @@ export function FileList({
                       <div className="tile-foot">
                         {playButton}
                         {originButton}
+                        {fxButton}
                         {marks}
                         {checkCell}
                       </div>
@@ -303,6 +330,7 @@ export function FileList({
                     <>
                       {playButton}
                       {originButton}
+                      {fxButton}
                       {marks}
                       {nameLabel}
                       <RowTags tags={f.tags} tagStyles={tagStyles} />

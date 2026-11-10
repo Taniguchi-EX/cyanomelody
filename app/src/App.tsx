@@ -128,6 +128,7 @@ export default function App() {
   // 削除・統合で消えたタグなら、詳細画面は出さない
   const tagDetail = tags.find((t) => t.id === tagDetailId) ?? null;
   const [chains, setChains] = useState<EffectChain[]>([]);
+  const chainNames = useMemo(() => new Map(chains.map((c) => [c.id, c.name])), [chains]);
   /**
    * エフェクトセットの管理画面。開いた元の項目（作ったエフェクトセットを設定する項目）と、試聴するファイル。
    * fx のプルダウンの「新しいfxを作る」「このfxを編集」から開く
@@ -144,7 +145,8 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [playlists, setPlaylists] = useState<PlaylistNode[]>([]);
   /** 開いている編集画面（重ねて出す）のプレイリストと、開いたときに選んでおく項目 */
-  const [editor, setEditor] = useState<{ id: number; itemId: number | null; seq: number } | null>(null);
+  // openChain：開いたら、選んだ項目の fx の選び肢を開く（一覧の行の fx アイコンから開いたとき）
+  const [editor, setEditor] = useState<{ id: number; itemId: number | null; openChain: boolean; seq: number } | null>(null);
   const [editorDetail, setEditorDetail] = useState<PlaylistDetail | null>(null);
   /** 右の欄に一括操作を出しているか（出していなければファイルの詳細） */
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -697,14 +699,15 @@ export default function App() {
 
   /**
    * 編集画面を開く。itemId があれば、その項目の行を選んだ状態にする。
-   * fileId があれば、そのファイルの項目（ファイルの項目として直接入れたもの）の最初の行を選ぶ
+   * fileId があれば、そのファイルの項目（ファイルの項目として直接入れたもの）の最初の行を選ぶ。
+   * openChain なら、選んだ項目の fx の選び肢を開いておく
    */
-  const openEditor = async (id: number, itemId: number | null = null, fileId: number | null = null) => {
+  const openEditor = async (id: number, itemId: number | null = null, fileId: number | null = null, openChain = false) => {
     try {
       const detail = await playlistApi.get(id);
       const initial = itemId ?? (fileId !== null ? (detail.items.find((i) => i.file?.id === fileId)?.id ?? null) : null);
       setEditorDetail(detail);
-      setEditor({ id, itemId: initial, seq: Date.now() });
+      setEditor({ id, itemId: initial, openChain: openChain && initial !== null, seq: Date.now() });
     } catch (e) {
       showError(e);
     }
@@ -1261,6 +1264,8 @@ export default function App() {
               reveal={revealFile}
               onRevealed={() => setRevealFile(null)}
               onOpenOrigin={(f) => selectedPlaylistId !== null && f.origin && openEditor(selectedPlaylistId, f.origin.itemId)}
+              chainNames={chainNames}
+              onOpenEffect={(f) => selectedPlaylistId !== null && openEditor(selectedPlaylistId, f.itemId, null, true)}
               view={listView}
             />
             {/* チェックの操作は、チェックがあるときだけ一覧の下に出す（出たり消えたりしても、一覧の行の位置が変わらないように。件数は一番下の行に出す） */}
@@ -1405,6 +1410,7 @@ export default function App() {
           onMoveItem={movePlaylistItem}
           onSetMode={setPlaylistItemMode}
           initialItemId={editor.itemId}
+          initialOpenChain={editor.openChain}
           playingItemId={
             audio.player && audio.player.sourceId === editor.id ? (audio.player.queue[audio.player.index]?.itemId ?? null) : null
           }

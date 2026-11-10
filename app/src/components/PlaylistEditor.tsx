@@ -26,6 +26,8 @@ type Props = {
   onSetMode: (items: PlaylistItem[], mode: PlayMode) => void;
   /** 開いたときに選んでおく（押した行と同じ色にして、見える所までスクロールする）項目 */
   initialItemId: number | null;
+  /** 開いたときに、選んでおく項目の fx の選び肢を開く */
+  initialOpenChain: boolean;
   /** 再生中の曲を出している項目（このプレイリストを再生しているときだけ） */
   playingItemId: number | null;
   chains: EffectChain[];
@@ -106,6 +108,7 @@ export function PlaylistEditor({
   onMoveItem,
   onSetMode,
   initialItemId,
+  initialOpenChain,
   playingItemId,
   chains,
   onSetChain,
@@ -140,10 +143,21 @@ export function PlaylistEditor({
 
   // 開いたときに選んでおく項目の行まで、スクロールする
   const itemsRef = useRef<HTMLDivElement>(null);
+  // initialOpenChain なら、その行の fx の選び肢を開く（開けないときは選び肢に入っておく）
   useEffect(() => {
     if (initialItemId === null) return;
-    itemsRef.current?.querySelector(`[data-item-id="${initialItemId}"]`)?.scrollIntoView({ block: "center" });
-  }, [initialItemId]);
+    const row = itemsRef.current?.querySelector(`[data-item-id="${initialItemId}"]`);
+    row?.scrollIntoView({ block: "center" });
+    if (!initialOpenChain) return;
+    const select = row?.querySelector<HTMLSelectElement>("select.item-chain");
+    if (!select) return;
+    select.focus();
+    try {
+      select.showPicker();
+    } catch {
+      // 押してから時間が経った・開けない状態なら、選び肢に入るだけにする
+    }
+  }, [initialItemId, initialOpenChain]);
 
   /** 操作の対象：チェックした項目を操作したならチェックした項目すべて、そうでなければその項目だけ */
   const targetsOf = (item: PlaylistItem) => (checked.has(item.id) ? checkedItems : [item]);
