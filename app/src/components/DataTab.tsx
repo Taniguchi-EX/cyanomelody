@@ -11,6 +11,7 @@ const SCREEN_KEYS = [
   "cyanomelody.fileSort",
   "cyanomelody.fileSort.playlist",
   "cyanomelody.listView",
+  "cyanomelody.display",
   "cyanomelody.width.side",
   "cyanomelody.width.detail",
 ];

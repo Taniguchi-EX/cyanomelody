@@ -1225,25 +1225,17 @@ export default function App() {
                 ))}
               </select>
               {/* 見せ方の切り替え：一覧（行の並び）・グリッド（タイルの格子） */}
-              <span className="view-switch" role="group" aria-label="一覧の見せ方">
-                {(
-                  [
-                    ["list", "≡", "一覧で見る"],
-                    ["grid", "▦", "グリッドで見る"],
-                  ] as const
-                ).map(([v, icon, label]) => (
-                  <button
-                    key={v}
-                    className={`icon${listView === v ? " active" : ""}`}
-                    aria-pressed={listView === v}
-                    title={label}
-                    aria-label={label}
-                    onClick={() => setStoredView(v)}
-                  >
-                    {icon}
-                  </button>
-                ))}
-              </span>
+              {/* 見せ方の切り替え（押すたびに一覧・グリッドが入れ替わる）。出す記号は、押すと切り替わる先 */}
+              <button
+                className="icon view-switch"
+                title={listView === "grid" ? "一覧で見る" : "グリッドで見る"}
+                aria-label={listView === "grid" ? "一覧で見る" : "グリッドで見る"}
+                data-view={listView}
+                data-testid="view-switch"
+                onClick={() => setStoredView(listView === "grid" ? "list" : "grid")}
+              >
+                {listView === "grid" ? "≡" : "▦"}
+              </button>
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
             {(checked.size > 0 || checkedOnly) && (

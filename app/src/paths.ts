@@ -9,3 +9,6 @@ export function todayStamp(): string {
   const d = new Date();
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/** 一覧などに出すファイル名（パスの最後）。hideExtension なら拡張子を省く（設定画面の「表示」） */
+export const displayFileName = (path: string, hideExtension: boolean) => (hideExtension ? stem(path) : baseName(path));

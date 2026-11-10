@@ -53,6 +53,32 @@ pub fn track_title(path: &Path) -> Option<String> {
     metadata.current().and_then(read_title)
 }
 
+/// ファイルの中のジャケット（アートワーク）の画像と、拡張子（jpg・png など）。表紙（front cover）があればそれ、なければ最初の画像。
+/// 形式の外側のタグ（MP3 の先頭の ID3v2 など）を先に見て、なければ形式の中のタグを見る。ないとき・読めないときは None
+pub fn track_cover(path: &Path) -> Option<(Vec<u8>, &'static str)> {
+    let mut probed = probe(path)?;
+    let pick = |revision: &MetadataRevision| -> Option<(Vec<u8>, &'static str)> {
+        let visuals = revision.visuals();
+        let visual = visuals
+            .iter()
+            .find(|v| v.usage == Some(symphonia::core::meta::StandardVisualKey::FrontCover))
+            .or_else(|| visuals.first())?;
+        let ext = match visual.media_type.to_ascii_lowercase().as_str() {
+            "image/png" => "png",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/bmp" => "bmp",
+            _ => "jpg",
+        };
+        (!visual.data.is_empty()).then(|| (visual.data.to_vec(), ext))
+    };
+    if let Some(cover) = probed.metadata.get().as_ref().and_then(|m| m.current()).and_then(pick) {
+        return Some(cover);
+    }
+    let metadata = probed.format.metadata();
+    metadata.current().and_then(pick)
+}
+
 /// 自動タグ付けに使う、ファイルの中の情報。ない項目は None
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FileMeta {

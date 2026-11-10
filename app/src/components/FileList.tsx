@@ -2,15 +2,40 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { AudioFile } from "../api";
 import { originText } from "../playlistItem";
-import { baseName } from "../paths";
+import { displayFileName } from "../paths";
+import { useDisplay } from "../displaySettings";
+import { useCover } from "../covers";
 import { useFileDrag, type FileDropTarget } from "../hooks/useFileDrag";
 import { RowTags } from "./RowTags";
 
+/** 一覧の行の高さ（文字の大きさが標準のとき。大きくすると合わせて高くする） */
 const ROW_HEIGHT = 30;
-/** グリッドのタイルの大きさと間（px） */
-const TILE_WIDTH = 160;
-const TILE_HEIGHT = 96;
-const TILE_GAP = 8;
+/** グリッドのカードの幅の下限（欄が狭くて、設定した数が入らないときは、横に並べる数を減らす） */
+const TILE_MIN_WIDTH = 130;
+
+/** グリッドの並べ方：欄の幅と、設定した横の数から、カードの幅・高さ・間を決める（欄の端に大きな余白が残らないように） */
+function gridLayout(width: number, wanted: number, textScale: number) {
+  const gap = Math.round(Math.min(16, Math.max(6, width * 0.012)));
+  const columns = Math.max(1, Math.min(wanted, Math.floor((width - gap) / (TILE_MIN_WIDTH + gap))));
+  const tileWidth = Math.max(1, Math.floor((width - gap * (columns + 1)) / columns));
+  // 上の曲名（2行）・真ん中のジャケット・下の再生ボタンの段
+  const tileHeight = Math.round(tileWidth * 0.6 + 64 * textScale);
+  return { gap, columns, tileWidth, tileHeight };
+}
+
+/** カードのジャケット（ファイルの中の画像）。ないときはタグを出す */
+function TileMedia({ file, tagStyles }: { file: AudioFile; tagStyles: Map<number, CSSProperties> }) {
+  const cover = useCover(file.id, !file.missing);
+  return cover ? (
+    <div className="tile-cover" data-testid="tile-cover">
+      <img src={cover} alt="" draggable={false} />
+    </div>
+  ) : (
+    <div className="tile-tags">
+      <RowTags tags={file.tags} tagStyles={tagStyles} />
+    </div>
+  );
+}
 
 /** 中央の一覧の見せ方：行の並び（一覧）か、格子（グリッド） */
 export type ListView = "list" | "grid";
@@ -74,30 +99,34 @@ export function FileList({
   const beginDrag = useFileDrag(onDrop);
   const parentRef = useRef<HTMLDivElement>(null);
   const grid = view === "grid";
-  // グリッドで横に並べる数（欄の幅から求める）
-  const [columns, setColumns] = useState(1);
+  const display = useDisplay();
+  // 欄の幅（グリッドの並べ方を決める）
+  const [width, setWidth] = useState(0);
   // 一覧の欄は、0件のときは出さないので、出したときに測り直す
   const empty = files.length === 0;
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
-    const update = () => setColumns(Math.max(1, Math.floor((el.clientWidth - TILE_GAP) / (TILE_WIDTH + TILE_GAP))));
+    const update = () => setWidth(el.clientWidth);
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
   }, [empty]);
-  const perRow = grid ? columns : 1;
-  // 仮想化は段（グリッドではタイルを横に並べた1段、一覧では1行）を単位にする
+  const layout = gridLayout(width, display.gridColumns, display.textScale);
+  const rowHeight = Math.round(ROW_HEIGHT * Math.max(1, display.textScale));
+  const perRow = grid ? layout.columns : 1;
+  const bandHeight = grid ? layout.tileHeight + layout.gap : rowHeight;
+  // 仮想化は段（グリッドではカードを横に並べた1段、一覧では1行）を単位にする
   const virtualizer = useVirtualizer({
     count: Math.ceil(files.length / perRow),
     getScrollElement: () => parentRef.current,
-    estimateSize: () => (grid ? TILE_HEIGHT + TILE_GAP : ROW_HEIGHT),
+    estimateSize: () => bandHeight,
     overscan: grid ? 4 : 20,
   });
   useEffect(() => {
     virtualizer.measure();
-  }, [grid, virtualizer]);
+  }, [bandHeight, virtualizer]);
   /** index 番目のファイルが見える所までスクロールする */
   const scrollTo = (index: number, align: "auto" | "center" = "auto") => virtualizer.scrollToIndex(Math.floor(index / perRow), { align });
 
@@ -165,52 +194,39 @@ export function FileList({
               if (focusedKey === f.key) classes.push("selected");
               if (checked.has(f.id)) classes.push("checked");
               if (f.missing) classes.push("missing");
-              return (
-                <div
-                  key={f.key}
-                  className={classes.join(" ")}
-                  style={
-                    grid
-                      ? { top: item.start + TILE_GAP, left: TILE_GAP + item.column * (TILE_WIDTH + TILE_GAP), width: TILE_WIDTH, height: TILE_HEIGHT }
-                      : { top: item.start, height: ROW_HEIGHT }
-                  }
-                  data-testid="file-row"
-                  data-rel-path={f.relPath}
-                  onClick={() => onFocus(f)}
-                  // ボタン・チェックボックスの上のダブルクリックは、そちらの操作だけにする
-                  onDoubleClick={(e) => {
-                    if (!f.missing && !(e.target as HTMLElement).closest("button, input, label")) onPlayFrom(f);
+              const name = f.alias ?? displayFileName(f.relPath, display.hideExtension);
+              const playButton = (
+                <button
+                  className={playing ? "play playing" : "play"}
+                  disabled={f.missing}
+                  title={playing ? "停止" : "再生"}
+                  aria-label={playing ? "停止" : "再生"}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlay(f);
                   }}
-                  onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
                 >
-                  <button
-                    className={playing ? "play playing" : "play"}
-                    disabled={f.missing}
-                    title={playing ? "停止" : "再生"}
-                    aria-label={playing ? "停止" : "再生"}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onPlay(f);
-                    }}
-                  >
-                    {playing ? "■" : "▶"}
-                  </button>
-                  {/* プレイリストを選んでいるとき：タグの組み合わせ・プレイリストの項目から来た曲に、その項目のアイコン。押すと編集画面のその行 */}
-                  {f.origin && (
-                    <button
-                      className="icon row-origin"
-                      title={origin}
-                      aria-label={origin}
-                      data-testid="row-origin"
-                      data-origin-kind={f.origin.kind}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenOrigin(f);
-                      }}
-                    >
-                      {f.origin.kind === "tags" ? "🏷" : "📃"}
-                    </button>
-                  )}
+                  {playing ? "■" : "▶"}
+                </button>
+              );
+              // プレイリストを選んでいるとき：タグの組み合わせ・プレイリストの項目から来た曲に、その項目のアイコン。押すと編集画面のその行
+              const originButton = f.origin && (
+                <button
+                  className="icon row-origin"
+                  title={origin}
+                  aria-label={origin}
+                  data-testid="row-origin"
+                  data-origin-kind={f.origin.kind}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenOrigin(f);
+                  }}
+                >
+                  {f.origin.kind === "tags" ? "🏷" : "📃"}
+                </button>
+              );
+              const marks = (
+                <>
                   {f.missing && (
                     <span className="warn" title="ファイルが見つかりません">
                       ⚠
@@ -224,24 +240,76 @@ export function FileList({
                       data-hash={f.hash ?? ""}
                     />
                   )}
-                  {/* ファイル名だけ（プレイリスト上での名前があればそれ）を出す。マウスを乗せると相対パス（サブフォルダの同じ名前を見分ける） */}
-                  <span className="file-name" title={f.relPath} data-testid="file-name">
-                    {f.alias ?? baseName(f.relPath)}
-                  </span>
-                  <RowTags tags={f.tags} tagStyles={tagStyles} />
-                  {playing && (
-                    <div className="row-progress" data-testid="row-progress" style={{ width: `${progress * 100}%` }} />
+                </>
+              );
+              // ファイル名だけ（プレイリスト上での名前があればそれ）を出す。マウスを乗せると相対パス（サブフォルダの同じ名前を見分ける）
+              const nameLabel = (
+                <span className="file-name" title={f.relPath} data-testid="file-name">
+                  {name}
+                </span>
+              );
+              const progressBar = playing && (
+                <div className="row-progress" data-testid="row-progress" style={{ width: `${progress * 100}%` }} />
+              );
+              const checkCell = (
+                <label className="check-cell" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={checked.has(f.id)}
+                    onChange={() => {}}
+                    onClick={(e) => onCheck(item.index, e.shiftKey)}
+                    aria-label={`${f.relPath}をチェック`}
+                    data-testid="file-check"
+                  />
+                </label>
+              );
+              return (
+                <div
+                  key={f.key}
+                  className={classes.join(" ")}
+                  style={
+                    grid
+                      ? {
+                          top: item.start + layout.gap,
+                          left: layout.gap + item.column * (layout.tileWidth + layout.gap),
+                          width: layout.tileWidth,
+                          height: layout.tileHeight,
+                        }
+                      : { top: item.start, height: rowHeight }
+                  }
+                  data-testid="file-row"
+                  data-rel-path={f.relPath}
+                  onClick={() => onFocus(f)}
+                  // ボタン・チェックボックスの上のダブルクリックは、そちらの操作だけにする
+                  onDoubleClick={(e) => {
+                    if (!f.missing && !(e.target as HTMLElement).closest("button, input, label")) onPlayFrom(f);
+                  }}
+                  onPointerDown={(e) => beginDrag(e, checked.has(f.id) ? [...checked] : [f.id])}
+                >
+                  {grid ? (
+                    // カード：上に曲名、真ん中にジャケット（なければタグ）、左下に再生ボタン・来た項目・印、右下にチェック
+                    <>
+                      {nameLabel}
+                      <TileMedia file={f} tagStyles={tagStyles} />
+                      <div className="tile-foot">
+                        {playButton}
+                        {originButton}
+                        {marks}
+                        {checkCell}
+                      </div>
+                      {progressBar}
+                    </>
+                  ) : (
+                    <>
+                      {playButton}
+                      {originButton}
+                      {marks}
+                      {nameLabel}
+                      <RowTags tags={f.tags} tagStyles={tagStyles} />
+                      {progressBar}
+                      {checkCell}
+                    </>
                   )}
-                  <label className="check-cell" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={checked.has(f.id)}
-                      onChange={() => {}}
-                      onClick={(e) => onCheck(item.index, e.shiftKey)}
-                      aria-label={`${f.relPath}をチェック`}
-                      data-testid="file-check"
-                    />
-                  </label>
                 </div>
               );
             })}

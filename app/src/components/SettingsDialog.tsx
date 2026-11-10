@@ -6,6 +6,7 @@ import { DEFAULT_BG, DEFAULT_FG, SORTS } from "../tagSettings";
 import { ColorRow } from "./TagDetail";
 import { LicenseTab } from "./LicenseTab";
 import { DataTab } from "./DataTab";
+import { DisplayTab } from "./DisplayTab";
 
 type Props = {
   onClose: () => void;
@@ -16,6 +17,7 @@ type Props = {
 
 const TABS = [
   { key: "general", label: "一般" },
+  { key: "display", label: "表示" },
   { key: "data", label: "データ" },
   { key: "license", label: "バージョンとライセンス" },
 ] as const;
@@ -50,6 +52,7 @@ export function SettingsDialog({ onClose, onError, onImported }: Props) {
         </div>
         <div className="tab-body" role="tabpanel">
           {tab === "general" && <GeneralTab onError={onError} />}
+          {tab === "display" && <DisplayTab />}
           {tab === "data" && <DataTab onError={onError} onImported={onImported} />}
           {tab === "license" && <LicenseTab onError={onError} />}
         </div>

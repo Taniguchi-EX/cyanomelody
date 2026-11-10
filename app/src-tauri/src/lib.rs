@@ -52,6 +52,8 @@ struct AppState {
     hashing: Arc<HashJob>,
     /// エフェクトをかけた音の置き場所
     effect_cache: PathBuf,
+    /// ファイルの中のジャケットを書き出しておく場所（グリッドのタイルに出す）
+    cover_cache: PathBuf,
     export: Arc<ExportJob>,
     autotag: Arc<AutotagJob>,
     /// 選んでいるプレイリストと、抽選したときの中身の版（抽選した並びは DB の一時テーブルにある）
@@ -835,6 +837,45 @@ async fn set_playlist_item_chain(state: State<'_, AppState>, item_id: i64, chain
 }
 
 /// ファイルの絶対パス
+/// ファイルの中のジャケットの画像のパス（書き出しておいたもの）。ジャケットがなければ None。
+/// ファイルの大きさ・更新日時が同じなら、前に書き出したものを使う（ないことも覚えておき、読み直さない）
+#[tauri::command]
+async fn track_cover(state: State<'_, AppState>, file_id: i64) -> Result<Option<String>> {
+    let (path, size, modified): (PathBuf, i64, i64) = {
+        let conn = state.conn();
+        let (size, modified) = conn
+            .query_row("SELECT size, modified_at FROM audio_files WHERE id = ?1", [file_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|_| Error::invalid("ファイルが見つかりません"))?;
+        (file_path(&conn, file_id)?, size, modified)
+    };
+    let base = format!("{file_id}-{size}-{modified}");
+    // 前に調べた結果（画像か、ないことの印）
+    for ext in ["jpg", "png", "gif", "webp", "bmp"] {
+        let p = state.cover_cache.join(format!("{base}.{ext}"));
+        if p.exists() {
+            return Ok(Some(p.to_string_lossy().into_owned()));
+        }
+    }
+    let none_mark = state.cover_cache.join(format!("{base}.none"));
+    if none_mark.exists() {
+        return Ok(None);
+    }
+    match metadata::track_cover(&path) {
+        Some((data, ext)) => {
+            let out = state.cover_cache.join(format!("{base}.{ext}"));
+            std::fs::write(&out, data)?;
+            Ok(Some(out.to_string_lossy().into_owned()))
+        }
+        None => {
+            // 見つからないファイル（読めない）では印を残さない（戻ってきたら読み直す）
+            if path.exists() {
+                std::fs::write(&none_mark, [])?;
+            }
+            Ok(None)
+        }
+    }
+}
+
 fn file_path(conn: &Connection, file_id: i64) -> Result<PathBuf> {
     let (folder, rel): (String, String) = conn
         .query_row(
@@ -986,10 +1027,15 @@ pub fn run() {
             std::fs::create_dir_all(&effect_cache)?;
             // エフェクトをかけた音を画面から鳴らせるようにする
             allow_asset_dir(app.handle(), &effect_cache);
+            let cover_cache = dir.join("covers");
+            std::fs::create_dir_all(&cover_cache)?;
+            // ジャケットの画像を画面から出せるようにする
+            allow_asset_dir(app.handle(), &cover_cache);
             app.manage(AppState {
                 conn: Mutex::new(conn),
                 hashing: Arc::new(HashJob::default()),
                 effect_cache,
+                cover_cache,
                 export: Arc::new(ExportJob::default()),
                 autotag: Arc::new(AutotagJob::default()),
                 draw: Mutex::new(None),
@@ -1027,6 +1073,7 @@ pub fn run() {
             cancel_hashing,
             hashing_progress,
             track_title,
+            track_cover,
             check_update,
             meta_ignore_values,
             delete_files,

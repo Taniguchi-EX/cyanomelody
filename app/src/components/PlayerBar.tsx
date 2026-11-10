@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useDisplay } from "../displaySettings";
 import { api } from "../api";
 import type { EffectChain } from "../effects";
 import { stem } from "../paths";
@@ -92,6 +93,9 @@ export function PlayerBar({
   onJump,
   onOpenSettings,
 }: Props) {
+  // ファイル名（相対パス）は、設定画面の「表示」で拡張子を省くことにしていれば省く
+  const { hideExtension } = useDisplay();
+  const shownPath = (rel: string) => (hideExtension ? rel.replace(/\.[^./]+$/, "") : rel);
   const entry = player?.queue[player.index];
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
   const playing = entry ?? previewFile;
@@ -165,7 +169,7 @@ export function PlayerBar({
         {/* 2行目：ファイル名（相対パス）と、プレイリスト名・何曲目（試聴なら「試聴」） */}
         {player && (
           <div className="sub play-where">
-            {entry && <span data-testid="player-file-name">{entry.relPath}</span>}
+            {entry && <span data-testid="player-file-name">{shownPath(entry.relPath)}</span>}
             <span className="player-name">{player.name}</span>
             <span data-testid="player-position">
               {player.index + 1}/{player.queue.length}
@@ -179,7 +183,7 @@ export function PlayerBar({
         )}
         {!player && previewFile && (
           <div className="sub play-where">
-            <span data-testid="player-file-name">{previewFile.relPath}</span>
+            <span data-testid="player-file-name">{shownPath(previewFile.relPath)}</span>
             <span data-testid="player-preview">試聴</span>
           </div>
         )}
