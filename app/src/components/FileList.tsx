@@ -160,6 +160,8 @@ export function FileList({
               const classes = ["file-row"];
               if (grid) classes.push("file-tile");
               const playing = playingKey === f.key;
+              // 来た項目の説明（アイコンの title と読み上げの名前に使う）。1行に1回だけ作る
+              const origin = f.origin ? originText(f) : "";
               if (focusedKey === f.key) classes.push("selected");
               if (checked.has(f.id)) classes.push("checked");
               if (f.missing) classes.push("missing");
@@ -197,8 +199,8 @@ export function FileList({
                   {f.origin && (
                     <button
                       className="icon row-origin"
-                      title={originText(f)}
-                      aria-label={originText(f)}
+                      title={origin}
+                      aria-label={origin}
                       data-testid="row-origin"
                       data-origin-kind={f.origin.kind}
                       onClick={(e) => {
