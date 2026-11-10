@@ -393,7 +393,7 @@ await step("P21", "再生方法のボタン：押すたびに 一曲だけ→順
     expect(await page.getByRole("button", { name, exact: true }).isDisabled(), `${name}が押せる`);
   }
   const order = await page.locator(".play-buttons button").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label")).join(","));
-  expect(order === "前へ,再生を始める,次へ,再生方法,停止", order);
+  expect(order === "10秒戻す,10秒進める,前へ,再生を始める,次へ,再生方法,停止", order);
   await select("ドラッグ");
   await startPlay();
   await page.waitForFunction(() => document.querySelector("audio").duration > 0, null, { timeout: 5000 });
@@ -460,7 +460,7 @@ await step("P25", "左の欄の行は開閉の印・名前・✎・🗑・数の
   await open("消す用");
   await addCombo(["雨"]);
   const foot = page.locator(".editor-foot");
-  expect((await foot.getByRole("button", { name: "書出" }).count()) === 1, "書出が下の行にない");
+  expect((await foot.getByRole("button", { name: "ファイル", exact: true }).count()) === 1, "書き出しのファイルが下の行にない");
   await itemRow("雨").locator(".item-content").click();
   expect((await itemRow("雨").getAttribute("class")).includes("selected"), "押した行に色が付かない");
   await page.getByRole("button", { name: "雨のプレイリスト上での名前を付ける" }).click();
@@ -589,7 +589,7 @@ await step("P32", "編集画面の項目のチェック：まとめて外せる�
   expect((await page.getByLabel("風の再生方法").inputValue()) === "shuffle", "チェックした項目すべてに効かない");
   expect((await page.getByLabel("ドラッグの再生方法").inputValue()) === "order", "チェックしていない項目まで変わった");
   await shot("P32_項目のチェック");
-  await page.getByRole("button", { name: "まとめて外す" }).click();
+  await page.getByRole("button", { name: "プレイリストから外す" }).click();
   await waitIdle();
   expect((await ui.lastConfirm()).includes("チェックした2件の項目"), await ui.lastConfirm());
   expect((await items()).join(" / ") === "プレイリスト:ドラッグ", (await items()).join(" / "));
@@ -734,13 +734,13 @@ await step("P44", "抽選：🎲の項目は1曲だけ出て、読み直して�
   expect((await rainRows()) === 3, `編集で抽選し直さない ${await rainRows()}`);
 });
 
-await step("P45", "書出は編集画面から：中央の一覧に出ている曲（絞り込みと並び順のとおり）を書き出す", async () => {
+await step("P45", "書き出しは編集画面から：チェックがなければすべての項目の曲を書き出す（中央の一覧の絞り込みにはよらない）", async () => {
   const out = path.join(shotDir, "export-out");
   fs.rmSync(out, { recursive: true, force: true });
   fs.mkdirSync(out, { recursive: true });
   await select("ドラッグ");
-  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
   const shown = await rels();
+  await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
   await open("ドラッグ");
   await ui.setDialogReply(out);
   await page.locator(".editor-foot").getByRole("button", { name: "ファイル", exact: true }).click();

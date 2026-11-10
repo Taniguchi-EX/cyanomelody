@@ -12,7 +12,7 @@ const { page, step, shot, status, row, tagItem, waitIdle } = ui;
 const dialog = () => page.getByTestId("autotag-dialog");
 const ignoreValues = () => dialog().getByTestId("ignore-values").locator("li").evaluateAll((ls) => ls.map((l) => l.dataset.value));
 const tree = () => page.getByTestId("tag").evaluateAll((rows) => rows.map((r) => `${r.dataset.tagName}:${r.dataset.depth}`).join(" "));
-const tagsOf = (rel) => row(rel).locator(".chip").allInnerTexts();
+const tagsOf = (rel) => row(rel).locator(".tag-chip").allInnerTexts();
 async function openFromDetail(rel) {
   await row(rel).click();
   await page.getByTestId("detail-panel").getByRole("button", { name: "ファイルの情報からタグを付ける" }).click();

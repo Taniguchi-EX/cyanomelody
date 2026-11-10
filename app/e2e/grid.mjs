@@ -9,23 +9,24 @@ const formats = path.join(dataDir, "formats");
 const ui = await connect(shotDir);
 const { page, step, shot, row, tagItem, waitIdle, addFolder, addTag } = ui;
 
-const gridButton = () => page.getByRole("button", { name: "グリッドで見る" });
-const listButton = () => page.getByRole("button", { name: "一覧で見る" });
+// 見せ方の切り替えは1つのボタン（押すたびに一覧・グリッドが入れ替わる。data-view は今の見せ方）
+const viewSwitch = () => page.getByTestId("view-switch");
 const tiles = () => page.locator("[data-testid=file-row].file-tile");
 const rels = () => page.getByTestId("file-row").evaluateAll((rows) => rows.map((r) => r.dataset.relPath));
 /** 押した（右の欄に出している）タイルの相対パス */
 const selected = () => page.locator("[data-testid=file-row].selected").getAttribute("data-rel-path");
 
-await step("G01", "準備：フォルダを登録する。最初は一覧で、「≡」が押した状態", async () => {
+await step("G01", "準備：フォルダを登録する。最初は一覧で、切り替えのボタンはグリッドの絵", async () => {
   await addFolder(formats);
   await row("chime.wav").click();
   await addTag("雨");
-  expect((await listButton().getAttribute("aria-pressed")) === "true", "最初が一覧でない");
+  expect((await viewSwitch().getAttribute("data-view")) === "list", "最初が一覧でない");
+  expect((await viewSwitch().getAttribute("aria-label")) === "グリッドで見る", await viewSwitch().getAttribute("aria-label"));
   expect((await tiles().count()) === 0, "最初からタイルになっている");
 });
 
-await step("G02", "「▦」でグリッドになり、タイルが横に並ぶ（曲名・タグ・再生ボタン・チェック）。再読み込み後も残る", async () => {
-  await gridButton().click();
+await step("G02", "切り替えのボタンでグリッドになり、タイルが横に並ぶ（曲名・タグ・再生ボタン・チェック）。再読み込み後も残る", async () => {
+  await viewSwitch().click();
   await tiles().first().waitFor({ timeout: 3000 });
   expect((await tiles().count()) === 5, `${await tiles().count()}`);
   const boxes = await tiles().evaluateAll((ts) => ts.map((t) => t.getBoundingClientRect()).map((r) => ({ x: Math.round(r.x), y: Math.round(r.y) })));
@@ -38,7 +39,7 @@ await step("G02", "「▦」でグリッドになり、タイルが横に並ぶ�
   await shot("G02_グリッド");
   await ui.reload();
   await tiles().first().waitFor({ timeout: 3000 });
-  expect((await gridButton().getAttribute("aria-pressed")) === "true", "再読み込みで一覧に戻った");
+  expect((await viewSwitch().getAttribute("data-view")) === "grid", "再読み込みで一覧に戻った");
 });
 
 await step("G03", "タイルを押すと右の欄に出る。←→で前後、↑↓で1段上下に移る", async () => {
@@ -78,8 +79,8 @@ await step("G05", "チェックしたタイルを左の欄のタグにドラッ�
   await waitIdle();
 });
 
-await step("G06", "「≡」で一覧に戻る", async () => {
-  await listButton().click();
+await step("G06", "切り替えのボタンで一覧に戻る", async () => {
+  await viewSwitch().click();
   await page.waitForFunction(() => document.querySelectorAll("[data-testid=file-row].file-tile").length === 0, null, { timeout: 3000 });
   expect((await page.getByTestId("file-row").count()) === 5, `${await page.getByTestId("file-row").count()}`);
 });

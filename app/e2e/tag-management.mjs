@@ -328,7 +328,7 @@ await step("T25", "左の欄の並び（ライブラリ・タグ・プレイリ�
   expect((await page.locator(".list-head").count()) === 0, "一覧の見出しの行が残っている");
   // フォルダを選ぶと、条件のチップが出る
   await ui.filtered(() => page.getByTestId("folder").first().click());
-  expect((await bar.getByTestId("filter-chips").count()) === 1, "条件のチップが左の欄にない");
+  expect((await page.getByTestId("filter-dock").getByTestId("filter-chips").count()) === 1, "条件のチップが左の欄の下にない");
   // 検索の欄の右の「✕」（すべて解除）はない。条件はチップで外す
   expect((await page.getByRole("button", { name: "すべて解除" }).count()) === 0, "すべて解除が残っている");
   // 左の欄を高くしてスクロールしても、絞り込みの部分は一番上に残る

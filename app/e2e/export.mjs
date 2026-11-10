@@ -100,21 +100,23 @@ await step("X06", "書き出し終わると、書き出したフォルダがリ�
   expect(text === path.join(out, "TRPG_ 第1話"), text);
 });
 
-await step("X07", "中央の一覧に出ている曲だけを、見えている順に書き出す（タグで絞り込むと、その曲だけ）", async () => {
+await step("X07", "チェックした項目の曲だけを書き出す（中央の一覧の絞り込みにはよらない）。書き出しの説明にチェックした件数が出る", async () => {
+  // チェックしていない項目（激しめの雨）の曲が、中央の一覧の絞り込みで見えていても書き出さない
   await closeEditor();
-  await row("chime.mp3").waitFor({ timeout: 3000 });
-  // シーン1の chime.mp3 だけになるよう、ファイル名で絞り込む
-  await ui.filtered(() => page.getByLabel("ファイル名で検索").fill("mp3"));
-  expect((await ui.fileCount()) === 1, `${await ui.fileCount()}`);
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill("wav"));
   await openPlaylist("TRPG: 第1話");
+  await page.getByLabel("シーン1をチェック").check();
+  const foot = await page.locator(".editor-foot").innerText();
+  expect(foot.includes("チェックした1件の項目"), foot);
   await exportTo(out);
   await page.waitForFunction(() => document.querySelector("[data-testid=export-status]")?.textContent?.includes("（1件）"), null, {
     timeout: 30000,
   });
   const root = path.join(out, "TRPG_ 第1話 (2)");
   expect(fs.existsSync(path.join(root, "001_シーン1", "001_chime.wav")), fs.readdirSync(root).join(","));
-  expect(!fs.existsSync(path.join(root, "001_激しめの雨.wav")), "絞り込みで隠れた曲まで書き出した");
+  expect(!fs.existsSync(path.join(root, "001_激しめの雨.wav")), "チェックしていない項目の曲まで書き出した");
   await closeEditor();
+  await ui.filtered(() => page.getByLabel("ファイル名で検索", { exact: true }).fill(""));
 });
 
 await ui.finish();

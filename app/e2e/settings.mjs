@@ -31,7 +31,7 @@ await step("S01", "再生の欄の右端の歯車で設定画面が開き、「�
   expect(Math.abs(gearBox.x + gearBox.width - right) < 1 && gearBox.x > volumeBox.x, "歯車が右端にない");
   await openSettings();
   const tabs = await dialog().getByRole("tab").allInnerTexts();
-  expect(tabs.join(",") === "一般,データ,バージョンとライセンス", tabs.join(","));
+  expect(tabs.join(",") === "一般,表示,データ,バージョンとライセンス", tabs.join(","));
   expect((await tab("一般").getAttribute("aria-selected")) === "true", "最初が一般でない");
   await page.keyboard.press("Escape");
   await dialog().waitFor({ state: "detached", timeout: 3000 });
@@ -163,7 +163,7 @@ await step("S04", "データ：選んだ項目を JSON に書き出し、取り�
   // 書き出した後に作ったタグは消え、書き出したタグ（S02 で作ったものと「雨」）に戻る
   const tags = await ui.tagNames();
   expect(tags.join(",") === "前からある,後から作った,雨", `タグ ${tags.join(",")}`);
-  expect((await ui.row("chime.wav").locator(".chip").allInnerTexts()).join(",") === "雨", "タグ付けが戻らない");
+  expect((await ui.row("chime.wav").locator(".tag-chip").allInnerTexts()).join(",") === "雨", "タグ付けが戻らない");
   // 足す（プレイリスト）：同じ名前は「(2)」で作る
   await openSettings();
   await tab("データ").click();
