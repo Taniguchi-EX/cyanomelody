@@ -560,12 +560,18 @@ struct ExportSummary {
 }
 
 /// データのエクスポート：選んだ項目を path に JSON で書き出す。screen は画面の設定
+/// データ（エクスポートの JSON）を path に書く
+fn write_json(path: &str, data: &transfer::DataFile) -> Result<()> {
+    let json = serde_json::to_string_pretty(data).map_err(|e| Error::invalid(e.to_string()))?;
+    std::fs::write(path, json)?;
+    Ok(())
+}
+
 /// 選んだファイル（一括操作の対象）のメタデータを、データのエクスポートと同じ形で path に書き出す。書き出した曲の数を返す
 #[tauri::command]
 async fn export_metadata(app: AppHandle, state: State<'_, AppState>, path: String, file_ids: Vec<i64>) -> Result<usize> {
     let data = transfer::export_metadata(&state.conn(), &file_ids, &app.package_info().version.to_string())?;
-    let json = serde_json::to_string_pretty(&data).map_err(|e| Error::invalid(e.to_string()))?;
-    std::fs::write(&path, json)?;
+    write_json(&path, &data)?;
     Ok(data.files.len())
 }
 
@@ -578,8 +584,7 @@ async fn export_data(
     screen: Option<serde_json::Map<String, serde_json::Value>>,
 ) -> Result<ExportSummary> {
     let data = transfer::export(&state.conn(), sections, &app.package_info().version.to_string(), screen)?;
-    let json = serde_json::to_string_pretty(&data).map_err(|e| Error::invalid(e.to_string()))?;
-    std::fs::write(&path, json)?;
+    write_json(&path, &data)?;
     Ok(ExportSummary {
         folders: data.folders.len(),
         files: data.files.len(),
@@ -937,17 +942,8 @@ async fn refresh_draw(state: State<'_, AppState>) -> Result<DrawRefresh> {
 /// プレイリストを書き出し始める。rows は抽選した並びの行の番号（中央の一覧に見えている順）
 #[tauri::command]
 async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, rows: Vec<i64>, dest: String) -> Result<String> {
-    let job = state.export.clone();
-    if job.running.swap(true, Ordering::SeqCst) {
-        return Err(Error::invalid("ほかの書き出しをしているところです"));
-    }
-    match export::prepare(&state.conn(), id, &rows, Path::new(dest.trim())) {
-        Ok((root, tasks)) => Ok(spawn_export(app, job, root, tasks, 0)),
-        Err(e) => {
-            job.running.store(false, Ordering::SeqCst);
-            Err(e)
-        }
-    }
+    let prepared = || export::prepare(&state.conn(), id, &rows, Path::new(dest.trim())).map(|(root, tasks)| (root, tasks, 0));
+    start_export_job(app, state.export.clone(), prepared)
 }
 
 /// 選んだファイル（一括操作の対象）を、dest の中に作るフォルダ（folder_name）へ、そのままコピーし始める。
@@ -960,15 +956,28 @@ async fn start_export_files(
     dest: String,
     folder_name: String,
 ) -> Result<String> {
-    let job = state.export.clone();
+    let prepared = || {
+        export::prepare_files(&state.conn(), &file_ids, Path::new(dest.trim()), &folder_name).map(|(root, tasks)| {
+            // 見つからないファイルは書き出す一覧に入らないので、書き出せなかった数として数える
+            let skipped = file_ids.len().saturating_sub(tasks.len());
+            (root, tasks, skipped)
+        })
+    };
+    start_export_job(app, state.export.clone(), prepared)
+}
+
+/// 書き出しを始める（プレイリストの書出と、選んだファイルの書出で共通）。同時に1つだけ。
+/// prepare で書き出し先と書き出す一覧（と、最初から書き出せないと分かっている数）を決め、失敗したら始めない
+fn start_export_job(
+    app: AppHandle,
+    job: Arc<ExportJob>,
+    prepare: impl FnOnce() -> Result<(PathBuf, Vec<export::Task>, usize)>,
+) -> Result<String> {
     if job.running.swap(true, Ordering::SeqCst) {
         return Err(Error::invalid("ほかの書き出しをしているところです"));
     }
-    match export::prepare_files(&state.conn(), &file_ids, Path::new(dest.trim()), &folder_name) {
-        Ok((root, tasks)) => {
-            let skipped = file_ids.len().saturating_sub(tasks.len());
-            Ok(spawn_export(app, job, root, tasks, skipped))
-        }
+    match prepare() {
+        Ok((root, tasks, skipped)) => Ok(spawn_export(app, job, root, tasks, skipped)),
         Err(e) => {
             job.running.store(false, Ordering::SeqCst);
             Err(e)
@@ -976,8 +985,7 @@ async fn start_export_files(
     }
 }
 
-/// 書き出しを裏で行う（プレイリストの書出と、選んだファイルの書出で共通）。skipped は最初から書き出せないと分かっている数。
-/// 書き出し先のフォルダのパスを返す
+/// 書き出しを裏で行う。skipped は最初から書き出せないと分かっている数。書き出し先のフォルダのパスを返す
 fn spawn_export(app: AppHandle, job: Arc<ExportJob>, root: PathBuf, tasks: Vec<export::Task>, skipped: usize) -> String {
     job.cancel.store(false, Ordering::SeqCst);
     let folder = root.to_string_lossy().into_owned();
