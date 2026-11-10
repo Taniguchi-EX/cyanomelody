@@ -433,7 +433,10 @@ export const playlistApi = {
   removeFiles: (id: number, fileIds: number[]) => invoke<number>("remove_files_from_playlist", { id, fileIds }),
   /** dest の中に書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" で届く */
   /** rows は抽選した並びの行の番号（中央の一覧に見えている順） */
-  startExport: (id: number, rows: number[], dest: string) => invoke<string>("start_export", { id, rows, dest }),
+  /** プレイリストを書き出し始める。items は書き出す項目（直下。空ならすべて）。🎲・🔀の項目は抽選し直す */
+  startExport: (id: number, items: number[], dest: string) => invoke<string>("start_export", { id, items, dest }),
+  /** 抽選し直して、items の項目（空ならすべて）から来るファイル（メタデータの書き出しの対象） */
+  drawItemFiles: (id: number, items: number[]) => invoke<number[]>("draw_item_files", { id, items }),
   /** プレイリストを選んで抽選する */
   select: (id: number) => invoke<void>("select_playlist", { id }),
   clearSelection: () => invoke<void>("clear_playlist_selection"),

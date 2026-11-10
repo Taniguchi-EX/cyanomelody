@@ -296,6 +296,13 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     if (audio && Number.isFinite(audio.duration)) audio.currentTime = audio.duration * Math.min(Math.max(ratio, 0), 1);
   };
 
+  /** 今の位置から seconds 秒動かす（負なら戻す）。曲の頭と終わりで止める */
+  const seekBy = (seconds: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration)) return;
+    audio.currentTime = Math.min(Math.max(audio.currentTime + seconds, 0), audio.duration);
+  };
+
   const togglePause = () => {
     const audio = audioRef.current;
     const p = playerRef.current;
@@ -337,6 +344,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     togglePause,
     time,
     seek,
+    seekBy,
     volume,
     setVolume,
     commitVolume,

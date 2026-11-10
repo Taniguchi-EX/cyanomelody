@@ -43,9 +43,9 @@ type Props = {
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
   /** dest の中に書き出し始める（中央の一覧に出ている曲を書き出す）。始められたら true */
-  onExport: (dest: string) => Promise<boolean>;
+  onExport: (dest: string, items: number[]) => Promise<boolean>;
   /** 書き出しの「メタデータ」：中央の一覧に出ている曲のメタデータを JSON に書き出す（保存先を選ぶ） */
-  onExportMetadata: () => void;
+  onExportMetadata: (items: number[]) => void;
   /** フォルダを選ぶダイアログを出し、選んだパスを返す（キャンセルなら null）。defaultPath は最初に開くフォルダ */
   onBrowseFolder: (defaultPath?: string) => Promise<string | null>;
   onError: (e: unknown) => void;
@@ -174,10 +174,12 @@ export function PlaylistEditor({
   // 前に書き出したフォルダ（フォルダを選ぶダイアログを、そこから開く）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
 
+  /** 書き出す項目：チェックした項目（チェックがなければすべて。空で渡す） */
+  const exportItems = checkedItems.map((i) => i.id);
   /** 書き出しの「ファイル」：書き出し先のフォルダを選ぶダイアログをすぐ出し、選んだら書き出し始める（一括操作と同じ） */
   const startExport = async () => {
     const dest = await onBrowseFolder(lastDest || undefined);
-    if (dest && (await onExport(dest))) setLastDest(dest);
+    if (dest && (await onExport(dest, exportItems))) setLastDest(dest);
   };
   // 項目の並べ替え（行のドラッグ。前・後ろだけ）
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -305,7 +307,7 @@ export function PlaylistEditor({
                   }}
                   disabled={busy}
                 >
-                  まとめて外す
+                  プレイリストから外す
                 </button>
               </div>
             )}
@@ -512,10 +514,13 @@ export function PlaylistEditor({
             <button onClick={startExport} disabled={busy} title="エフェクトをかけた音を、階層をフォルダにして書き出す（書き出し先のフォルダを選ぶ）">
               ファイル
             </button>
-            <button onClick={onExportMetadata} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">
+            <button onClick={() => onExportMetadata(exportItems)} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">
               メタデータ
             </button>
-            <span className="sub">どちらも、中央の一覧に出ている曲（絞り込みと並び順のとおり）が対象です</span>
+            <span className="sub">
+              どちらも、{checkedItems.length > 0 ? `チェックした${checkedItems.length}件の項目` : "すべての項目"}
+              が対象です。🎲・🔀の項目は書き出すときに抽選し直します
+            </span>
           </div>
         </div>
       </div>

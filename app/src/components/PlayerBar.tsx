@@ -19,6 +19,8 @@ type Props = {
   playMode: PlayerMode;
   onPlayMode: (mode: PlayerMode) => void;
   onSeek: (ratio: number) => void;
+  /** 今の位置から秒数だけ動かす（負なら戻す） */
+  onSeekBy: (seconds: number) => void;
   onPrev: () => void;
   onNext: () => void;
   onTogglePause: () => void;
@@ -69,6 +71,14 @@ const PAUSE_ICON = (
   </svg>
 );
 
+/** 「戻す」「進める」の記号：丸い矢印（back なら左回り） */
+const skipIcon = (back: boolean) => (
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" style={back ? undefined : { transform: "scaleX(-1)" }}>
+    <path d="M7 3.2 A5 5 0 1 1 3.2 6.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    <path d="M7.6 1 L4.6 3.3 L7.6 5.6 Z" fill="currentColor" />
+  </svg>
+);
+
 export function PlayerBar({
   player,
   time,
@@ -77,6 +87,7 @@ export function PlayerBar({
   playMode,
   onPlayMode,
   onSeek,
+  onSeekBy,
   onPrev,
   onNext,
   onTogglePause,
@@ -94,7 +105,7 @@ export function PlayerBar({
   onOpenSettings,
 }: Props) {
   // ファイル名（相対パス）は、設定画面の「表示」で拡張子を省くことにしていれば省く
-  const { hideExtension } = useDisplay();
+  const { hideExtension, skipSeconds } = useDisplay();
   const shownPath = (rel: string) => (hideExtension ? rel.replace(/\.[^./]+$/, "") : rel);
   const entry = player?.queue[player.index];
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
@@ -202,6 +213,16 @@ export function PlayerBar({
             >
               ⏮
             </button>
+            <button
+              className="icon play-skip"
+              onClick={() => onSeekBy(-skipSeconds)}
+              disabled={!playing}
+              title={`${skipSeconds}秒戻す`}
+              aria-label={`${skipSeconds}秒戻す`}
+              data-testid="skip-back"
+            >
+              {skipIcon(true)}
+            </button>
           </div>
           <button
             className="play-main"
@@ -213,6 +234,16 @@ export function PlayerBar({
             {main.icon}
           </button>
           <div className="play-side-right">
+            <button
+              className="icon play-skip"
+              onClick={() => onSeekBy(skipSeconds)}
+              disabled={!playing}
+              title={`${skipSeconds}秒進める`}
+              aria-label={`${skipSeconds}秒進める`}
+              data-testid="skip-forward"
+            >
+              {skipIcon(false)}
+            </button>
             <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
               ⏭
             </button>

@@ -7,6 +7,7 @@ import { ColorRow } from "./TagDetail";
 import { LicenseTab } from "./LicenseTab";
 import { DataTab } from "./DataTab";
 import { DisplayTab } from "./DisplayTab";
+import { setDisplay, SKIP_SECONDS_MAX, SKIP_SECONDS_MIN, useDisplay } from "../displaySettings";
 
 type Props = {
   onClose: () => void;
@@ -61,13 +62,45 @@ export function SettingsDialog({ onClose, onError, onImported }: Props) {
   );
 }
 
-/** 一般：新しく作るタグの既定値。変えるとすぐに保存する */
+/** 一般：再生の「戻す」「進める」の秒数と、新しく作るタグの既定値。変えるとすぐに保存する */
 function GeneralTab({ onError }: { onError: (e: unknown) => void }) {
+  const display = useDisplay();
+  // 入力中の値（空や範囲外も入れられるように、欄を離れたときに範囲に収めて保存する）
+  const [skipText, setSkipText] = useState(String(display.skipSeconds));
+  const commitSkip = () => {
+    const n = Math.round(Number(skipText));
+    const seconds = Number.isFinite(n) && skipText.trim() !== "" ? Math.min(Math.max(n, SKIP_SECONDS_MIN), SKIP_SECONDS_MAX) : display.skipSeconds;
+    setDisplay({ skipSeconds: seconds });
+    setSkipText(String(seconds));
+  };
+  const skipSection = (
+    <section>
+      <h3>再生</h3>
+      <div className="form-grid">
+        <label htmlFor="skip-seconds">戻す・進める秒数</label>
+        <span className="row">
+          <input
+            id="skip-seconds"
+            type="number"
+            min={SKIP_SECONDS_MIN}
+            max={SKIP_SECONDS_MAX}
+            value={skipText}
+            onChange={(e) => setSkipText(e.target.value)}
+            onBlur={commitSkip}
+            onKeyDown={(e) => e.key === "Enter" && commitSkip()}
+            style={{ width: "6em" }}
+            data-testid="skip-seconds"
+          />
+          秒
+        </span>
+      </div>
+    </section>
+  );
   const [settings, setSettings] = useState<TagSettings | null>(null);
   useEffect(() => {
     api.newTagSettings().then(setSettings).catch(onError);
   }, [onError]);
-  if (!settings) return null;
+  if (!settings) return skipSection;
   const update = (patch: Partial<TagSettings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
@@ -75,58 +108,61 @@ function GeneralTab({ onError }: { onError: (e: unknown) => void }) {
   };
   const fixedSort = settings.childSort === null || settings.childSort === "manual";
   return (
-    <section>
-      <h3>新しく作るタグ</h3>
-      <p className="sub">タグを作ったときの、子のタグの並び順と色です。今あるタグは変わりません。</p>
-      <div className="form-grid">
-        <label htmlFor="new-tag-sort">子のタグの並び順</label>
-        <span className="row">
-          <select
-            id="new-tag-sort"
-            value={settings.childSort ?? ""}
-            onChange={(e) => update({ childSort: (e.target.value || null) as ChildSort | null })}
-          >
-            {SORTS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="昇順・降順"
-            value={settings.childSortDesc ? "desc" : "asc"}
-            disabled={fixedSort}
-            onChange={(e) => update({ childSortDesc: e.target.value === "desc" })}
-          >
-            <option value="asc">昇順</option>
-            <option value="desc">降順</option>
-          </select>
-        </span>
-        <ColorRow
-          id="new-tag-bg"
-          label="背景色"
-          value={settings.bgColor}
-          fallback={DEFAULT_BG}
-          onChange={(bgColor) => update({ bgColor })}
-        />
-        <ColorRow
-          id="new-tag-fg"
-          label="文字色"
-          value={settings.fgColor}
-          fallback={DEFAULT_FG}
-          onChange={(fgColor) => update({ fgColor })}
-        />
-        <span>見本</span>
-        <span>
-          <span
-            className="chip tag-sample"
-            data-testid="new-tag-sample"
-            style={{ background: settings.bgColor ?? undefined, color: settings.fgColor ?? undefined }}
-          >
-            新しいタグ
+    <>
+      {skipSection}
+      <section>
+        <h3>新しく作るタグ</h3>
+        <p className="sub">タグを作ったときの、子のタグの並び順と色です。今あるタグは変わりません。</p>
+        <div className="form-grid">
+          <label htmlFor="new-tag-sort">子のタグの並び順</label>
+          <span className="row">
+            <select
+              id="new-tag-sort"
+              value={settings.childSort ?? ""}
+              onChange={(e) => update({ childSort: (e.target.value || null) as ChildSort | null })}
+            >
+              {SORTS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="昇順・降順"
+              value={settings.childSortDesc ? "desc" : "asc"}
+              disabled={fixedSort}
+              onChange={(e) => update({ childSortDesc: e.target.value === "desc" })}
+            >
+              <option value="asc">昇順</option>
+              <option value="desc">降順</option>
+            </select>
           </span>
-        </span>
-      </div>
-    </section>
+          <ColorRow
+            id="new-tag-bg"
+            label="背景色"
+            value={settings.bgColor}
+            fallback={DEFAULT_BG}
+            onChange={(bgColor) => update({ bgColor })}
+          />
+          <ColorRow
+            id="new-tag-fg"
+            label="文字色"
+            value={settings.fgColor}
+            fallback={DEFAULT_FG}
+            onChange={(fgColor) => update({ fgColor })}
+          />
+          <span>見本</span>
+          <span>
+            <span
+              className="chip tag-sample"
+              data-testid="new-tag-sample"
+              style={{ background: settings.bgColor ?? undefined, color: settings.fgColor ?? undefined }}
+            >
+              新しいタグ
+            </span>
+          </span>
+        </div>
+      </section>
+    </>
   );
 }

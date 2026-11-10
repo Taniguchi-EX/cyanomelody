@@ -969,11 +969,23 @@ async fn refresh_draw(state: State<'_, AppState>) -> Result<DrawRefresh> {
     }
 }
 
-/// プレイリストを書き出し始める。rows は抽選した並びの行の番号（中央の一覧に見えている順）
+/// プレイリストを書き出し始める。items は書き出す項目（プレイリストの直下。空ならすべて）。🎲・🔀の項目は抽選し直す
 #[tauri::command]
-async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, rows: Vec<i64>, dest: String) -> Result<String> {
-    let prepared = || export::prepare(&state.conn(), id, &rows, Path::new(dest.trim())).map(|(root, tasks)| (root, tasks, 0));
+async fn start_export(app: AppHandle, state: State<'_, AppState>, id: i64, items: Vec<i64>, dest: String) -> Result<String> {
+    let prepared = || export::prepare(&state.conn(), id, &items, Path::new(dest.trim())).map(|(root, tasks)| (root, tasks, 0));
     start_export_job(app, state.export.clone(), prepared)
+}
+
+/// プレイリストを抽選し直し、items の項目（直下。空ならすべて）から来るファイル（重なりを除き、出てくる順）を返す。
+/// プレイリストのメタデータの書き出しの対象に使う（中央の一覧の抽選した並びは変えない）
+#[tauri::command]
+fn draw_item_files(state: State<'_, AppState>, id: i64, items: Vec<i64>) -> Result<Vec<i64>> {
+    let mut seen = std::collections::HashSet::new();
+    Ok(playlists::draw::draw_items(&state.conn(), id, &items)?
+        .into_iter()
+        .map(|t| t.file_id)
+        .filter(|f| seen.insert(*f))
+        .collect())
 }
 
 /// 選んだファイル（一括操作の対象）を、dest の中に作るフォルダ（folder_name）へ、そのままコピーし始める。
@@ -1123,6 +1135,7 @@ pub fn run() {
             preview_effects,
             start_export,
             start_export_files,
+            draw_item_files,
             cancel_export,
             expand_playlist_item,
             playlists_with_file,

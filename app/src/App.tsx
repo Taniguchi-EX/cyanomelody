@@ -924,11 +924,10 @@ export default function App() {
     return api.listFiles({ ...listRequest(), draw: true, sort: sort.sort, sortDesc: sort.desc });
   };
 
-  /** プレイリストを書き出し始める（中央の一覧に出ている曲。選んでいなければ選んでから） */
-  const exportPlaylist = async (id: number, dest: string) => {
+  /** プレイリストを書き出し始める（items の項目。空ならすべて。🎲・🔀の項目は抽選し直す） */
+  const exportPlaylist = async (id: number, items: number[], dest: string) => {
     try {
-      const rows = await selectedRows(id);
-      const folder = await playlistApi.startExport(id, rows.map((r) => r.key), dest);
+      const folder = await playlistApi.startExport(id, items, dest);
       showInfo(`書き出しを始めました: ${folder}`);
       return true;
     } catch (e) {
@@ -937,7 +936,9 @@ export default function App() {
     }
   };
 
-  const browseFolder = (defaultPath?: string) => pickPath({ directory: true, defaultPath });
+  // 前に書き出したフォルダがもうないなどで開けないときは、最初の場所を決めずに開き直す
+  const browseFolder = (defaultPath?: string) =>
+    pickPath({ directory: true, defaultPath }).catch(() => pickPath({ directory: true }));
 
   /** 項目（チェックした項目なら、チェックした項目すべて）にエフェクトセットを付ける。null なら外す */
   const setItemsChain = (itemIds: number[], chainId: number | null) =>
@@ -1363,6 +1364,7 @@ export default function App() {
         playMode={audio.playMode}
         onPlayMode={audio.setPlayMode}
         onSeek={audio.seek}
+        onSeekBy={audio.seekBy}
         onPrev={audio.prev}
         onNext={audio.next}
         onTogglePause={audio.togglePause}
@@ -1421,9 +1423,9 @@ export default function App() {
           onSetAlias={setPlaylistItemAlias}
           onAddTags={addTagsToPlaylist}
           onAddRef={addRefToPlaylist}
-          onExport={(dest) => exportPlaylist(editor.id, dest)}
-          onExportMetadata={() =>
-            exportMetadata(playlistName(editor.id), async () => [...new Set((await selectedRows(editor.id)).map((r) => r.id))])
+          onExport={(dest, items) => exportPlaylist(editor.id, items, dest)}
+          onExportMetadata={(items) =>
+            exportMetadata(playlistName(editor.id), () => playlistApi.drawItemFiles(editor.id, items))
           }
           onBrowseFolder={browseFolder}
           onError={showError}

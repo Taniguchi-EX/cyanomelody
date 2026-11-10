@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use rusqlite::{params, Connection, OptionalExtension};
 
-use super::expand::{draw_tracks, ExportNode, Rng};
+use super::expand::{draw_tracks, DrawnTrack, ExportNode, Rng};
 use super::{ItemKind, PlayMode};
 use crate::db::ids_json;
 use crate::error::Result;
@@ -172,25 +172,48 @@ pub(crate) fn chains_of(path: &[i64], infos: &HashMap<i64, ItemInfo>) -> Vec<i64
     path.iter().rev().filter_map(|i| infos.get(i).and_then(|info| info.chain)).collect()
 }
 
-/// 抽選した並びの行（seq）のうち、渡した順のものを、書き出す内容にする。
-/// 通った項目のうち、プレイリストの項目はフォルダにする。「順に再生」でない（🔀・🎲の）プレイリストの項目は、
-/// その中をフォルダに分けず、そのフォルダに並べる（再生の順番の決め方と同じ）。フォルダの名前は項目の別名かプレイリストの名前
+/// 書き出し用に、プレイリストを抽選し直す（中央の一覧の抽選した並びは変えない）。
+/// items があれば、その項目（プレイリストの直下）から来た曲だけ。空ならすべて
+pub fn draw_items(conn: &Connection, playlist_id: i64, items: &[i64]) -> Result<Vec<DrawnTrack>> {
+    let tracks = draw_tracks(conn, playlist_id, &mut rng())?;
+    Ok(tracks.into_iter().filter(|t| items.is_empty() || t.path.first().is_some_and(|i| items.contains(i))).collect())
+}
+
+/// 抽選した並びの行（seq）のうち、渡した順のものを、書き出す内容にする（`plan_tracks` と同じ。テストで使う）
+#[cfg(test)]
 pub fn plan_rows(conn: &Connection, seqs: &[i64]) -> Result<Vec<ExportNode>> {
     conn.execute(CREATE, [])?;
-    let rows: HashMap<i64, (i64, String, Option<i64>)> = conn
+    let mut rows: HashMap<i64, DrawnTrack> = conn
         .prepare(
-            "SELECT seq, file_id, path, alias_item FROM temp.draw_rows
+            "SELECT seq, file_id, path, alias_item, drawn FROM temp.draw_rows
              WHERE seq IN (SELECT value FROM json_each(?1)) AND file_id IN (SELECT id FROM audio_files)",
         )?
-        .query_map([ids_json(seqs)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?
+        .query_map([ids_json(seqs)], |r| {
+            let path: String = r.get(2)?;
+            Ok((
+                r.get(0)?,
+                DrawnTrack {
+                    file_id: r.get(1)?,
+                    path: serde_json::from_str(&path).unwrap_or_default(),
+                    alias_item: r.get(3)?,
+                    drawn: r.get(4)?,
+                },
+            ))
+        })?
         .collect::<rusqlite::Result<_>>()?;
+    let tracks: Vec<DrawnTrack> = seqs.iter().filter_map(|s| rows.remove(s)).collect();
+    plan_tracks(conn, &tracks)
+}
+
+/// 抽選した曲（渡した順）を、書き出す内容にする。
+/// 通った項目のうち、プレイリストの項目はフォルダにする。「順に再生」でない（🔀・🎲の）プレイリストの項目は、
+/// その中をフォルダに分けず、そのフォルダに並べる（再生の順番の決め方と同じ）。フォルダの名前は項目の別名かプレイリストの名前
+pub fn plan_tracks(conn: &Connection, tracks: &[DrawnTrack]) -> Result<Vec<ExportNode>> {
     let infos = item_infos(conn)?;
     let mut root: Vec<ExportNode> = Vec::new();
     // フォルダの場所（親のフォルダの中での位置の並び）を、通った項目の並びから引く
     let mut folders: HashMap<Vec<i64>, Vec<usize>> = HashMap::new();
-    for seq in seqs {
-        let Some((file_id, path, alias_item)) = rows.get(seq) else { continue };
-        let path: Vec<i64> = serde_json::from_str(path).unwrap_or_default();
+    for DrawnTrack { file_id, path, alias_item, .. } in tracks {
         let mut at: Vec<usize> = Vec::new();
         for (depth, item) in path.iter().enumerate() {
             let Some(info) = infos.get(item) else { break };
@@ -216,7 +239,7 @@ pub fn plan_rows(conn: &Connection, seqs: &[i64]) -> Result<Vec<ExportNode>> {
             }
         }
         let alias = alias_item.and_then(|i| infos.get(&i)).and_then(|info| info.alias.clone());
-        children_at(&mut root, &at).push(ExportNode::File { file_id: *file_id, alias, chains: chains_of(&path, &infos) });
+        children_at(&mut root, &at).push(ExportNode::File { file_id: *file_id, alias, chains: chains_of(path, &infos) });
     }
     Ok(root)
 }

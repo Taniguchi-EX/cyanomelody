@@ -420,6 +420,13 @@ h2:first-child {
 }
 
 /* 再生方法のボタン（記号の幅がそれぞれ違うので、幅をそろえて「■」の位置が動かないようにする） */
+.play-buttons button.play-skip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+}
+
 .play-buttons button.play-mode {
   width: 2em;
   text-align: center;

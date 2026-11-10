@@ -1,4 +1,4 @@
-//! プレイリストの出力：抽選した並びのうち中央の一覧に出ている行（`playlists::draw::plan_rows`）を、フォルダとファイルにする
+//! プレイリストの出力：書き出すときに抽選し直した曲（`playlists::draw::draw_items`）を、フォルダとファイルにする
 
 use std::collections::HashMap;
 use std::fs;
@@ -11,7 +11,10 @@ use crate::db::ids_json;
 use crate::effects::{apply_all, decode, write_wav, Effect};
 use crate::error::{Error, Result};
 use crate::library::absolute_path;
-use crate::playlists::{draw::plan_rows, ExportNode};
+use crate::playlists::{
+    draw::{draw_items, plan_tracks},
+    ExportNode,
+};
 
 /// 書き出す1ファイル
 #[derive(Debug, Clone, PartialEq)]
@@ -52,15 +55,15 @@ fn unique_dir(parent: &Path, name: &str) -> std::io::Result<PathBuf> {
 }
 
 /// 書き出し先のフォルダを作り、書き出すファイルの一覧を返す（ファイルはまだ書かない）。
-/// rows は抽選した並びの行の番号（中央の一覧に見えている順）
-pub fn prepare(conn: &Connection, playlist_id: i64, rows: &[i64], dest: &Path) -> Result<(PathBuf, Vec<Task>)> {
+/// items は書き出す項目（プレイリストの直下。空ならすべて）。🎲・🔀の項目は、ここで抽選し直す
+pub fn prepare(conn: &Connection, playlist_id: i64, items: &[i64], dest: &Path) -> Result<(PathBuf, Vec<Task>)> {
     if !dest.is_dir() {
         return Err(Error::invalid(format!("書き出し先のフォルダがありません: {}", dest.display())));
     }
     let name: String = conn
         .query_row("SELECT name FROM playlists WHERE id = ?1", [playlist_id], |r| r.get(0))
         .map_err(|_| Error::invalid("プレイリストが見つかりません"))?;
-    let nodes = plan_rows(conn, rows)?;
+    let nodes = plan_tracks(conn, &draw_items(conn, playlist_id, items)?)?;
     // ファイルの場所をまとめて引く
     let mut ids = Vec::new();
     collect_ids(&nodes, &mut ids);

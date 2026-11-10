@@ -10,9 +10,15 @@ export type DisplaySettings = {
   gridColumns: number;
   /** ファイル名の拡張子を省いて出す */
   hideExtension: boolean;
+  /** 再生の欄の「戻す」「進める」で動かす秒数（設定画面の「一般」で決める） */
+  skipSeconds: number;
 };
 
-export const DISPLAY_DEFAULTS: DisplaySettings = { textScale: 1, font: "", gridColumns: 6, hideExtension: false };
+export const DISPLAY_DEFAULTS: DisplaySettings = { textScale: 1, font: "", gridColumns: 6, hideExtension: false, skipSeconds: 10 };
+
+/** 「戻す」「進める」の秒数の範囲 */
+export const SKIP_SECONDS_MIN = 1;
+export const SKIP_SECONDS_MAX = 600;
 
 /** 文字の大きさの選び肢 */
 export const TEXT_SCALES = [
