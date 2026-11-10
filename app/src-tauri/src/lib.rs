@@ -3,6 +3,8 @@ mod autotag;
 mod autotag_job;
 mod chains;
 mod commands;
+#[cfg(target_os = "android")]
+mod copy_proto;
 mod credits;
 mod db;
 mod deleting;
@@ -110,6 +112,12 @@ pub fn run() {
             commands::library::scan_folder,
             commands::library::pick_library_folder,
             commands::library::find_missing_in_saf_folder,
+            #[cfg(target_os = "android")]
+            copy_proto::proto_copy_pick_file,
+            #[cfg(target_os = "android")]
+            copy_proto::proto_copy_pick_dir,
+            #[cfg(target_os = "android")]
+            copy_proto::proto_copy_check,
             commands::files::list_files,
             commands::playlists::select_playlist,
             commands::playlists::clear_playlist_selection,
