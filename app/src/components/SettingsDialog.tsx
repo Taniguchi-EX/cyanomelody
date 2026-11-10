@@ -52,7 +52,7 @@ export function SettingsDialog({ onClose, onError, onImported }: Props) {
         </div>
         <div className="tab-body" role="tabpanel">
           {tab === "general" && <GeneralTab onError={onError} />}
-          {tab === "display" && <DisplayTab />}
+          {tab === "display" && <DisplayTab onError={onError} />}
           {tab === "data" && <DataTab onError={onError} onImported={onImported} />}
           {tab === "license" && <LicenseTab onError={onError} />}
         </div>

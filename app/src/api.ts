@@ -222,6 +222,8 @@ export const api = {
   /** 音声ファイルのトラック名（タグ情報のタイトル）。ないときは null */
   trackTitle: (path: string) => invoke<string | null>("track_title", { path }),
   /** データのエクスポート：選んだ項目を path に書き出す。screen は画面の設定 */
+  /** OS にインストールされているフォントのファミリ（name は CSS に書く名前、label は一覧に出す名前） */
+  listFonts: () => invoke<{ name: string; label: string }[]>("list_fonts"),
   /** 選んだファイルのメタデータを書き出す（データのエクスポートと同じ形）。書き出した曲の数を返す */
   exportMetadata: (path: string, fileIds: number[]) => invoke<number>("export_metadata", { path, fileIds }),
   /** 選んだファイルを、dest の中に作るフォルダ（folderName）へそのままコピーし始め、作ったフォルダのパスを返す。進み具合は "export-progress" */

@@ -1,8 +1,25 @@
-import { FONTS, GRID_COLUMNS, setDisplay, TEXT_SCALES, useDisplay } from "../displaySettings";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import { fontValue, GRID_COLUMNS, setDisplay, TEXT_SCALES, useDisplay } from "../displaySettings";
 
 /** 設定画面の「表示」：文字の大きさ・フォント、グリッドのカードの数、拡張子を省くか。変えるとすぐ画面に効き、保存する */
-export function DisplayTab() {
+export function DisplayTab({ onError }: { onError: (e: unknown) => void }) {
   const display = useDisplay();
+  // OS にインストールされているフォント（タブを開いたときに読む）
+  const [fonts, setFonts] = useState<{ value: string; label: string }[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .listFonts()
+      .then((list) => alive && setFonts(list.map((f) => ({ value: fontValue(f.name), label: f.label }))))
+      .catch((e) => alive && onError(e));
+    return () => {
+      alive = false;
+    };
+  }, [onError]);
+  // 標準と、インストールされているフォント。選んでいたフォントが見つからない（アンインストールした）ときも、選び肢に残す
+  const options = [{ value: "", label: "標準" }, ...(fonts ?? [])];
+  if (display.font && !options.some((o) => o.value === display.font)) options.push({ value: display.font, label: display.font });
   return (
     <div className="display-tab" data-testid="display-tab">
       <div className="setting-row">
@@ -25,7 +42,7 @@ export function DisplayTab() {
           文字のフォント
         </label>
         <select id="display-font" value={display.font} onChange={(e) => setDisplay({ font: e.target.value })}>
-          {FONTS.map((f) => (
+          {options.map((f) => (
             <option key={f.value} value={f.value} style={f.value ? { fontFamily: f.value } : undefined}>
               {f.label}
             </option>

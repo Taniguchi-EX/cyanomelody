@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 export type DisplaySettings = {
   /** 文字の大きさの倍率（1 が標準） */
   textScale: number;
-  /** 文字のフォント（FONTS の value。"" は標準） */
+  /** 文字のフォント（CSS の font-family に書く値。"" は標準） */
   font: string;
   /** グリッドで横に並べるカードの数（欄が狭くて入らないときは減らす） */
   gridColumns: number;
@@ -22,15 +22,8 @@ export const TEXT_SCALES = [
   { value: 1.3, label: "特大" },
 ];
 
-/** 文字のフォントの選び肢（Windows に入っているもの）。"" は標準（Segoe UI と游ゴシック UI） */
-export const FONTS = [
-  { value: "", label: "標準" },
-  { value: '"Yu Gothic UI"', label: "游ゴシック UI" },
-  { value: '"Meiryo UI"', label: "メイリオ UI" },
-  { value: '"BIZ UDPGothic"', label: "BIZ UDPゴシック" },
-  { value: '"BIZ UDGothic"', label: "BIZ UDゴシック（等幅）" },
-  { value: '"MS UI Gothic"', label: "MS UI Gothic" },
-];
+/** フォントのファミリ名を、CSS の font-family に書く値にする（名前を引用符でくくる） */
+export const fontValue = (family: string) => `"${family.replace(/["\\]/g, "")}"`;
 
 /** グリッドで横に並べるカードの数の選び肢 */
 export const GRID_COLUMNS = [3, 4, 5, 6, 7, 8, 10];

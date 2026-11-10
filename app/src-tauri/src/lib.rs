@@ -11,6 +11,7 @@ mod export;
 mod export_job;
 mod facets;
 mod files;
+mod fonts;
 mod hashing;
 mod library;
 mod linking;
@@ -837,6 +838,12 @@ async fn set_playlist_item_chain(state: State<'_, AppState>, item_id: i64, chain
 }
 
 /// ファイルの絶対パス
+/// OS にインストールされているフォントのファミリの一覧（設定画面の「表示」）
+#[tauri::command]
+async fn list_fonts() -> Result<Vec<fonts::FontFamily>> {
+    Ok(fonts::installed_fonts())
+}
+
 /// ファイルの中のジャケットの画像のパス（書き出しておいたもの）。ジャケットがなければ None。
 /// ファイルの大きさ・更新日時が同じなら、前に書き出したものを使う（ないことも覚えておき、読み直さない）
 #[tauri::command]
@@ -1074,6 +1081,7 @@ pub fn run() {
             hashing_progress,
             track_title,
             track_cover,
+            list_fonts,
             check_update,
             meta_ignore_values,
             delete_files,
