@@ -7,7 +7,7 @@ use crate::state::AppState;
 use crate::chains::{self, EffectChain};
 use crate::effect_cache;
 use crate::effects::Effect;
-use crate::library::file_path;
+use crate::library::file_location;
 
 #[tauri::command]
 pub async fn list_effect_chains(state: State<'_, AppState>) -> Result<Vec<EffectChain>> {
@@ -50,7 +50,7 @@ pub async fn render_effects(state: State<'_, AppState>, file_id: i64, chain_ids:
         for c in &chain_ids {
             effects.extend(chains::chain_effects(&conn, *c)?);
         }
-        (file_path(&conn, file_id)?, effects)
+        (file_location(&conn, file_id)?, effects)
     };
     let out = effect_cache::render(&state.effect_cache, &source, &effects).map_err(Error::invalid)?;
     Ok(out.to_string_lossy().into_owned())
@@ -59,7 +59,7 @@ pub async fn render_effects(state: State<'_, AppState>, file_id: i64, chain_ids:
 /// 保存する前のエフェクトの並びを、ファイルにかけて試聴するための音を用意する
 #[tauri::command]
 pub async fn preview_effects(state: State<'_, AppState>, file_id: i64, effects: Vec<Effect>) -> Result<String> {
-    let source = file_path(&state.conn(), file_id)?;
+    let source = file_location(&state.conn(), file_id)?;
     let out = effect_cache::render(&state.effect_cache, &source, &effects).map_err(Error::invalid)?;
     Ok(out.to_string_lossy().into_owned())
 }

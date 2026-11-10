@@ -9,6 +9,7 @@ import type {
   DataSections,
   DeleteResult,
   ExportSummary,
+  FindManyOutcome,
   Facets,
   FileFilter,
   HashProgress,
@@ -38,6 +39,8 @@ export const api = {
   addFolder: (path: string) => invoke<ScanResult>("add_folder", { path }),
   removeFolder: (folderId: number) => invoke<void>("remove_folder", { folderId }),
   scanFolder: (folderId: number) => invoke<ScanResult>("scan_folder", { folderId }),
+  /** Android：SAF のフォルダを選ぶ画面を出し、選んだフォルダを登録してスキャンする（キャンセルなら null） */
+  pickLibraryFolder: () => invoke<ScanResult | null>("pick_library_folder"),
   listFiles: (filter: FileFilter) => invoke<AudioFile[]>("list_files", { filter }),
   facetCounts: (filter: FileFilter) => invoke<Facets>("facet_counts", { filter }),
   /** 指定したidのうち、ライブラリにあるもの */
@@ -107,8 +110,11 @@ export const api = {
   findMissingInFolder: (fileId: number, folder: string) =>
     invoke<LinkOutcome | null>("find_missing_in_folder", { fileId, folder }),
   /** 見つからないファイルそれぞれと同じ音声のファイルを、フォルダの中からまとめて探してひも付ける */
+  /** Android：SAF で選んだフォルダから、見つからないファイルと同じ音声のファイルを探してひも付ける（フォルダを選ばなかったら null） */
+  findMissingInSafFolder: (fileIds: number[]) =>
+    invoke<FindManyOutcome | null>("find_missing_in_saf_folder", { fileIds }),
   findMissingInFolderMany: (fileIds: number[], folder: string) =>
-    invoke<{ linked: number; notFound: number; noHash: number; addedFolder: string | null }>("find_missing_in_folder_many", {
+    invoke<FindManyOutcome>("find_missing_in_folder_many", {
       fileIds,
       folder,
     }),

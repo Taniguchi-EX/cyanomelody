@@ -1,6 +1,5 @@
 //! ハッシュ値と長さの計算待ちの取得・保存と、ひも付け直し
 
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -9,14 +8,14 @@ use serde::Serialize;
 use crate::audio_hash::{audio_hash, HashError};
 use crate::source::FileSource;
 use crate::error::{Error, Result};
-use crate::library::absolute_path;
+use crate::location::Location;
 use crate::metadata;
 
 /// ハッシュ値か長さの計算を待っているファイル
 #[derive(Debug, Clone)]
 pub struct PendingFile {
     pub id: i64,
-    pub path: PathBuf,
+    pub path: Location,
 }
 
 pub type HashOutcome = std::result::Result<String, HashError>;
@@ -39,7 +38,7 @@ pub fn analyze<S: FileSource + ?Sized>(path: &S) -> Analysis {
 /// 見つかっているファイルのうち、ハッシュ値がまだなく計算できなかった記録もないもの、または長さ・リリース年をまだ調べていないもの
 pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
     let mut stmt = conn.prepare(
-        "SELECT a.id, f.path, a.rel_path FROM audio_files a
+        "SELECT a.id, f.path, a.rel_path, a.uri FROM audio_files a
          JOIN library_folders f ON f.id = a.folder_id
          WHERE ((a.hash IS NULL AND a.hash_error IS NULL) OR a.duration_done = 0 OR a.release_year_done = 0) AND a.missing = 0
          ORDER BY a.id",
@@ -49,7 +48,7 @@ pub fn pending_files(conn: &Connection) -> Result<Vec<PendingFile>> {
         let rel: String = r.get(2)?;
         Ok(PendingFile {
             id: r.get(0)?,
-            path: absolute_path(&folder, &rel),
+            path: Location::of_file(&folder, &rel, r.get(3)?),
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -78,7 +77,7 @@ pub fn save_analyses(conn: &mut Connection, results: &[(i64, Analysis)]) -> Resu
 pub fn compute_parallel<T: Send>(
     files: &[PendingFile],
     cancel: &AtomicBool,
-    work: fn(&Path) -> T,
+    work: fn(&Location) -> T,
 ) -> Vec<(i64, Option<T>)> {
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -125,6 +124,11 @@ pub struct RelinkResult {
 /// 見つからないファイルを、同じハッシュ値の見つかっているファイルにひも付け直す。
 /// タグ・出典・ライセンス・プレイリストの項目を移して、見つからないファイルの情報を消す。見つからない印がないファイルは無視する。
 pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
+    relink_in(conn, file_ids, None)
+}
+
+/// ひも付け直す（relink）。folder_id があれば、そのフォルダの中のファイルだけを候補にする（フォルダから探すとき）
+pub fn relink_in(conn: &mut Connection, file_ids: &[i64], folder_id: Option<i64>) -> Result<RelinkResult> {
     let tx = conn.transaction()?;
     let mut result = RelinkResult::default();
     for &id in file_ids {
@@ -141,8 +145,10 @@ pub fn relink(conn: &mut Connection, file_ids: &[i64]) -> Result<RelinkResult> {
             continue;
         };
         let candidates: Vec<i64> = tx
-            .prepare("SELECT id FROM audio_files WHERE hash = ?1 AND missing = 0 AND id <> ?2")?
-            .query_map(params![hash, id], |r| r.get(0))?
+            .prepare(
+                "SELECT id FROM audio_files WHERE hash = ?1 AND missing = 0 AND id <> ?2 AND (?3 IS NULL OR folder_id = ?3)",
+            )?
+            .query_map(params![hash, id, folder_id], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?;
         match candidates.as_slice() {
             [] => result.not_found += 1,
@@ -215,7 +221,7 @@ mod tests {
     use crate::library::{add_folder, scan_folder};
     use std::fs;
 
-    fn fixture(name: &str) -> PathBuf {
+    fn fixture(name: &str) -> std::path::PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
     }
 

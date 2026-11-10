@@ -175,15 +175,15 @@ pub fn apply(tx: &Transaction, file_id: i64, meta: &FileMeta, ignore: &[String],
     Ok(result)
 }
 
-/// ファイル（見つかっているもの）の絶対パス。見つからないファイル・ないファイルは None
-pub fn file_path(conn: &Connection, file_id: i64) -> Result<Option<std::path::PathBuf>> {
+/// ファイル（見つかっているもの）の場所。見つからないファイル・ないファイルは None
+pub fn file_path(conn: &Connection, file_id: i64) -> Result<Option<crate::location::Location>> {
     use rusqlite::OptionalExtension;
     Ok(conn
         .query_row(
-            "SELECT f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+            "SELECT f.path, a.rel_path, a.uri FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
              WHERE a.id = ?1 AND a.missing = 0",
             [file_id],
-            |r| Ok(crate::library::absolute_path(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?)),
+            |r| Ok(crate::location::Location::of_file(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?, r.get(2)?)),
         )
         .optional()?)
 }

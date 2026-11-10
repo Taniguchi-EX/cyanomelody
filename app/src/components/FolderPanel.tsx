@@ -34,10 +34,10 @@ export function FolderPanel({ folders, busy, onAdd, onRemove, onScan, selectedId
           key={f.id}
           data-testid="folder"
           data-folder-path={f.path}
-          title={f.path}
+          title={f.label}
           onClick={() => onSelect(f.id)}
         >
-          <span className="folder-name">{baseName(f.path)}</span>
+          <span className="folder-name">{baseName(f.label)}</span>
           <span className="sub">
             {f.fileCount}
             {f.missingCount > 0 && (

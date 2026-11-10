@@ -1,13 +1,13 @@
 //! ファイルの一覧のコマンド：一覧・件数、タグの付け外し、一括操作の内訳、再生の記録、曲名・ジャケット
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tauri::State;
 
 use crate::error::{Error, Result};
 use crate::facets::{self, Facets};
 use crate::files::{self, AudioFile, FileFilter};
-use crate::library::file_path;
+use crate::library::file_location;
 use crate::state::AppState;
 use crate::{metadata, recent};
 
@@ -65,12 +65,12 @@ pub async fn track_title(path: String) -> Result<Option<String>> {
 /// ファイルの大きさ・更新日時が同じなら、前に書き出したものを使う（ないことも覚えておき、読み直さない）
 #[tauri::command]
 pub async fn track_cover(state: State<'_, AppState>, file_id: i64) -> Result<Option<String>> {
-    let (path, size, modified): (PathBuf, i64, i64) = {
+    let (path, size, modified): (_, i64, i64) = {
         let conn = state.conn();
         let (size, modified) = conn
             .query_row("SELECT size, modified_at FROM audio_files WHERE id = ?1", [file_id], |r| Ok((r.get(0)?, r.get(1)?)))
             .map_err(|_| Error::invalid("ファイルが見つかりません"))?;
-        (file_path(&conn, file_id)?, size, modified)
+        (file_location(&conn, file_id)?, size, modified)
     };
     let base = format!("{file_id}-{size}-{modified}");
     // 前に調べた結果（画像か、ないことの印）

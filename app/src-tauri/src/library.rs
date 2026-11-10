@@ -10,6 +10,8 @@ use walkdir::WalkDir;
 
 use crate::db::now;
 use crate::error::{Error, Result};
+use crate::location::Location;
+use crate::saf;
 
 pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "ogg", "m4a"];
 
@@ -17,7 +19,12 @@ pub const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "flac", "ogg", "m4a"];
 #[serde(rename_all = "camelCase")]
 pub struct LibraryFolder {
     pub id: i64,
+    /// パス（SAF のフォルダは FsUri の JSON）
     pub path: String,
+    /// 場所の種類（"path"・"saf"）
+    pub kind: String,
+    /// 画面に出す名前（パスのフォルダはパス、SAF のフォルダは「Music/効果音」など）
+    pub label: String,
     pub file_count: i64,
     pub missing_count: i64,
 }
@@ -39,17 +46,22 @@ pub struct ScanResult {
 
 pub fn list_folders(conn: &Connection) -> Result<Vec<LibraryFolder>> {
     let mut stmt = conn.prepare(
-        "SELECT f.id, f.path,
+        "SELECT f.id, f.path, f.kind,
                 (SELECT count(*) FROM audio_files a WHERE a.folder_id = f.id),
                 (SELECT count(*) FROM audio_files a WHERE a.folder_id = f.id AND a.missing = 1)
          FROM library_folders f ORDER BY f.path",
     )?;
     let rows = stmt.query_map([], |r| {
+        let path: String = r.get(1)?;
+        let kind: String = r.get(2)?;
+        let label = if kind == KIND_SAF { saf::display_name(&path) } else { path.clone() };
         Ok(LibraryFolder {
             id: r.get(0)?,
-            path: r.get(1)?,
-            file_count: r.get(2)?,
-            missing_count: r.get(3)?,
+            path,
+            kind,
+            label,
+            file_count: r.get(3)?,
+            missing_count: r.get(4)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -58,6 +70,17 @@ pub fn list_folders(conn: &Connection) -> Result<Vec<LibraryFolder>> {
 /// ライブラリフォルダのパスと、その中の相対パス（区切りは `/`）から、ファイルの絶対パスを作る
 pub fn absolute_path(folder: &str, rel_path: &str) -> PathBuf {
     Path::new(folder).join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR))
+}
+
+/// フォルダの場所の種類：パス・SAF のフォルダ
+pub const KIND_PATH: &str = "path";
+pub const KIND_SAF: &str = "saf";
+
+/// フォルダのパス（SAF のフォルダは FsUri の JSON）と、場所の種類
+pub fn folder_record(conn: &Connection, folder_id: i64) -> Result<(String, String)> {
+    conn.query_row("SELECT path, kind FROM library_folders WHERE id = ?1", [folder_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?
+        .ok_or_else(|| Error::invalid("登録されていないフォルダです"))
 }
 
 pub fn folder_path(conn: &Connection, folder_id: i64) -> Result<PathBuf> {
@@ -107,6 +130,31 @@ pub fn add_folder(conn: &Connection, path: &Path) -> Result<i64> {
     Ok(conn.last_insert_rowid())
 }
 
+/// SAF のフォルダ（選んで権限を残したもの。uri は FsUri の JSON）を登録する。スキャンは呼び出し側で行う
+pub fn add_saf_folder(conn: &Connection, uri: &str) -> Result<i64> {
+    // 同じフォルダ・登録済みのフォルダの中・登録済みのフォルダを含むフォルダは登録できない（パスのフォルダと同じ決まり）。
+    // フォルダの場所の名前（「primary:Music/効果音」など。大文字・小文字は区別しない）で比べる
+    let key = saf::document_id(uri).unwrap_or_else(|| uri.to_string()).to_lowercase();
+    for folder in list_folders(conn)?.into_iter().filter(|f| f.kind == KIND_SAF) {
+        let other = saf::document_id(&folder.path).unwrap_or(folder.path.clone()).to_lowercase();
+        let inside = |a: &str, b: &str| a.strip_prefix(b).is_some_and(|rest| rest.starts_with('/') || b.ends_with(':'));
+        if key == other {
+            return Err(Error::invalid("このフォルダは既に登録されています"));
+        }
+        if inside(&key, &other) {
+            return Err(Error::invalid(format!("登録済みのフォルダの中にあるため登録できません: {}", folder.label)));
+        }
+        if inside(&other, &key) {
+            return Err(Error::invalid(format!("登録済みのフォルダを含むため登録できません: {}", folder.label)));
+        }
+    }
+    conn.execute(
+        "INSERT INTO library_folders (path, kind, added_at) VALUES (?1, ?2, ?3)",
+        params![uri, KIND_SAF, now()],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
 /// フォルダの登録を解除する。ファイルの情報と、付けたタグ・出典・ライセンスの設定、プレイリストの項目も消える。実際のファイルは消さない。
 pub fn remove_folder(conn: &Connection, folder_id: i64) -> Result<()> {
     let n = conn.execute("DELETE FROM library_folders WHERE id = ?1", [folder_id])?;
@@ -143,6 +191,8 @@ struct FoundFile {
     rel_path: String,
     size: i64,
     modified_at: i64,
+    /// SAF のフォルダのファイルの FsUri の JSON（パスのフォルダでは None）
+    uri: Option<String>,
 }
 
 fn walk(root: &Path) -> Vec<FoundFile> {
@@ -170,6 +220,7 @@ fn walk(root: &Path) -> Vec<FoundFile> {
                 rel_path,
                 size: meta.len() as i64,
                 modified_at,
+                uri: None,
             })
         })
         .collect()
@@ -177,14 +228,29 @@ fn walk(root: &Path) -> Vec<FoundFile> {
 
 pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> {
     let started = Instant::now();
-    let root = folder_path(conn, folder_id)?;
-    if !root.is_dir() {
-        return Err(Error::invalid(format!(
-            "フォルダが見つからないため、スキャンできませんでした: {}",
-            root.display()
-        )));
-    }
-    let found = walk(&root);
+    let (root, kind) = folder_record(conn, folder_id)?;
+    let found = if kind == KIND_SAF {
+        // SAF のフォルダ：権限がなくなった（端末の設定で取り消した・フォルダを消した）ときは、フォルダがないのと同じ
+        if !saf::readable(&root) {
+            return Err(Error::invalid(format!(
+                "フォルダが見つからないか、読む許可がないため、スキャンできませんでした: {}",
+                saf::display_name(&root)
+            )));
+        }
+        saf::list_files(&root, AUDIO_EXTENSIONS)?
+            .into_iter()
+            .map(|f| FoundFile { rel_path: f.rel_path, size: f.size, modified_at: f.modified_at, uri: Some(f.uri) })
+            .collect()
+    } else {
+        let root = PathBuf::from(&root);
+        if !root.is_dir() {
+            return Err(Error::invalid(format!(
+                "フォルダが見つからないため、スキャンできませんでした: {}",
+                root.display()
+            )));
+        }
+        walk(&root)
+    };
 
     let tx = conn.transaction()?;
     let mut result = ScanResult {
@@ -209,8 +275,8 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
         }
 
         let mut insert = tx.prepare(
-            "INSERT INTO audio_files (folder_id, rel_path, size, modified_at, missing, added_at)
-             VALUES (?1, ?2, ?3, ?4, 0, ?5)",
+            "INSERT INTO audio_files (folder_id, rel_path, size, modified_at, missing, added_at, uri)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
         )?;
         let mut update = tx.prepare(
             // サイズか更新日時が変わったら、ハッシュ値と長さ・リリース年を消して計算し直させる
@@ -221,7 +287,7 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
                 duration_done = CASE WHEN size = ?2 AND modified_at = ?3 THEN duration_done ELSE 0 END,
                 release_year = CASE WHEN size = ?2 AND modified_at = ?3 THEN release_year END,
                 release_year_done = CASE WHEN size = ?2 AND modified_at = ?3 THEN release_year_done ELSE 0 END,
-                size = ?2, modified_at = ?3, missing = 0
+                size = ?2, modified_at = ?3, missing = 0, uri = ?4
              WHERE id = ?1",
         )?;
         let mut mark_missing = tx.prepare("UPDATE audio_files SET missing = 1 WHERE id = ?1")?;
@@ -232,13 +298,13 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
             seen.insert(&f.rel_path);
             match existing.get(&f.rel_path) {
                 Some(&(id, was_missing)) => {
-                    update.execute(params![id, f.size, f.modified_at])?;
+                    update.execute(params![id, f.size, f.modified_at, f.uri])?;
                     if was_missing {
                         result.restored += 1;
                     }
                 }
                 None => {
-                    insert.execute(params![folder_id, f.rel_path, f.size, f.modified_at, added_at])?;
+                    insert.execute(params![folder_id, f.rel_path, f.size, f.modified_at, added_at, f.uri])?;
                     result.added += 1;
                 }
             }
@@ -255,16 +321,14 @@ pub fn scan_folder(conn: &mut Connection, folder_id: i64) -> Result<ScanResult> 
     Ok(result)
 }
 
-/// ファイルの絶対パス（ライブラリフォルダのパスと相対パスから）
-pub fn file_path(conn: &Connection, file_id: i64) -> Result<PathBuf> {
-    let (folder, rel): (String, String) = conn
-        .query_row(
-            "SELECT f.path, a.rel_path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id WHERE a.id = ?1",
-            [file_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .map_err(|_| Error::invalid("ファイルが見つかりません"))?;
-    Ok(absolute_path(&folder, &rel))
+/// ファイルの場所（パスのフォルダはフォルダのパスと相対パスから、SAF のフォルダはファイルの URI）
+pub fn file_location(conn: &Connection, file_id: i64) -> Result<Location> {
+    conn.query_row(
+        "SELECT f.path, a.rel_path, a.uri FROM audio_files a JOIN library_folders f ON f.id = a.folder_id WHERE a.id = ?1",
+        [file_id],
+        |r| Ok(Location::of_file(&r.get::<_, String>(0)?, &r.get::<_, String>(1)?, r.get(2)?)),
+    )
+    .map_err(|_| Error::invalid("ファイルが見つかりません"))
 }
 
 #[cfg(test)]
@@ -453,5 +517,28 @@ mod tests {
             first.added, first.elapsed_ms, second.found, second.elapsed_ms
         );
         assert_eq!(first.added, 30_000);
+    }
+
+    /// SAF のフォルダの URI の JSON（テスト用）
+    fn saf_uri(doc: &str) -> String {
+        let enc = doc.replace(':', "%3A").replace('/', "%2F");
+        format!(r#"{{"uri":"content://com.android.externalstorage.documents/tree/{enc}/document/{enc}","documentTopTreeUri":null}}"#)
+    }
+
+    #[test]
+    fn saf_folders_must_not_overlap() {
+        let conn = open_in_memory().unwrap();
+        let id = add_saf_folder(&conn, &saf_uri("primary:Music/効果音")).unwrap();
+        let folders = list_folders(&conn).unwrap();
+        assert_eq!((folders[0].id, folders[0].kind.as_str(), folders[0].label.as_str()), (id, KIND_SAF, "Music/効果音"));
+        // 同じフォルダ（大文字・小文字の違いだけも）・中のフォルダ・外側のフォルダは登録できない
+        assert!(add_saf_folder(&conn, &saf_uri("primary:Music/効果音")).is_err());
+        assert!(add_saf_folder(&conn, &saf_uri("primary:music/効果音")).is_err());
+        assert!(add_saf_folder(&conn, &saf_uri("primary:Music/効果音/雨")).is_err());
+        assert!(add_saf_folder(&conn, &saf_uri("primary:Music")).is_err());
+        assert!(add_saf_folder(&conn, &saf_uri("primary:")).is_err());
+        // 名前の頭が同じだけのフォルダ・別のボリュームは登録できる
+        add_saf_folder(&conn, &saf_uri("primary:Music/効果音2")).unwrap();
+        add_saf_folder(&conn, &saf_uri("1234-ABCD:Music/効果音")).unwrap();
     }
 }

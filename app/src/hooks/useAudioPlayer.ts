@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { mediaSrc } from "../platform";
 import type { AudioFile, PlayEntry } from "../api";
 
 /** 試聴するファイル（エフェクトの管理画面の試聴）。ファイルの一覧のファイルでも、プレイリストの項目の曲でもよい */
@@ -171,7 +171,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     const audio = audioRef.current;
     if (!audio) return;
     setPlayer(null);
-    audio.src = convertFileSrc(path);
+    audio.src = mediaSrc(path);
     setPreviewFile(file);
     onPlayed(file.id);
     audio.play().catch((e) => {
@@ -204,7 +204,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     setPreviewFile(null);
     /** 音の場所を決めて鳴らす */
     const start = (path: string) => {
-      audio.src = convertFileSrc(path);
+      audio.src = mediaSrc(path);
       if (startAt) audio.currentTime = startAt;
       // 鳴り始める前に一時停止・停止・別の曲へ移ったとき（AbortError）は、再生できなかったことにしない
       audio.play().catch((e) => {

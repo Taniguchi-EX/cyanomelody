@@ -1,5 +1,4 @@
 mod audio_hash;
-mod android_proto;
 mod autotag;
 mod autotag_job;
 mod chains;
@@ -18,12 +17,14 @@ mod fonts;
 mod hash_job;
 mod hashing;
 mod library;
+mod location;
 mod linking;
 mod metadata;
 mod names;
 mod playlists;
 mod recent;
 mod romaji;
+mod saf;
 mod settings;
 mod source;
 mod state;
@@ -53,7 +54,7 @@ fn data_dir(app: &AppHandle) -> std::result::Result<PathBuf, Box<dyn std::error:
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
-    // Android の試作：SAF（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル。
+    // Android：SAF（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル。
     // プロトコルは画面を作る前に登録が要るので、setup の中ではなく、ここで加える
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_fs::builder().build());
@@ -74,8 +75,14 @@ pub fn run() {
             let dir = data_dir(app.handle())?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("cyanomelody.db"))?;
+            // SAF のプラグインを使えるようにする（Android）
+            #[cfg(target_os = "android")]
+            saf::init(app.handle());
+            // パスのフォルダのファイルを、画面から読めるようにする（SAF のフォルダは、プラグインのプロトコルで読む）
             for folder in library::list_folders(&conn)? {
-                allow_asset_dir(app.handle(), Path::new(&folder.path));
+                if folder.kind == library::KIND_PATH {
+                    allow_asset_dir(app.handle(), Path::new(&folder.path));
+                }
             }
             let effect_cache = dir.join("effects-cache");
             std::fs::create_dir_all(&effect_cache)?;
@@ -97,14 +104,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            android_proto::proto_pick_dir,
-            android_proto::proto_saved_dir,
-            android_proto::proto_scan,
-            android_proto::proto_analyze,
             commands::library::list_folders,
             commands::library::add_folder,
             commands::library::remove_folder,
             commands::library::scan_folder,
+            commands::library::pick_library_folder,
+            commands::library::find_missing_in_saf_folder,
             commands::files::list_files,
             commands::playlists::select_playlist,
             commands::playlists::clear_playlist_selection,

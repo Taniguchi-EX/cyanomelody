@@ -4,14 +4,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::effects::{apply_all, decode, write_wav, Effect};
+use crate::source::FileSource;
 
 /// 置いておく音の合計の上限。超えたら古いものから消す
 const CACHE_LIMIT: u64 = 1024 * 1024 * 1024;
 
-/// 元のファイル（パス・大きさ・更新日時）とエフェクトの設定から、置き場所のファイル名を決める。
-/// 元のファイルが変わるか、設定が変わると、別の名前になる
-fn cache_key(source: &Path, effects: &[Effect]) -> String {
-    let meta = fs::metadata(source).ok();
+/// 元のファイル（パスか URI・大きさ・更新日時）とエフェクトの設定から、置き場所のファイル名を決める。
+/// 元のファイルが変わるか、設定が変わると、別の名前になる（大きさと更新日時は、開いたファイルから読む。SAF のファイルも同じ）
+fn cache_key<S: FileSource + ?Sized>(source: &S, effects: &[Effect]) -> String {
+    let meta = source.open().and_then(|f| f.metadata()).ok();
     let size = meta.as_ref().map_or(0, |m| m.len());
     let modified = meta
         .and_then(|m| m.modified().ok())
@@ -19,7 +20,7 @@ fn cache_key(source: &Path, effects: &[Effect]) -> String {
         .map_or(0, |d| d.as_nanos());
     let effects = serde_json::to_string(&effects.iter().map(Effect::clamped).collect::<Vec<_>>()).unwrap_or_default();
     let mut h = blake3::Hasher::new();
-    h.update(source.to_string_lossy().as_bytes());
+    h.update(source.identity().as_bytes());
     h.update(&size.to_le_bytes());
     h.update(&modified.to_le_bytes());
     h.update(effects.as_bytes());
@@ -27,7 +28,7 @@ fn cache_key(source: &Path, effects: &[Effect]) -> String {
 }
 
 /// source にエフェクトを順にかけた音を、cache_dir の中のWAVとして用意し、そのパスを返す
-pub fn render(cache_dir: &Path, source: &Path, effects: &[Effect]) -> Result<PathBuf, String> {
+pub fn render<S: FileSource + ?Sized>(cache_dir: &Path, source: &S, effects: &[Effect]) -> Result<PathBuf, String> {
     fs::create_dir_all(cache_dir).map_err(|e| format!("置き場所を作れません: {e}"))?;
     let out = cache_dir.join(format!("{}.wav", cache_key(source, effects)));
     if out.exists() {

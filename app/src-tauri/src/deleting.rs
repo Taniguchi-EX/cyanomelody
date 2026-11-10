@@ -73,6 +73,10 @@ fn move_to_trash(path: &Path, trash_dir: Option<&Path>) -> std::result::Result<(
 /// 削除できたファイル（もう無かったファイルを含む）はライブラリから外す（タグ・出典・ライセンスの設定、プレイリストの項目も消える）。
 /// 削除できなかったファイルは、理由と一緒に返し、ライブラリに残す
 pub fn delete_files(conn: &mut Connection, ids: &[i64], permanent: bool, trash_dir: Option<&Path>) -> Result<DeleteResult> {
+    // スマートフォンでは、ファイルを消さない（SAF のファイルの削除は、まだ扱わない）
+    if cfg!(mobile) {
+        return Err(crate::error::Error::invalid("この端末では、ファイルを削除できません"));
+    }
     let mut result = DeleteResult::default();
     let mut done = Vec::new();
     for (id, rel_path, path) in targets(conn, ids)? {

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::ids_json;
 use crate::error::Result;
-use crate::library::absolute_path;
+use crate::location::Location;
 use crate::playlists::{ItemKind, PlayMode};
 use crate::tags::{descendants_and_self, get_or_create_tag, tag_rank, TAG_SEPARATOR};
 use crate::tree::NamedRef;
@@ -333,7 +333,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
     let draw_columns = if filter.draw { "d.seq, d.path, d.top_item, pi.alias, d.drawn" } else { "a.id, NULL, NULL, NULL, 0" };
     let tables = source_tables(filter);
     let mut sql = format!(
-        "SELECT a.id, a.rel_path, f.path, a.missing,
+        "SELECT a.id, a.rel_path, f.path, a.missing, a.uri,
                 (SELECT group_concat(t.id || char(30) || t.name, char(31)) FROM file_tags ft
                    JOIN tags t ON t.id = ft.tag_id WHERE ft.file_id = a.id),
                 a.hash, a.hash_error, a.source_id, a.license_id, {draw_columns}
@@ -372,7 +372,7 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         let rel_path: String = r.get(1)?;
         let folder_path: String = r.get(2)?;
         // 「id、区切り（char(30)）、名前」をタグの区切り（char(31)）でつないだもの
-        let tags: Option<String> = r.get(4)?;
+        let tags: Option<String> = r.get(5)?;
         let mut tags: Vec<NamedRef> = tags
             .map(|s| {
                 s.split(TAG_SEPARATOR)
@@ -384,8 +384,8 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
             })
             .unwrap_or_default();
         tags.sort_by_key(|t| rank.get(&t.id).copied().unwrap_or(usize::MAX));
-        let path: Vec<i64> = r.get::<_, Option<String>>(10)?.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default();
-        let top_item: Option<i64> = r.get(11)?;
+        let path: Vec<i64> = r.get::<_, Option<String>>(11)?.and_then(|p| serde_json::from_str(&p).ok()).unwrap_or_default();
+        let top_item: Option<i64> = r.get(12)?;
         // 来た項目：直下の項目がタグの組み合わせかプレイリストのとき（ファイルの項目なら出さない）
         let origin = top_item.and_then(|id| {
             let info = infos.get(&id)?;
@@ -398,20 +398,20 @@ pub fn list_files(conn: &Connection, filter: &FileFilter) -> Result<Vec<AudioFil
         });
         Ok(AudioFile {
             id: r.get(0)?,
-            path: absolute_path(&folder_path, &rel_path).to_string_lossy().into_owned(),
+            path: Location::of_file(&folder_path, &rel_path, r.get(4)?).to_display(),
             rel_path,
             missing: r.get(3)?,
             tags,
-            hash: r.get(5)?,
-            hash_error: r.get(6)?,
-            source_id: r.get(7)?,
-            license_id: r.get(8)?,
-            key: r.get(9)?,
-            alias: r.get(12)?,
+            hash: r.get(6)?,
+            hash_error: r.get(7)?,
+            source_id: r.get(8)?,
+            license_id: r.get(9)?,
+            key: r.get(10)?,
+            alias: r.get(13)?,
             origin,
             item_id: top_item,
             chains: crate::playlists::draw::chains_of(&path, &infos),
-            drawn: r.get(13)?,
+            drawn: r.get(14)?,
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)

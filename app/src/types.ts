@@ -2,7 +2,12 @@
 
 export type LibraryFolder = {
   id: number;
+  /** パス（SAF のフォルダは FsUri の JSON） */
   path: string;
+  /** 場所の種類（path：パス、saf：Android の SAF のフォルダ） */
+  kind: "path" | "saf";
+  /** 画面に出す名前（パスのフォルダはパス、SAF のフォルダは「Music/効果音」など） */
+  label: string;
   fileCount: number;
   missingCount: number;
 };
@@ -208,6 +213,15 @@ export type HashProgress = {
   total: number;
   failed: number;
   cancelled: boolean;
+};
+
+/** フォルダからまとめて探してひも付けた結果 */
+export type FindManyOutcome = {
+  linked: number;
+  notFound: number;
+  noHash: number;
+  /** ライブラリに登録したフォルダ（なければ null） */
+  addedFolder: string | null;
 };
 
 export type RelinkResult = {

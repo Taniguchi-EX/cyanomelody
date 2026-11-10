@@ -175,6 +175,12 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX tag_synonyms_tag ON tag_synonyms(tag_id);
     "#,
+    // 15: Android の SAF のフォルダ。kind は場所の種類（path：パス、saf：SAF のフォルダで、path に FsUri の JSON）。
+    // uri は SAF のフォルダのファイルの FsUri の JSON（スキャンのときに入れる。パスのフォルダのファイルは NULL）
+    r#"
+    ALTER TABLE library_folders ADD COLUMN kind TEXT NOT NULL DEFAULT 'path';
+    ALTER TABLE audio_files ADD COLUMN uri TEXT;
+    "#,
 ];
 
 pub fn open(path: &Path) -> Result<Connection> {

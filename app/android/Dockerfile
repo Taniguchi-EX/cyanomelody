@@ -1,4 +1,4 @@
-# Android 向けのビルド環境（試作用）：JDK 17・Android SDK と NDK・Rust（Android のターゲット）・Node.js
+# Android 向けのビルド環境：JDK 17・Android SDK と NDK・Rust（Android のターゲット）・Node.js
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,6 +18,7 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools \
     && unzip -q /tmp/ct.zip -d $ANDROID_HOME/cmdline-tools && mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest && rm /tmp/ct.zip
 ENV PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
 RUN yes | sdkmanager --licenses > /dev/null \
-    && sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;27.2.12479018" > /dev/null
-ENV NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018
+    && sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;29.0.14206865" > /dev/null
+# NDK r28 以降は、共有ライブラリを 16 KB のページサイズに合わせる（Android 15 以降の決まり）
+ENV NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
 WORKDIR /work

@@ -125,8 +125,8 @@ export function useFileFilter() {
       out.push({
         key: "folder",
         icon: "📁",
-        label: folder ? baseName(folder.path) : "?",
-        title: folder?.path,
+        label: folder ? baseName(folder.label) : "?",
+        title: folder?.label,
         onRemove: () => setFilter((f) => ({ ...f, folderId: null })),
       });
     }

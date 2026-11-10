@@ -1,7 +1,8 @@
-import { api, type AudioFile, type LibraryFolder, type LinkOutcome } from "../api";
+import { api, type AudioFile, type FindManyOutcome, type LibraryFolder, type LinkOutcome } from "../api";
 import { describeScan } from "../statusText";
 import { confirmDialog } from "../confirm";
 import { pickPath } from "../dialogs";
+import { isAndroid } from "../platform";
 import type { AppOps } from "./appOps";
 
 /** 「ファイルを紐づける」で選べるファイル（スキャンの対象と同じ拡張子） */
@@ -26,22 +27,32 @@ export function useLibraryActions({ run, showInfo, showError }: AppOps, { startH
       startHashing();
     });
 
-  /** フォルダを選んで、そのまま登録する */
+  /** フォルダを選んで、そのまま登録する（Android では SAF のフォルダを選ぶ画面で選び、選んだら登録してスキャンまで行う） */
   const browseAndAddFolder = async () => {
+    if (isAndroid) {
+      run(async () => {
+        const r = await api.pickLibraryFolder();
+        if (!r) return;
+        showInfo(describeScan("選んだフォルダ", r));
+        onFolderAdded(r.folderId);
+        startHashing();
+      });
+      return;
+    }
     const path = await pickPath({ directory: true }).catch(showError);
     if (typeof path === "string") await addFolder(path);
   };
 
   const removeFolder = async (folder: LibraryFolder) => {
     const message =
-      `「${folder.path}」の登録を解除しますか？\n` +
+      `「${folder.label}」の登録を解除しますか？\n` +
       `このフォルダのファイル${folder.fileCount}件の情報と、付けたタグ・出典・ライセンスの設定がアプリから消えます。\n` +
       "実際のファイルは消えません。";
     if (!(await confirmDialog(message))) return;
     run(async () => {
       await api.removeFolder(folder.id);
       dropFolderFilter(folder.id);
-      showInfo(`登録を解除しました: ${folder.path}`);
+      showInfo(`登録を解除しました: ${folder.label}`);
     });
   };
 
@@ -52,7 +63,7 @@ export function useLibraryActions({ run, showInfo, showError }: AppOps, { startH
       const errors: string[] = [];
       for (const f of targets) {
         try {
-          messages.push(describeScan(f.path, await api.scanFolder(f.id)));
+          messages.push(describeScan(f.label, await api.scanFolder(f.id)));
         } catch (e) {
           errors.push(String(e));
         }
@@ -72,8 +83,29 @@ export function useLibraryActions({ run, showInfo, showError }: AppOps, { startH
     if (r.addedFolder) startHashing();
   };
 
-  /** リンク切れのファイルを、選んだファイルにひも付ける */
+  /** フォルダからまとめて探した結果を出す。フォルダを登録したときは、ハッシュ値の計算を始める */
+  const reportFound = (r: FindManyOutcome) => {
+    const parts = [`ひも付けた ${r.linked}件`];
+    if (r.notFound) parts.push(`見つからなかった ${r.notFound}件`);
+    if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
+    if (r.addedFolder) parts.push(`フォルダ「${r.addedFolder}」をライブラリに登録しました`);
+    showInfo(parts.join("、"));
+    if (r.addedFolder) startHashing();
+  };
+
+  /** Android：SAF で選んだフォルダから探してひも付ける（選んだフォルダは登録する） */
+  const findInSafFolder = (ids: number[]) =>
+    run(async () => {
+      const r = await api.findMissingInSafFolder(ids);
+      if (r) reportFound(r);
+    });
+
+  /** リンク切れのファイルを、選んだファイルにひも付ける（Android では使えない：ファイルを選んでも、フォルダを読む許可が取れないため） */
   const linkMissingFile = async (file: AudioFile) => {
+    if (isAndroid) {
+      showError("この端末では、ファイルを選んでひも付けることはできません。「フォルダから探す」を使ってください");
+      return;
+    }
     const path = await pickPath({ filters: [{ name: "音声ファイル", extensions: AUDIO_EXTENSIONS }] }).catch(showError);
     if (typeof path !== "string") return;
     run(async () => reportLink(await api.linkMissingFile(file.id, path)));
@@ -81,6 +113,7 @@ export function useLibraryActions({ run, showInfo, showError }: AppOps, { startH
 
   /** リンク切れのファイルと同じ音声のファイルを、選んだフォルダから探してひも付ける */
   const findMissingInFolder = async (file: AudioFile) => {
+    if (isAndroid) return findInSafFolder([file.id]);
     const folder = await pickPath({ directory: true }).catch(showError);
     if (typeof folder !== "string") return;
     run(async () => {
@@ -92,16 +125,11 @@ export function useLibraryActions({ run, showInfo, showError }: AppOps, { startH
 
   /** チェックしたリンク切れのファイルそれぞれと同じ音声のファイルを、選んだフォルダからまとめて探してひも付ける */
   const findManyInFolder = async (ids: number[]) => {
+    if (isAndroid) return findInSafFolder(ids);
     const folder = await pickPath({ directory: true }).catch(showError);
     if (typeof folder !== "string") return;
     run(async () => {
-      const r = await api.findMissingInFolderMany(ids, folder);
-      const parts = [`ひも付けた ${r.linked}件`];
-      if (r.notFound) parts.push(`見つからなかった ${r.notFound}件`);
-      if (r.noHash) parts.push(`ハッシュ値がない ${r.noHash}件`);
-      if (r.addedFolder) parts.push(`フォルダ「${r.addedFolder}」をライブラリに登録しました`);
-      showInfo(parts.join("、"));
-      if (r.addedFolder) startHashing();
+      reportFound(await api.findMissingInFolderMany(ids, folder));
     });
   };
 

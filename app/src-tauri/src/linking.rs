@@ -9,6 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::error::{Error, Result};
 use crate::audio_hash::audio_hash;
 use crate::hashing::{compute_parallel, PendingFile};
+use crate::location::Location;
 use crate::library::{self, absolute_path, comparable, is_audio_file};
 
 /// ハッシュ値を計算するときの、1回にまとめて計算する件数（見つかったら、残りは計算しない）
@@ -100,13 +101,13 @@ pub fn find_in_folder(conn: &Connection, missing: i64, folder: &Path) -> Result<
     let files: Vec<PendingFile> = library::audio_files_under(&folder)
         .into_iter()
         .enumerate()
-        .map(|(i, path)| PendingFile { id: i as i64, path })
+        .map(|(i, path)| PendingFile { id: i as i64, path: Location::Path(path) })
         .collect();
     let cancel = AtomicBool::new(false);
     for batch in files.chunks(SEARCH_BATCH) {
         for (i, outcome) in compute_parallel(batch, &cancel, audio_hash) {
             if matches!(outcome, Some(Ok(ref h)) if *h == hash) {
-                return Ok(Some(files[i as usize].path.clone()));
+                return Ok(files[i as usize].path.as_path().map(Path::to_path_buf));
             }
         }
     }
@@ -170,14 +171,16 @@ pub fn find_many_in_folder(conn: &Connection, ids: &[i64], folder: &Path) -> Res
         let files: Vec<PendingFile> = library::audio_files_under(&folder)
             .into_iter()
             .enumerate()
-            .map(|(i, path)| PendingFile { id: i as i64, path })
+            .map(|(i, path)| PendingFile { id: i as i64, path: Location::Path(path) })
             .collect();
         let cancel = AtomicBool::new(false);
         for batch in files.chunks(SEARCH_BATCH) {
             for (i, outcome) in compute_parallel(batch, &cancel, audio_hash) {
                 if let Some(Ok(h)) = outcome {
                     if wanted.contains_key(&h) {
-                        found_for(&h, files[i as usize].path.clone(), &mut wanted);
+                        if let Some(p) = files[i as usize].path.as_path() {
+                            found_for(&h, p.to_path_buf(), &mut wanted);
+                        }
                     }
                 }
             }

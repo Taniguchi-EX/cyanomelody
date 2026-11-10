@@ -45,6 +45,7 @@ import { CreditField } from "./components/CreditField";
 import { Splitter } from "./components/Splitter";
 import { SearchBox } from "./components/SearchBox";
 import { useStoredNumber, useStoredString } from "./storage";
+import { isAndroid } from "./platform";
 
 /** 左・右の欄の最小の幅と、中央の欄に残す最小の幅 */
 const SIDE_MIN = 180;
@@ -533,7 +534,9 @@ export default function App() {
           onLinkFile={() => focusedFile && library.linkMissingFile(focusedFile)}
           onFindInFolder={() => focusedFile && library.findMissingInFolder(focusedFile)}
           onShowSameAudio={showSameAudio}
-          onReveal={(path) => revealItemInDir(path).catch(showError)}
+          onReveal={(path) =>
+            isAndroid ? showError("この端末では、ファイルの場所を開けません") : revealItemInDir(path).catch(showError)
+          }
           playlists={playlists}
           onAddToPlaylist={(id) => playlistActions.addToPlaylist(id, focusedIds())}
           onOpenPlaylist={(id) => focusedFile && playlistEditor.open(id, null, focusedFile.id)}

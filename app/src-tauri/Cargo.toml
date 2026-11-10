@@ -40,7 +40,7 @@ ttf-parser = "0.25.1"
 tauri-plugin-updater = "2"
 trash = "5"
 
-# Android の試作：Storage Access Framework
+# Android：Storage Access Framework（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-android-fs = { version = "30", features = ["protocol-content"] }
 

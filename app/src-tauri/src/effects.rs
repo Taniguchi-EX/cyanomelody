@@ -2,6 +2,7 @@
 //!
 //! 元のファイルは変更しない。再生とプレイリストの出力で、同じ処理を使う。
 
+use crate::source::FileSource;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -92,12 +93,12 @@ impl Effect {
 }
 
 /// 音声ファイルを読んで波形にする（MP3・WAV・FLAC・OGG・M4A）
-pub fn decode(path: &Path) -> Result<Audio, String> {
-    let file = File::open(path).map_err(|e| format!("ファイルを開けません: {e}"))?;
+pub fn decode<S: FileSource + ?Sized>(path: &S) -> Result<Audio, String> {
+    let file = path.open().map_err(|e| format!("ファイルを開けません: {e}"))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    if let Some(ext) = path.extension() {
+        hint.with_extension(&ext);
     }
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())

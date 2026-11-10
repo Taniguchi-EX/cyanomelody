@@ -1,5 +1,5 @@
 #!/bin/bash
-# Docker の中で、cyanomelody を Android 向けにビルドする（試作用）。/work にリポジトリを置いて動かす
+# Docker の中で、cyanomelody を Android 向けにビルドする（デバッグ版の APK）。/work にリポジトリを置いて動かす（run.sh から）
 #   引数：ターゲット（aarch64・x86_64 など。既定は aarch64）
 set -euo pipefail
 target="${1:-aarch64}"

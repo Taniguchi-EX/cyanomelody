@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
@@ -12,7 +12,7 @@ use crate::hash_job::{run_hashing, HashProgress};
 use crate::hashing::{self, RelinkResult};
 use crate::library::{self, LibraryFolder, ScanResult};
 use crate::state::{allow_asset_dir, AppState};
-use crate::{deleting, linking};
+use crate::{deleting, linking, saf};
 
 // Tauriのコマンドは、async にすると画面のスレッドを止めずに別スレッドで動く
 
@@ -27,6 +27,16 @@ pub async fn add_folder(app: AppHandle, state: State<'_, AppState>, path: String
     let id = library::add_folder(&conn, Path::new(&path))?;
     allow_asset_dir(&app, &library::folder_path(&conn, id)?);
     library::scan_folder(&mut conn, id)
+}
+
+/// Android：SAF のフォルダを選ぶ画面を出し、選んだフォルダ（権限を残す）を登録してスキャンする。キャンセルしたら None
+#[tauri::command]
+pub async fn pick_library_folder(state: State<'_, AppState>) -> Result<Option<ScanResult>> {
+    // 選んでいる間（ユーザーの操作を待つ間）は、データベースを使わない
+    let Some(dir) = crate::saf::pick_dir()? else { return Ok(None) };
+    let mut conn = state.conn();
+    let id = library::add_saf_folder(&conn, &dir.uri)?;
+    library::scan_folder(&mut conn, id).map(Some)
 }
 
 #[tauri::command]
@@ -147,6 +157,48 @@ pub async fn find_missing_in_folder_many(
         outcome.linked += 1;
     }
     Ok(outcome)
+}
+
+/// Android：見つからないファイル（file_ids）と同じ音声のファイルを、SAF で選んだフォルダから探してひも付ける。
+/// 選んだフォルダは登録し（登録済みならスキャンし直す）、新しいファイルのハッシュ値を計算してから、同じハッシュ値のファイルにひも付け直す。
+/// フォルダを選ばなかったら None
+#[tauri::command]
+pub async fn find_missing_in_saf_folder(state: State<'_, AppState>, file_ids: Vec<i64>) -> Result<Option<FindManyOutcome>> {
+    // 選んでいる間（ユーザーの操作を待つ間）は、データベースを使わない
+    let Some(dir) = saf::pick_dir()? else { return Ok(None) };
+    let pending = {
+        let mut conn = state.conn();
+        let registered: Option<i64> =
+            conn.query_row("SELECT id FROM library_folders WHERE path = ?1", [&dir.uri], |r| r.get(0)).optional()?;
+        let (folder_id, added) = match registered {
+            Some(id) => (id, None),
+            None => (library::add_saf_folder(&conn, &dir.uri)?, Some(saf::display_name(&dir.uri))),
+        };
+        library::scan_folder(&mut conn, folder_id)?;
+        let in_folder: std::collections::HashSet<i64> = conn
+            .prepare("SELECT id FROM audio_files WHERE folder_id = ?1")?
+            .query_map([folder_id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let pending: Vec<_> = hashing::pending_files(&conn)?.into_iter().filter(|f| in_folder.contains(&f.id)).collect();
+        (pending, added, folder_id)
+    };
+    let (pending, added_folder, folder_id) = pending;
+    // ハッシュ値の計算はデータベースを使わずに行う
+    let results: Vec<_> = hashing::compute_parallel(&pending, &std::sync::atomic::AtomicBool::new(false), hashing::analyze)
+        .into_iter()
+        .filter_map(|(id, r)| r.map(|r| (id, r)))
+        .collect();
+    let mut conn = state.conn();
+    hashing::save_analyses(&mut conn, &results)?;
+    // 選んだフォルダの中のファイルだけを候補にする（Windows の「フォルダから探す」と同じ）
+    let r = hashing::relink_in(&mut conn, &file_ids, Some(folder_id))?;
+    Ok(Some(FindManyOutcome {
+        linked: r.relinked,
+        // 候補が複数あってひも付けられなかったものも、見つからなかったことにする（Windows の「フォルダから探す」と同じ数え方）
+        not_found: r.not_found + r.ambiguous,
+        no_hash: r.no_hash,
+        added_folder,
+    }))
 }
 
 /// ファイルを削除する（ごみ箱に移す。permanent なら完全に消す）。削除できたファイルはライブラリから外す。

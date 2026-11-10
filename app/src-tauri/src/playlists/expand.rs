@@ -10,7 +10,7 @@ use super::{ensure_exists, ItemKind, PlayEntry, PlayMode};
 use crate::db::ids_json;
 use crate::error::{Error, Result};
 use crate::files::{filter_conditions, FileFilter, FILE_ORDER};
-use crate::library::absolute_path;
+use crate::location::Location;
 
 /// 項目の行（展開や表示に使う）
 #[derive(Clone)]
@@ -328,18 +328,18 @@ pub(super) fn expand_item_with(conn: &Connection, item_id: i64, rng: &mut Rng) -
 fn to_entries(conn: &Connection, tracks: Vec<Track>) -> Result<Vec<PlayEntry>> {
     let files: Vec<i64> = tracks.iter().map(|t| t.file_id).collect();
     // パスはまとめて1回で引く（数万件でも速く）
-    let paths: HashMap<i64, (String, String)> = conn
+    let paths: HashMap<i64, (String, String, Option<String>)> = conn
         .prepare(
-            "SELECT a.id, a.rel_path, f.path FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
+            "SELECT a.id, a.rel_path, f.path, a.uri FROM audio_files a JOIN library_folders f ON f.id = a.folder_id
              WHERE a.id IN (SELECT value FROM json_each(?1))",
         )?
-        .query_map([ids_json(&files)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?
+        .query_map([ids_json(&files)], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?
         .collect::<rusqlite::Result<_>>()?;
     Ok(tracks
         .into_iter()
         .filter_map(|t| {
-            let (rel_path, folder) = paths.get(&t.file_id)?;
-            let path = absolute_path(folder, rel_path).to_string_lossy().into_owned();
+            let (rel_path, folder, uri) = paths.get(&t.file_id)?;
+            let path = Location::of_file(folder, rel_path, uri.clone()).to_display();
             Some(PlayEntry {
                 file_id: t.file_id,
                 rel_path: rel_path.clone(),
