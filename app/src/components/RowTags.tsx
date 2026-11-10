@@ -19,7 +19,7 @@ const outerWidth = (el: HTMLElement) => el.getBoundingClientRect().width + (pars
  * 出せる幅 room に、頭から何個のチップを出すか決める。すべて入るならすべて。
  * 入らないときは「+N tags」の幅を残して入る分だけ。1個も入らないときは、最初の1個を縮めて（…で省いて）出す
  */
-export function fitTags(widths: number[], room: number, moreWidth: (hidden: number) => number): { shown: number; shrink: boolean } {
+function fitTags(widths: number[], room: number, moreWidth: (hidden: number) => number): { shown: number; shrink: boolean } {
   const total = widths.reduce((a, b) => a + b, 0);
   if (total <= room) return { shown: widths.length, shrink: false };
   let used = 0;
