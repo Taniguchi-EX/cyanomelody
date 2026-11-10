@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 丸などに切り抜かれても絵が欠けないよう、前景の周りを空ける -->
+  <foreground>
+    <inset android:drawable="@mipmap/ic_launcher_foreground" android:inset="20%" />
+  </foreground>
+  <background android:drawable="@color/ic_launcher_background"/>
+</adaptive-icon>

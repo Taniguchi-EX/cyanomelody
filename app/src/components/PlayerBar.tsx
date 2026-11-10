@@ -3,7 +3,7 @@ import { useDisplay } from "../displaySettings";
 import { api } from "../api";
 import type { EffectChain } from "../effects";
 import { stem } from "../paths";
-import { GearIcon, SpeakerIcon } from "./Icons";
+import { GearIcon, PauseIcon, PlayIcon, SpeakerIcon } from "./Icons";
 import { PLAYER_MODES, type Player, type PlayerMode, type PreviewTarget } from "../hooks/useAudioPlayer";
 
 type Props = {
@@ -58,18 +58,8 @@ const SEEK_STEPS = 1000;
 
 /** ウィンドウの下の、プレイリストの再生の欄。何も再生していないときも出しておく */
 // 中央の丸の中の記号。文字（▶⏸）は書体によって中心がずれるので、図形で描く
-const PLAY_ICON = (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-    {/* 三角は見た目の重心が左に寄るので、少し右へずらす */}
-    <path d="M5 2.5 L13.5 8 L5 13.5 Z" fill="currentColor" />
-  </svg>
-);
-const PAUSE_ICON = (
-  <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-    <rect x="3.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
-    <rect x="9.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
-  </svg>
-);
+const PLAY_ICON = <PlayIcon />;
+const PAUSE_ICON = <PauseIcon />;
 
 /** 「戻す」「進める」の記号：丸い矢印（back なら左回り） */
 const skipIcon = (back: boolean) => (

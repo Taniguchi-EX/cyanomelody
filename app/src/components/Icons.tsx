@@ -93,3 +93,32 @@ export function SearchIcon() {
     </svg>
   );
 }
+
+/** 再生：三角（見た目の重心が左に寄るので、少し右へずらす）。文字（▶）は書体によって形や中心が変わるので、図形で描く */
+export function PlayIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" data-icon="play">
+      <path d="M5 2.5 L13.5 8 L5 13.5 Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 一時停止：縦の棒2本 */
+export function PauseIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" data-icon="pause">
+      <rect x="3.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
+      <rect x="9.5" y="2.5" width="3" height="11" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 次へ：三角と縦の棒 */
+export function NextIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 16 16" width={size} height={size} aria-hidden="true" data-icon="next">
+      <path d="M3 2.5 L11 8 L3 13.5 Z" fill="currentColor" />
+      <rect x="11.5" y="2.5" width="2" height="11" rx="0.5" fill="currentColor" />
+    </svg>
+  );
+}

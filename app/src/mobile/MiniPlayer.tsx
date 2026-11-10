@@ -1,4 +1,5 @@
 import { stem } from "../paths";
+import { NextIcon, PauseIcon, PlayIcon } from "../components/Icons";
 import type { AppController } from "../hooks/useAppController";
 
 /**
@@ -14,8 +15,13 @@ export function MiniPlayer({ c, onOpen }: { c: AppController; onOpen: () => void
   const ratio = audio.time.duration > 0 ? audio.time.current / audio.time.duration : 0;
   const canPlay = files.some((f) => !f.missing);
   const main = player
-    ? { label: player.paused ? "再開" : "一時停止", icon: player.paused ? "▶" : "⏸", onClick: audio.togglePause, disabled: player.preparing }
-    : { label: "再生を始める", icon: "▶", onClick: playback.playOpen, disabled: !canPlay };
+    ? {
+        label: player.paused ? "再開" : "一時停止",
+        icon: player.paused ? <PlayIcon size={20} /> : <PauseIcon size={20} />,
+        onClick: audio.togglePause,
+        disabled: player.preparing,
+      }
+    : { label: "再生を始める", icon: <PlayIcon size={20} />, onClick: playback.playOpen, disabled: !canPlay };
   return (
     <div className="m-mini" data-testid="m-mini" onClick={onOpen}>
       <div className="m-mini-progress" style={{ width: `${ratio * 100}%` }} />
@@ -49,7 +55,7 @@ export function MiniPlayer({ c, onOpen }: { c: AppController; onOpen: () => void
         aria-label="次へ"
         title="次へ"
       >
-        ⏭
+        <NextIcon size={18} />
       </button>
     </div>
   );

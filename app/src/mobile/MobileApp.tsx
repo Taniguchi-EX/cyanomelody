@@ -33,7 +33,6 @@ export function MobileApp() {
     setSettingsOpen,
     checked,
     checks,
-    focusedFile,
     playback,
   } = c;
 
@@ -154,18 +153,7 @@ export function MobileApp() {
         )}
         {(base.kind === "detail" || base.kind === "bulk") && (
           <section className="m-screen">
-            <MobileHeader
-              title={base.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"}
-              onBack={nav.back}
-              right={
-                base.kind === "detail" &&
-                focusedFile && (
-                  <button onClick={() => playback.playList(focusedFile)} disabled={focusedFile.missing} aria-label="再生" data-testid="m-detail-play">
-                    ▶ 再生
-                  </button>
-                )
-              }
-            />
+            <MobileHeader title={base.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"} onBack={nav.back} />
             <div className="m-body m-detail">
               <DetailArea c={c} />
             </div>
