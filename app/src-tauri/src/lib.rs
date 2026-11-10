@@ -1,4 +1,5 @@
 mod audio_hash;
+mod android_proto;
 mod autotag;
 mod autotag_job;
 mod chains;
@@ -53,8 +54,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // 自動アップデートは、デスクトップだけ（Android は APK を入れ直す）
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            // Android の試作：SAF（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル
+            #[cfg(target_os = "android")]
+            app.handle().plugin(tauri_plugin_android_fs::builder().build())?;
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -88,6 +94,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            android_proto::proto_pick_dir,
+            android_proto::proto_saved_dir,
+            android_proto::proto_scan,
+            android_proto::proto_analyze,
             commands::library::list_folders,
             commands::library::add_folder,
             commands::library::remove_folder,

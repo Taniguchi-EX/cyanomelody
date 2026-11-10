@@ -4,6 +4,7 @@
   "version": "1.2.0",
   "type": "module",
   "scripts": {
+    "tauri": "tauri",
     "dev": "node scripts/licenses.mjs && vite",
     "build": "node scripts/licenses.mjs && tsc -b && vite build",
     "lint": "oxlint",

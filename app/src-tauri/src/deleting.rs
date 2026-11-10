@@ -47,7 +47,11 @@ fn targets(conn: &Connection, ids: &[i64]) -> Result<Vec<(i64, String, PathBuf)>
 /// 名前が「_notrash」で終わるファイルは移せないことにする（ごみ箱に移せないときの確認を試すため）
 fn move_to_trash(path: &Path, trash_dir: Option<&Path>) -> std::result::Result<(), String> {
     let Some(dir) = trash_dir else {
+        #[cfg(desktop)]
         return trash::delete(path).map_err(|e| e.to_string());
+        // スマートフォンにはごみ箱がない（試作：削除はデスクトップだけ）
+        #[cfg(mobile)]
+        return Err("この端末では、ごみ箱に移せません".into());
     };
     if path.file_stem().and_then(|s| s.to_str()).is_some_and(|s| s.ends_with("_notrash")) {
         return Err("画面テスト用：ごみ箱に移せないファイルです".into());
