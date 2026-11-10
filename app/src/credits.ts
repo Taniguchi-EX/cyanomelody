@@ -58,3 +58,6 @@ export function termState(def: TermDef, value: boolean | null): "free" | "bound"
 export function isWebUrl(url: string): boolean {
   return /^https?:\/\//i.test(url);
 }
+
+/** 出典・ライセンスの欄を並べる順 */
+export const CREDIT_KINDS: CreditKind[] = ["source", "license"];
