@@ -23,7 +23,7 @@ async function saveDetail() {
   await detail().waitFor({ state: "detached", timeout: 3000 });
   await waitIdle();
 }
-const rowTags = (rel) => row(rel).locator(".row-tags-box .chip").allInnerTexts();
+const rowTags = (rel) => row(rel).locator(".row-tags .tag-chip").allInnerTexts();
 
 await step("S01", "タグの詳細画面でシノニムを加えて保存できる。ほかのタグの名前・タグ名と同じものはその場で理由を出して入れない。左の欄の名前にマウスを乗せるとシノニムが出る", async () => {
   await ui.addFolder(path.join(dataDir, "formats"));

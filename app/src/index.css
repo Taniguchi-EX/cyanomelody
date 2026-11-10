@@ -126,22 +126,48 @@ h2:first-child {
   background: var(--bg);
 }
 
-/* ファイルの行のタグ。1行に収まる分だけ出し（折り返した2行目以降は隠す）、残りは「+N tags」。行の幅の半分まで（ファイル名の場所を残す） */
+/* ファイルの行のタグ。1行に収まる分だけ出し、残りは「+N tags」（どこまで出すかは RowTags で測って決める）。行の幅の半分まで（ファイル名の場所を残す） */
 .row-tags {
+  position: relative;
   display: flex;
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.row-tags-box {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+.row-tags .tag-chip {
+  flex: none;
+}
+
+/* 1個も入らないときの最初のチップ：縮めて「…」で省く */
+.row-tags .tag-chip.tag-shrink {
+  flex: 0 1 auto;
   min-width: 0;
-  height: 20px;
-  overflow: hidden;
+}
+
+/* 出さないチップ（測るときだけ並べる） */
+.row-tags .tag-off {
+  display: none;
+}
+
+/* 測るとき：すべてのチップを縮めずに並べ、「+N tags」は外す */
+.row-tags[data-measuring] .tag-chip {
+  display: inline-block;
+  flex: none;
+}
+
+.row-tags[data-measuring] .more-tags:not(.tag-probe) {
+  display: none;
+}
+
+/* 「+N tags」の幅を測るだけのチップ（見せない・場所も取らない） */
+.row-tags .tag-probe {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .row-tags .chip,
@@ -151,10 +177,6 @@ h2:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 18px;
-}
-
-.row-tags-box .chip {
-  margin-top: 1px;
 }
 
 .chip.more-tags {
@@ -419,14 +441,25 @@ h2:first-child {
   padding-right: 0;
 }
 
-/* 再生方法のボタン（記号の幅がそれぞれ違うので、幅をそろえて「■」の位置が動かないようにする） */
+/* 一定秒数戻す・進める（左の欄の左端に寄せる） */
+.play-skips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.play-skips button.icon:first-child {
+  padding-left: 0;
+}
+
 .play-buttons button.play-skip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 2px;
 }
 
+/* 再生方法のボタン（記号の幅がそれぞれ違うので、幅をそろえて「■」の位置が動かないようにする） */
 .play-buttons button.play-mode {
   width: 2em;
   text-align: center;

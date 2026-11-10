@@ -201,9 +201,32 @@ export function PlayerBar({
       </div>
 
       <div className="play-center">
-        {/* 「▶／⏸」が中央に来るよう、左右の欄を同じ幅にする（左に ⏮、右に ⏭ 🔀 🎲 ■） */}
+        {/* 「▶／⏸」が中央に来るよう、左右の欄を同じ幅にする（左端に戻す・進める、左に ⏮、右に ⏭、右端に再生方法・■） */}
         <div className="play-buttons">
           <div className="play-side-left">
+            {/* 一定秒数戻す・進める：シークバーの左端の上（右端の再生方法・停止と向かい合う位置） */}
+            <div className="play-skips">
+              <button
+                className="icon play-skip"
+                onClick={() => onSeekBy(-skipSeconds)}
+                disabled={!playing}
+                title={`${skipSeconds}秒戻す`}
+                aria-label={`${skipSeconds}秒戻す`}
+                data-testid="skip-back"
+              >
+                {skipIcon(true)}
+              </button>
+              <button
+                className="icon play-skip"
+                onClick={() => onSeekBy(skipSeconds)}
+                disabled={!playing}
+                title={`${skipSeconds}秒進める`}
+                aria-label={`${skipSeconds}秒進める`}
+                data-testid="skip-forward"
+              >
+                {skipIcon(false)}
+              </button>
+            </div>
             <button
               className="icon"
               onClick={onPrev}
@@ -212,16 +235,6 @@ export function PlayerBar({
               aria-label="前へ"
             >
               ⏮
-            </button>
-            <button
-              className="icon play-skip"
-              onClick={() => onSeekBy(-skipSeconds)}
-              disabled={!playing}
-              title={`${skipSeconds}秒戻す`}
-              aria-label={`${skipSeconds}秒戻す`}
-              data-testid="skip-back"
-            >
-              {skipIcon(true)}
             </button>
           </div>
           <button
@@ -234,16 +247,6 @@ export function PlayerBar({
             {main.icon}
           </button>
           <div className="play-side-right">
-            <button
-              className="icon play-skip"
-              onClick={() => onSeekBy(skipSeconds)}
-              disabled={!playing}
-              title={`${skipSeconds}秒進める`}
-              aria-label={`${skipSeconds}秒進める`}
-              data-testid="skip-forward"
-            >
-              {skipIcon(false)}
-            </button>
             <button className="icon" onClick={onNext} disabled={!player} title="次へ" aria-label="次へ">
               ⏭
             </button>

@@ -11,17 +11,19 @@ const { page, step, shot, row } = ui;
 
 const LONG_TAGS = ["長めのタグその一", "長めのタグその二", "長めのタグその三", "長めのタグその四", "長めのタグその五", "短い"];
 
-/** 行のタグの、出ている数・隠れている数・「+N tags」の文字・タグの欄の高さ */
+/** 行のタグの、出ている数・隠れている数・「+N tags」の文字・タグの欄の高さ・最後に出したチップの右の余白 */
 const tagState = () =>
   row("chime.wav").evaluate((r) => {
-    const box = r.querySelector(".row-tags-box");
-    const chips = [...box.children];
-    const top = chips[0].offsetTop;
+    const box = r.querySelector(".row-tags");
+    const shown = [...box.querySelectorAll(".tag-chip")].filter((c) => getComputedStyle(c).display !== "none");
+    const more = r.querySelector("[data-testid=more-tags]");
+    const last = (more ?? shown[shown.length - 1]).getBoundingClientRect().right;
     return {
-      shown: chips.filter((c) => c.offsetTop === top).length,
-      hidden: chips.filter((c) => c.offsetTop > top).length,
-      more: r.querySelector("[data-testid=more-tags]")?.textContent ?? "",
-      height: Math.round(r.querySelector(".row-tags").getBoundingClientRect().height),
+      shown: shown.length,
+      hidden: Number(box.dataset.hidden),
+      more: more?.textContent ?? "",
+      height: Math.round(box.getBoundingClientRect().height),
+      gap: Math.round(box.getBoundingClientRect().right - last),
     };
   });
 
@@ -33,6 +35,8 @@ await step("L01", "ファイルの行のタグは1行に収まる分だけ出し
   const wide = await tagState();
   expect(wide.hidden > 0 && wide.more === `+${wide.hidden} tags`, JSON.stringify(wide));
   expect(wide.shown + wide.hidden === LONG_TAGS.length && wide.height <= 22, JSON.stringify(wide));
+  // 出したチップと「+N tags」の間・後ろに余白を残さない
+  expect(wide.gap <= 1, JSON.stringify(wide));
   // マウスを乗せると、すべてのタグを出す
   await row("chime.wav").getByTestId("row-tags").hover();
   const popup = page.getByTestId("tags-popup");
@@ -46,6 +50,8 @@ await step("L01", "ファイルの行のタグは1行に収まる分だけ出し
   await page.waitForTimeout(300);
   const narrow = await tagState();
   expect(narrow.hidden > wide.hidden && narrow.more === `+${narrow.hidden} tags` && narrow.height <= 22, JSON.stringify(narrow));
+  expect(narrow.gap <= 1, JSON.stringify(narrow));
+  await shot("L01_狭いとき");
   // タグが少ない行には「+N tags」を出さない
   expect((await row("chime.mp3").getByTestId("more-tags").count()) === 0, "タグのない行に出た");
   await page.setViewportSize({ width: 1280, height: 800 });
