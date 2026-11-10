@@ -1079,6 +1079,15 @@ button.filter-chip:hover .chip-x {
   line-height: 26px;
 }
 
+/*
+  中央の一覧の見出しの行は、狭くなったら 並び順 → ファイル名の検索 → 見出し（ライブラリ・プレイリストの名前）の順に縮める。
+  縮む量は「縮みやすさ（flex-shrink）× 元の幅」で分けられるので、縮みやすさに大きな差を付けて、ほぼ順番に縮むようにする。
+  見出しは元の幅を文字の幅にし（余れば広がる）、いちばん縮みにくくする
+*/
+.library-head .editor-title {
+  flex: 1 1 auto;
+}
+
 .editor-head .name-input {
   margin-bottom: 0;
 }
@@ -1192,7 +1201,8 @@ button.filter-chip:hover .chip-x {
 
 /* ライブラリの見出しの右端の、ファイル名の検索欄 */
 .library-head .search-box {
-  flex: 0 1 240px;
+  flex: 0 100 240px;
+  min-width: 4em;
 }
 
 .item-count {
@@ -1459,7 +1469,8 @@ button.add-button:hover:not(:disabled) {
 
 /* ライブラリの並び順のプルダウン（検索の欄の右） */
 .library-head .file-sort {
-  flex: none;
+  flex: 0 10000 auto;
+  min-width: 3em;
 }
 
 /* 再生の欄の曲名（押すと鳴らしている曲へ飛ぶ） */
