@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import {
-  api,
-  FILE_SORTS,
-  PLAYLIST_SORTS,
-  type AudioFile,
-  type Credit,
-  type CreditKind,
-  type Facets,
-  type FileFilter,
-  type LibraryFolder,
-  type LicenseType,
-  playlistApi,
-  type PlaylistNode,
-  type Tag,
-} from "./api";
+import { api, type AudioFile, type Credit, type CreditKind, type Facets, type FileFilter, type LibraryFolder, type LicenseType, playlistApi, type PlaylistNode, type Tag } from "./api";
+import { FILE_SORTS, PLAYLIST_SORTS } from "./listOptions";
 import { FolderPanel } from "./components/FolderPanel";
 import { FilterChips } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";

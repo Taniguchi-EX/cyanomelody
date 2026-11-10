@@ -1,4 +1,5 @@
-import { api, describeScan, type AudioFile, type LibraryFolder, type LinkOutcome } from "../api";
+import { api, type AudioFile, type LibraryFolder, type LinkOutcome } from "../api";
+import { describeScan } from "../statusText";
 import { confirmDialog } from "../confirm";
 import { pickPath } from "../dialogs";
 import type { AppOps } from "./appOps";

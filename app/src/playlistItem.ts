@@ -1,4 +1,5 @@
-import { PLAY_MODES, type AudioFile, type PlaylistItem } from "./api";
+import { type AudioFile, type PlaylistItem } from "./api";
+import { PLAY_MODES } from "./listOptions";
 
 /** 項目の元の名前（ファイル名、タグの組み合わせ、プレイリスト名） */
 export function itemContent(item: PlaylistItem): string {

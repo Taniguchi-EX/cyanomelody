@@ -1,4 +1,5 @@
-import { api, PLAYLIST_SORTS, playlistApi, type AudioFile, type FileFilter, type PlayEntry, type PlaylistItem, type PlaylistNode } from "../api";
+import { api, playlistApi, type AudioFile, type FileFilter, type PlayEntry, type PlaylistItem, type PlaylistNode } from "../api";
+import { PLAYLIST_SORTS } from "../listOptions";
 import type { PreviewTarget, useAudioPlayer } from "./useAudioPlayer";
 import type { usePlaylistSelection } from "./usePlaylistSelection";
 

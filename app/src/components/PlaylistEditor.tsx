@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { PLAY_MODES, type PlayMode, type PlaylistDetail, type PlaylistItem, type PlaylistNode, type Tag } from "../api";
-import { makesLoop } from "../playlistGraph";
+import { type PlayMode, type PlaylistDetail, type PlaylistItem, type PlaylistNode, type Tag } from "../api";
 import type { EffectChain } from "../effects";
 import { useStoredString } from "../storage";
-import { itemContent } from "../playlistItem";
 import { useEscape } from "../hooks/useEscape";
 import { useFileDrag, type LocalDrop } from "../hooks/useFileDrag";
-import { TagInput } from "./TagInput";
+import { PlaylistAddPanel } from "./PlaylistAddPanel";
+import { PlaylistItemRow } from "./PlaylistItemRow";
 
 type Props = {
   detail: PlaylistDetail;
@@ -42,57 +41,14 @@ type Props = {
   /** タグの組み合わせの項目を加える。加えられたら true */
   onAddTags: (tagIds: number[]) => Promise<boolean>;
   onAddRef: (refId: number) => void;
-  /** dest の中に書き出し始める（中央の一覧に出ている曲を書き出す）。始められたら true */
+  /** dest の中に書き出し始める（items の項目の曲。空ならすべて）。始められたら true */
   onExport: (dest: string, items: number[]) => Promise<boolean>;
-  /** 書き出しの「メタデータ」：中央の一覧に出ている曲のメタデータを JSON に書き出す（保存先を選ぶ） */
+  /** 書き出しの「メタデータ」：items の項目（空ならすべて）の曲のメタデータを JSON に書き出す（保存先を選ぶ） */
   onExportMetadata: (items: number[]) => void;
   /** フォルダを選ぶダイアログを出し、選んだパスを返す（キャンセルなら null）。defaultPath は最初に開くフォルダ */
   onBrowseFolder: (defaultPath?: string) => Promise<string | null>;
   onError: (e: unknown) => void;
 };
-
-/** fx のプルダウンの、管理画面を開く選び肢 */
-const NEW_FX = "new-fx";
-const EDIT_FX = "edit-fx";
-
-function kindLabel(item: PlaylistItem): string {
-  if (item.kind === "file") return "ファイル";
-  if (item.kind === "tags") return "タグ";
-  return item.owned ? "子のプレイリスト" : "プレイリスト";
-}
-
-/** 種類を表す記号（名前は title で出す） */
-function kindIcon(item: PlaylistItem): string {
-  if (item.kind === "file") return "♪";
-  if (item.kind === "tags") return "🏷";
-  return item.owned ? "📁" : "↪";
-}
-
-/** 項目の行の、プレイリスト上での名前の入力欄。Enter で決め（空なら外す）、Esc でやめる */
-function AliasInput({ item, onCommit, onCancel }: { item: PlaylistItem; onCommit: (alias: string) => void; onCancel: () => void }) {
-  const [value, setValue] = useState(item.alias ?? "");
-  return (
-    <input
-      type="text"
-      className="name-input alias-input"
-      autoFocus
-      value={value}
-      placeholder={itemContent(item)}
-      aria-label={`${itemContent(item)}のプレイリスト上での名前`}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={onCancel}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onCommit(value);
-        if (e.key === "Escape") {
-          // 入力をやめるだけにし、編集画面を閉じるEsc（useEscape）まで届かせない
-          e.stopPropagation();
-          e.nativeEvent.stopImmediatePropagation();
-          onCancel();
-        }
-      }}
-    />
-  );
-}
 
 /** プレイリストの編集画面（メインの画面に重ねて出す）。項目の並び・再生方法・fx・別名、項目の追加、名前、書出 */
 export function PlaylistEditor({
@@ -124,7 +80,7 @@ export function PlaylistEditor({
 }: Props) {
   // 入力欄（名前・別名）を開いている間は、Esc は入力をやめるだけ（入力欄の側で止める）
   useEscape(onClose);
-  /** チェックした項目（まとめて外す・fx・再生方法の対象）。開いているプレイリストの中だけ */
+  /** チェックした項目（プレイリストから外す・fx・再生方法・書き出しの対象）。開いているプレイリストの中だけ */
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const checkedItems = detail.items.filter((i) => checked.has(i.id));
   const toggleCheck = (id: number) =>
@@ -164,13 +120,6 @@ export function PlaylistEditor({
   // 行のドラッグは並べ替えだけ（左の欄へは落とさない）
   const beginItemDrag = useFileDrag(() => {});
 
-  /** fx のプルダウン：エフェクトセットを付ける・外す、または管理画面を開く */
-  const changeChain = (item: PlaylistItem, value: string) => {
-    const targets = targetsOf(item);
-    if (value === NEW_FX) onOpenEffects(item, null, targets.map((t) => t.id));
-    else if (value === EDIT_FX) onOpenEffects(item, item.effectChain?.id ?? null, []);
-    else onSetChain(targets, value === "" ? null : Number(value));
-  };
   // 前に書き出したフォルダ（フォルダを選ぶダイアログを、そこから開く）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
 
@@ -187,12 +136,6 @@ export function PlaylistEditor({
     index: number;
     pos: "before" | "after";
   } | null>(null);
-
-  // ループになるプレイリスト（自分自身と、自分を含むもの）は、候補に出すが選べないようにする
-  const loops = new Set(playlists.filter((p) => makesLoop(playlists, detail.id, p.id)).map((p) => p.id));
-  /** タグの組み合わせの項目として加えるため、並べたタグ */
-  const [comboIds, setComboIds] = useState<number[]>([]);
-  const combo = comboIds.map((id) => tags.find((t) => t.id === id)).filter((t): t is Tag => t !== undefined);
 
   const targetAt = (x: number, y: number) => {
     const row = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-item-index]");
@@ -314,199 +257,45 @@ export function PlaylistEditor({
             <div className="playlist-items" ref={itemsRef}>
               {detail.items.length === 0 && <div className="empty">項目はまだありません</div>}
               {detail.items.map((item, index) => (
-                <div
+                <PlaylistItemRow
                   key={item.id}
-                  className={
-                    "playlist-item" +
-                    (focusedItemId === item.id ? " selected" : "") +
-                    (checked.has(item.id) ? " checked" : "") +
-                    (playingItemId === item.id ? " playing" : "") +
-                    (dragIndex === index ? " drag-source" : "") +
-                    (dropAt?.index === index ? ` drop-${dropAt.pos}` : "") +
-                    (item.file?.missing ? " missing" : "")
-                  }
-                  data-testid="playlist-item"
-                  data-item-id={item.id}
-                  data-item-index={index}
-                  data-item-kind={item.kind}
-                  // 行の中のボタン・プルダウン・チェックボックスを押したときは、その操作だけにする
-                  onClick={(e) => {
-                    if (!(e.target as HTMLElement).closest("button, select, input, label")) setFocusedItemId(item.id);
-                  }}
-                  // ダブルクリックで、その項目を再生する（項目の▶と同じ）
-                  onDoubleClick={(e) => {
-                    const playable = item.kind === "file" ? !!item.file && !item.file.missing : item.fileCount > 0;
-                    if (playable && !(e.target as HTMLElement).closest("button, select, input, label")) onPlayItem(item);
-                  }}
+                  item={item}
+                  index={index}
+                  busy={busy}
+                  chains={chains}
+                  focused={focusedItemId === item.id}
+                  checked={checked.has(item.id)}
+                  playing={playingItemId === item.id}
+                  dragSource={dragIndex === index}
+                  dropPos={dropAt?.index === index ? dropAt.pos : null}
+                  editingAlias={aliasItemId === item.id}
+                  onFocus={() => setFocusedItemId(item.id)}
+                  onPlay={() => onPlayItem(item)}
                   onPointerDown={(e) => beginItemDrag(e, [], busy || aliasItemId !== null ? undefined : reorder(index))}
-                >
-                  <button
-                    className="item-kind"
-                    title={kindLabel(item)}
-                    aria-label={`${itemContent(item)}を再生`}
-                    disabled={item.kind === "file" ? !item.file || item.file.missing : item.fileCount === 0}
-                    onClick={() => onPlayItem(item)}
-                  >
-                    <span className="kind-icon">{kindIcon(item)}</span>
-                    <span className="kind-play">▶</span>
-                  </button>
-                  {aliasItemId === item.id ? (
-                    <AliasInput
-                      item={item}
-                      onCommit={async (alias) => {
-                        if (await onSetAlias(item, alias)) setAliasItemId(null);
-                      }}
-                      onCancel={() => setAliasItemId(null)}
-                    />
-                  ) : (
-                    // プレイリスト上での名前があればそれを出し、横に本来の名前を薄く小さく出す（何のファイルだったか分かるように）
-                    <>
-                      <span className={item.alias ? "item-content has-alias" : "item-content"} title={itemContent(item)} data-testid="item-content">
-                        {item.alias ?? itemContent(item)}
-                        {item.file?.missing && (
-                          <span className="warn" title="ファイルが見つかりません">
-                            {" "}
-                            ⚠
-                          </span>
-                        )}
-                      </span>
-                      {item.alias && (
-                        <span className="item-original" title={itemContent(item)} data-testid="item-original">
-                          {itemContent(item)}
-                        </span>
-                      )}
-                    </>
-                  )}
-                  <button
-                    className="icon row-icon"
-                    onClick={() => setAliasItemId(item.id)}
-                    disabled={busy}
-                    title="プレイリスト上での名前を付ける"
-                    aria-label={`${itemContent(item)}のプレイリスト上での名前を付ける`}
-                  >
-                    ✎
-                  </button>
-                  {item.kind !== "file" && (
-                    <>
-                      <select
-                        value={item.mode}
-                        onChange={(e) => onSetMode(targetsOf(item).filter((t) => t.kind !== "file"), e.target.value as PlayMode)}
-                        disabled={busy}
-                        aria-label={`${itemContent(item)}の再生方法`}
-                      >
-                        {PLAY_MODES.map((m) => (
-                          <option key={m.mode} value={m.mode}>
-                            {m.icon} {m.short}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="sub item-count" title="再生したときのファイル数">
-                        {item.fileCount}件
-                      </span>
-                    </>
-                  )}
-                  {/* エフェクトセットが付いている行は色を付ける。最後の選び肢で管理画面を開く */}
-                  <select
-                    className="item-chain"
-                    value={item.effectChain?.id ?? ""}
-                    onChange={(e) => changeChain(item, e.target.value)}
-                    disabled={busy}
-                    aria-label={`${itemContent(item)}のエフェクト`}
-                    title="この項目にかけるエフェクトセット"
-                  >
-                    <option value="">fx なし</option>
-                    {chains.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                    <option value={NEW_FX}>新しいfxを作る</option>
-                    {item.effectChain && <option value={EDIT_FX}>このfxを編集</option>}
-                  </select>
-                  <button
-                    className="icon"
-                    onClick={() => onRemoveItem(item)}
-                    disabled={busy}
-                    title="外す"
-                    aria-label={`${itemContent(item)}を外す`}
-                  >
-                    ✕
-                  </button>
-                  <label className="check-cell" title="チェックすると、まとめて操作できる">
-                    <input
-                      type="checkbox"
-                      checked={checked.has(item.id)}
-                      onChange={() => toggleCheck(item.id)}
-                      aria-label={`${itemContent(item)}をチェック`}
-                      data-testid="item-check"
-                    />
-                  </label>
-                </div>
+                  onStartAlias={() => setAliasItemId(item.id)}
+                  onCommitAlias={async (alias) => {
+                    if (await onSetAlias(item, alias)) setAliasItemId(null);
+                  }}
+                  onCancelAlias={() => setAliasItemId(null)}
+                  onSetMode={(mode) => onSetMode(targetsOf(item).filter((t) => t.kind !== "file"), mode)}
+                  onSetChain={(chainId) => onSetChain(targetsOf(item), chainId)}
+                  onNewChain={() => onOpenEffects(item, null, targetsOf(item).map((t) => t.id))}
+                  onEditChain={() => onOpenEffects(item, item.effectChain?.id ?? null, [])}
+                  onRemove={() => onRemoveItem(item)}
+                  onToggleCheck={() => toggleCheck(item.id)}
+                />
               ))}
             </div>
 
-            {/* 項目を加える：タグの組み合わせ（タグを並べて「追加」）と、プレイリスト（選んだらすぐ加える） */}
-            <div className="playlist-add">
-              <div className="row combo-row">
-                <TagInput
-                  candidates={tags.filter((t) => !comboIds.includes(t.id))}
-                  attachedNames={combo.flatMap((t) => [t.name, ...t.synonyms])}
-                  busy={busy}
-                  label="組み合わせに加えるタグ"
-                  placeholder="タグ（Enterで並べる）"
-                  onAdd={async (input) => {
-                    const key = input.trim().toLowerCase();
-                    const tag = tags.find(
-                      (t) => t.name.toLowerCase() === key || t.synonyms.some((s) => s.toLowerCase() === key),
-                    );
-                    if (!tag) {
-                      onError(`タグ「${input.trim()}」はありません`);
-                      return false;
-                    }
-                    setComboIds((ids) => [...ids, tag.id]);
-                    return true;
-                  }}
-                />
-                <span className="chips" data-testid="combo-tags">
-                  {combo.map((t) => (
-                    <button
-                      key={t.id}
-                      className="chip"
-                      onClick={() => setComboIds((ids) => ids.filter((id) => id !== t.id))}
-                      title="押すと外す"
-                    >
-                      🏷 {t.name} ✕
-                    </button>
-                  ))}
-                </span>
-                <button
-                  onClick={async () => {
-                    if (await onAddTags(comboIds)) setComboIds([]);
-                  }}
-                  disabled={busy || comboIds.length === 0}
-                >
-                  タグの組み合わせを追加
-                </button>
-              </div>
-              <div className="row">
-                <select
-                  value=""
-                  onChange={(e) => e.target.value !== "" && onAddRef(Number(e.target.value))}
-                  disabled={busy}
-                  aria-label="加えるプレイリスト"
-                >
-                  <option value="">プレイリストを追加</option>
-                  {playlists.map((p) => (
-                    <option key={p.id} value={p.id} disabled={loops.has(p.id)}>
-                      {"　".repeat(p.depth)}
-                      {p.name}
-                      {loops.has(p.id) ? "（ループになるため選べません）" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sub">ファイルは、中央の一覧の行を左の欄のプレイリストへドラッグして加えます。</div>
-            </div>
+            <PlaylistAddPanel
+              playlistId={detail.id}
+              playlists={playlists}
+              tags={tags}
+              busy={busy}
+              onAddTags={onAddTags}
+              onAddRef={onAddRef}
+              onError={onError}
+            />
           </div>
 
           <div className="toolbar editor-foot">

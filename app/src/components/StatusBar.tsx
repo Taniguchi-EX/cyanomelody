@@ -1,14 +1,6 @@
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import {
-  api,
-  describeAutotag,
-  describeExport,
-  describeHashing,
-  playlistApi,
-  type AutotagProgress,
-  type ExportProgress,
-  type HashProgress,
-} from "../api";
+import { api, playlistApi, type AutotagProgress, type ExportProgress, type HashProgress } from "../api";
+import { describeAutotag, describeExport, describeHashing } from "../statusText";
 
 export type Status = { text: string; error: boolean };
 
