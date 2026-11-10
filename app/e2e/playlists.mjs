@@ -742,9 +742,9 @@ await step("P45", "書出は編集画面から：中央の一覧に出ている�
   await ui.filtered(() => tagItem("雨").locator(".tag-name").click());
   const shown = await rels();
   await open("ドラッグ");
-  await page.locator(".editor-foot").getByRole("button", { name: "書出" }).click();
-  await page.getByLabel("書き出し先のフォルダ").fill(out);
-  await page.getByRole("button", { name: "書き出しを始める" }).click();
+  await ui.setDialogReply(out);
+  await page.locator(".editor-foot").getByRole("button", { name: "ファイル", exact: true }).click();
+  await ui.setDialogReply(null);
   await page.getByTestId("export-status").filter({ hasText: "書き出しました" }).waitFor({ timeout: 10000 }).catch(() => {});
   const written = fs.readdirSync(path.join(out, "ドラッグ")).sort();
   expect(written.length === shown.length, `${written.join(",")} / ${shown.join(",")}`);

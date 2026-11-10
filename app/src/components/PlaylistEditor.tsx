@@ -44,8 +44,8 @@ type Props = {
   onExport: (dest: string) => Promise<boolean>;
   /** 書き出しの「メタデータ」：中央の一覧に出ている曲のメタデータを JSON に書き出す（保存先を選ぶ） */
   onExportMetadata: () => void;
-  /** フォルダを選ぶダイアログを出し、選んだパスを返す */
-  onBrowseFolder: () => Promise<string | null>;
+  /** フォルダを選ぶダイアログを出し、選んだパスを返す（キャンセルなら null）。defaultPath は最初に開くフォルダ */
+  onBrowseFolder: (defaultPath?: string) => Promise<string | null>;
   onError: (e: unknown) => void;
 };
 
@@ -157,16 +157,13 @@ export function PlaylistEditor({
     else if (value === EDIT_FX) onOpenEffects(item, item.effectChain?.id ?? null, []);
     else onSetChain(targets, value === "" ? null : Number(value));
   };
-  const [exporting, setExporting] = useState(false);
-  // 前に書き出したフォルダを入れておく（調整して何度も書き出すとき、選び直さなくてよい）
+  // 前に書き出したフォルダ（フォルダを選ぶダイアログを、そこから開く）
   const [lastDest, setLastDest] = useStoredString("cyanomelody.exportDest");
-  const [exportDest, setExportDest] = useState(lastDest);
 
+  /** 書き出しの「ファイル」：書き出し先のフォルダを選ぶダイアログをすぐ出し、選んだら書き出し始める（一括操作と同じ） */
   const startExport = async () => {
-    if (await onExport(exportDest)) {
-      setLastDest(exportDest.trim());
-      setExporting(false);
-    }
+    const dest = await onBrowseFolder(lastDest || undefined);
+    if (dest && (await onExport(dest))) setLastDest(dest);
   };
   // 項目の並べ替え（行のドラッグ。前・後ろだけ）
   const [dragIndex, setDragIndex] = useState<number | null>(null);
@@ -489,32 +486,9 @@ export function PlaylistEditor({
             </div>
           </div>
 
-          {exporting && (
-            <div className="toolbar export-row">
-              <input
-                type="text"
-                placeholder="書き出し先のフォルダ"
-                value={exportDest}
-                onChange={(e) => setExportDest(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !busy && exportDest.trim() && startExport()}
-                aria-label="書き出し先のフォルダ"
-              />
-              <button
-                onClick={async () => {
-                  const dir = await onBrowseFolder();
-                  if (dir) setExportDest(dir);
-                }}
-              >
-                参照
-              </button>
-              <button onClick={startExport} disabled={busy || !exportDest.trim()}>
-                書き出しを始める
-              </button>
-            </div>
-          )}
           <div className="toolbar editor-foot">
             <span className="foot-label">書き出し：</span>
-            <button onClick={() => setExporting((x) => !x)} aria-pressed={exporting} title="エフェクトをかけた音を、階層をフォルダにして書き出す">
+            <button onClick={startExport} disabled={busy} title="エフェクトをかけた音を、階層をフォルダにして書き出す（書き出し先のフォルダを選ぶ）">
               ファイル
             </button>
             <button onClick={onExportMetadata} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">

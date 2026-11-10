@@ -1103,11 +1103,6 @@ button.filter-chip:hover .chip-x {
   border-bottom: none;
 }
 
-.export-row {
-  border-top: 1px solid var(--border);
-  border-bottom: none;
-}
-
 /* 項目の行は押すと右の欄に出す。押した行は、ファイルの一覧で選んだ行と同じ色。
    行をつかんで左の欄に落とせるので、ドラッグで文字を選ばないようにする（ファイルの一覧の行と同じ） */
 .playlist-item {

@@ -934,7 +934,7 @@ export default function App() {
     }
   };
 
-  const browseFolder = () => pickPath({ directory: true });
+  const browseFolder = (defaultPath?: string) => pickPath({ directory: true, defaultPath });
 
   /** 項目（チェックした項目なら、チェックした項目すべて）にエフェクトセットを付ける。null なら外す */
   const setItemsChain = (itemIds: number[], chainId: number | null) =>

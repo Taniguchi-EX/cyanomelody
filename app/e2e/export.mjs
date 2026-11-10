@@ -20,13 +20,12 @@ async function addToPlaylist(rel, name) {
   await row(rel).click();
   await ui.addToPlaylistHere(name);
 }
-/** 書き出し先の欄を開いて書き出し始める。始めると欄は閉じる */
+/** 書き出しの「ファイル」を押し、フォルダを選ぶダイアログで dest を選んだことにして書き出し始める */
 async function exportTo(dest) {
-  // 前に始めた書き出しで欄が閉じるのを待ってから開く
-  await page.getByLabel("書き出し先のフォルダ").waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
-  await page.getByRole("button", { name: "書出" }).click();
-  await page.getByLabel("書き出し先のフォルダ").fill(dest);
-  await page.getByRole("button", { name: "書き出しを始める" }).click();
+  await ui.setDialogReply(dest);
+  await page.locator(".editor-foot").getByRole("button", { name: "ファイル", exact: true }).click();
+  await waitIdle();
+  await ui.setDialogReply(null);
 }
 const exportStatus = () => page.getByTestId("export-status").innerText();
 async function waitExported() {
@@ -91,13 +90,8 @@ await step("X05", "書き出し先のフォルダがないときはエラーを�
   await ui.waitStatus("書き出し先のフォルダがありません").catch(() => {});
   expect((await status()).includes("書き出し先のフォルダがありません"), await status());
   expect(!fs.existsSync(path.join(out, "ない")), "フォルダを作った");
-  // 編集画面を開き直す（開いている間は、入力した値がそのまま残る）。選んでいる行のダブルクリックでも選択は外れない
-  const field = page.getByLabel("書き出し先のフォルダ");
-  await openPlaylist("TRPG: 第1話");
-  expect((await page.getByTestId("playlist-filter").count()) === 1, "ダブルクリックで選択が外れた");
-  await page.getByRole("button", { name: "書出" }).click();
-  const v = await field.inputValue();
-  expect(v === out, v);
+  // 書き出せなかったフォルダは覚えない（次にダイアログを開く場所は、前に書き出せたフォルダ）
+  expect((await page.evaluate(() => JSON.parse(localStorage.getItem("cyanomelody.exportDest") ?? '""'))) === out, "書き出せなかったフォルダを覚えた");
 });
 
 await step("X06", "書き出し終わると、書き出したフォルダがリンクで出る（押すとエクスプローラーで見せる）", async () => {
