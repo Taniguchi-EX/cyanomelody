@@ -1138,8 +1138,25 @@ button.filter-chip:hover .chip-x {
   gap: 4px;
 }
 
-.filter-bar .filter-chips {
+/* 左の欄の一番下の、選んでいる絞り込みの条件。左の欄をスクロールしても一番下に残す */
+.filter-dock {
+  position: sticky;
+  bottom: -8px;
+  z-index: 1;
+  margin: 8px -8px -8px;
+  padding: 8px;
+  background: var(--bg-sub);
+  border-top: 1px solid var(--border);
+}
+
+.filter-dock .filter-chips {
   padding: 0;
+}
+
+/* 一覧の下の、チェックの操作の行 */
+.toolbar.check-bar {
+  border-bottom: none;
+  border-top: 1px solid var(--border);
 }
 
 /* 検索欄。文字があるときは、中の右端に「×」を出す */

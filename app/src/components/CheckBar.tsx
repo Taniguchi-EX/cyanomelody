@@ -15,7 +15,7 @@ type Props = {
 /** ファイルの一覧の上の、チェックの操作の行。チェックしたファイルへの操作は「一括操作」で右の欄に出す */
 export function CheckBar({ checked, allShownChecked, checkedOnly, onCheckShown, onClear, onCheckedOnly, bulkOpen, onToggleBulk }: Props) {
   return (
-    <div className="toolbar">
+    <div className="toolbar check-bar">
       <button onClick={onCheckShown} disabled={allShownChecked}>
         全てチェック
       </button>

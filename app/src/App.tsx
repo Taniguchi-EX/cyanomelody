@@ -45,7 +45,6 @@ import { PlayerBar } from "./components/PlayerBar";
 import { useAudioPlayer, type PreviewTarget } from "./hooks/useAudioPlayer";
 import { useChecks } from "./hooks/useChecks";
 import { usePlaylistSelection } from "./hooks/usePlaylistSelection";
-import { useKeepInPlace } from "./hooks/useKeepInPlace";
 import { EMPTY_FILTER, FILTER_KEYS, useFileFilter } from "./hooks/useFileFilter";
 import { EffectManager } from "./components/EffectManager";
 import { chainApi, type Effect, type EffectChain } from "./effects";
@@ -91,8 +90,6 @@ export default function App() {
   // 抽選したとき：そのプレイリストの、抽選で変わりうる曲（🎲・🔀の項目の曲）を鳴らしていれば止める（再生のフックは後で作るので ref で呼ぶ）
   const onDrawnRef = useRef<(id: number) => void>(() => {});
   const selection = usePlaylistSelection((id) => onDrawnRef.current(id));
-  /** 押した行の画面の上の位置を保つ（絞り込みの条件のチップやチェックの操作の行が出て、行がずれないように） */
-  const keepInPlace = useKeepInPlace();
   const selectedPlaylistId = selection.selectedId;
   /** 一覧の並び順（FILE_SORTS・PLAYLIST_SORTS の value）。ライブラリとプレイリストで別々に、アプリを閉じても覚えておく */
   const [librarySortValue, setLibrarySortValue] = useStoredString("cyanomelody.fileSort");
@@ -1125,7 +1122,6 @@ export default function App() {
     // ウィンドウを狭くしたときは、左・右の欄が最小の幅まで縮んでから中央の欄が縮む
     <div
       className="app"
-      onClickCapture={keepInPlace}
       style={{
         gridTemplateColumns: `minmax(${SIDE_MIN}px, ${sideWidth}px) auto minmax(${MAIN_MIN}px, 1fr) auto minmax(${SIDE_MIN}px, ${detailWidth}px)`,
       }}
@@ -1137,7 +1133,6 @@ export default function App() {
             {/* 左の欄のタグ・プレイリスト・出典・ライセンスを名前で絞り込む（ファイルの一覧は絞り込まない） */}
             <SearchBox value={sideQuery} onChange={setSideQuery} label="検索" testId="side-search" />
           </div>
-          <FilterChips chips={filterChips} onClearAll={() => resetFilter()} />
         </div>
         <FolderPanel
           folders={folders}
@@ -1190,6 +1185,14 @@ export default function App() {
           />
         ))}
         <OtherPanel filter={filter} onToggle={toggleOther} onDuration={fileFilter.setDuration} onYear={fileFilter.setYear} facets={facets} />
+        {/*
+          選んでいる絞り込みの条件。左の欄の一番下に残す（出たり消えたりしても、上の行の位置が変わらないように）
+        */}
+        {filterChips.length > 0 && (
+          <div className="filter-dock" data-testid="filter-dock">
+            <FilterChips chips={filterChips} onClearAll={() => resetFilter()} />
+          </div>
+        )}
       </aside>
       <Splitter
         label="左の欄の幅"
@@ -1238,19 +1241,6 @@ export default function App() {
                 {listView === "grid" ? <ListIcon /> : <GridIcon />}
               </button>
             </div>
-            {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}
-            {(checked.size > 0 || checkedOnly) && (
-              <CheckBar
-                checked={checked}
-                allShownChecked={checks.shownChecked === checks.shownFileCount}
-                checkedOnly={checkedOnly}
-                onCheckShown={() => checks.checkShown(true)}
-                onClear={checks.clear}
-                onCheckedOnly={setCheckedOnly}
-                bulkOpen={bulkOpen}
-                onToggleBulk={() => setBulkOpen((v) => !v)}
-              />
-            )}
             <FileList
               files={files}
               focusedKey={focusedKey}
@@ -1273,6 +1263,19 @@ export default function App() {
               onOpenOrigin={(f) => selectedPlaylistId !== null && f.origin && openEditor(selectedPlaylistId, f.origin.itemId)}
               view={listView}
             />
+            {/* チェックの操作は、チェックがあるときだけ一覧の下に出す（出たり消えたりしても、一覧の行の位置が変わらないように。件数は一番下の行に出す） */}
+            {(checked.size > 0 || checkedOnly) && (
+              <CheckBar
+                checked={checked}
+                allShownChecked={checks.shownChecked === checks.shownFileCount}
+                checkedOnly={checkedOnly}
+                onCheckShown={() => checks.checkShown(true)}
+                onClear={checks.clear}
+                onCheckedOnly={setCheckedOnly}
+                bulkOpen={bulkOpen}
+                onToggleBulk={() => setBulkOpen((v) => !v)}
+              />
+            )}
       </main>
       <Splitter
         label="右の欄の幅"
