@@ -153,9 +153,12 @@ pub struct XItem {
     pub chain: Option<i64>,
 }
 
+mod copying;
+pub mod package;
 mod exporting;
 mod importing;
 
+pub use copying::{copy_into_library, copy_preview, CopyPreview, CopySource, PackageDir, PACKAGE_JSON};
 pub use exporting::{export, export_metadata};
 pub use importing::*;
 

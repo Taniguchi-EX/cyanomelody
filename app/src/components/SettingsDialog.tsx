@@ -6,6 +6,7 @@ import { DEFAULT_BG, DEFAULT_FG, SORTS } from "../tagSettings";
 import { ColorRow } from "./TagDetail";
 import { LicenseTab } from "./LicenseTab";
 import { DataTab } from "./DataTab";
+import { CopyFromWindows } from "./CopyFromWindows";
 import { DisplayTab } from "./DisplayTab";
 import { setDisplay, SKIP_SECONDS_MAX, SKIP_SECONDS_MIN, useDisplay } from "../displaySettings";
 import { isAndroid } from "../platform";
@@ -17,17 +18,15 @@ type Props = {
   onImported: (result: ImportResult) => void;
 };
 
-const ALL_TABS = [
+const TABS = [
   { key: "general", label: "一般" },
   { key: "display", label: "表示" },
   { key: "data", label: "データ" },
   { key: "license", label: "バージョンとライセンス" },
 ] as const;
 
-type TabKey = (typeof ALL_TABS)[number]["key"];
+type TabKey = (typeof TABS)[number]["key"];
 
-/** 出すタブ（Android では、データの入出力を使えないので「データ」を出さない） */
-const TABS = isAndroid ? ALL_TABS.filter((t) => t.key !== "data") : ALL_TABS;
 
 /** 設定画面。再生の欄の右端の歯車から開く。タブごとに中身を出す */
 export function SettingsDialog({ onClose, onError, onImported }: Props) {
@@ -58,7 +57,13 @@ export function SettingsDialog({ onClose, onError, onImported }: Props) {
         <div className="tab-body" role="tabpanel">
           {tab === "general" && <GeneralTab onError={onError} />}
           {tab === "display" && <DisplayTab onError={onError} />}
-          {tab === "data" && <DataTab onError={onError} onImported={onImported} />}
+          {/* Android の「データ」は、Windows からのコピーだけ */}
+          {tab === "data" &&
+            (isAndroid ? (
+              <CopyFromWindows onError={onError} onImported={onImported} />
+            ) : (
+              <DataTab onError={onError} onImported={onImported} />
+            ))}
           {tab === "license" && <LicenseTab onError={onError} />}
         </div>
       </div>

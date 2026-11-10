@@ -440,3 +440,14 @@
   top: calc(env(safe-area-inset-top) + 8px);
   left: 8px;
 }
+
+/* 設定のタブ：名前を折り返さず、入らない分は横にスクロールする */
+.m-app .tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.m-app .tabs button {
+  flex: none;
+  white-space: nowrap;
+}

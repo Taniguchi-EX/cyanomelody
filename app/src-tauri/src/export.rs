@@ -43,7 +43,7 @@ fn prefix(index: usize, count: usize) -> String {
 }
 
 /// parent の中に name のフォルダを作る。同じ名前があるときは「 (2)」などを付ける
-fn unique_dir(parent: &Path, name: &str) -> std::io::Result<PathBuf> {
+pub(crate) fn unique_dir(parent: &Path, name: &str) -> std::io::Result<PathBuf> {
     let mut path = parent.join(name);
     let mut n = 2;
     while path.exists() {

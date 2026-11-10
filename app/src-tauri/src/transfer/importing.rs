@@ -5,20 +5,42 @@ use super::*;
 // ---------------------------------------------------------------- 曲の見分け方
 /// 曲をどうやって見つけたか
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MatchBy {
+pub(crate) enum MatchBy {
     Path,
+    /// フォルダの中の相対パス（Android へのコピーだけ）
+    Folder,
     Hash,
     NameSize,
 }
 
-struct LocalFile {
-    id: i64,
+/// 曲を探す先の、このライブラリの曲
+#[derive(Debug, Clone)]
+pub(crate) struct LocalFile {
+    pub id: i64,
+    pub folder_id: i64,
     /// 比べるための絶対パス（小文字、区切りは /）
-    key: String,
-    name: String,
-    size: i64,
-    hash: Option<String>,
-    missing: bool,
+    pub key: String,
+    /// フォルダの中の相対パス（小文字）
+    pub rel: String,
+    pub name: String,
+    pub size: i64,
+    pub hash: Option<String>,
+    pub missing: bool,
+}
+
+impl LocalFile {
+    pub fn new(id: i64, folder_id: i64, folder: &str, rel_path: &str, size: i64, hash: Option<String>, missing: bool) -> Self {
+        LocalFile {
+            id,
+            folder_id,
+            key: path_key(folder, rel_path),
+            rel: rel_path.to_lowercase(),
+            name: base_name(rel_path),
+            size,
+            hash,
+            missing,
+        }
+    }
 }
 
 fn path_key(folder: &str, rel_path: &str) -> String {
@@ -29,30 +51,59 @@ fn base_name(rel_path: &str) -> String {
     rel_path.rsplit('/').next().unwrap_or(rel_path).to_lowercase()
 }
 
-/// ファイルの中の曲を、このPCのライブラリの曲に対応させる。パス → ハッシュ値 → 名前と大きさ（1つに決まるときだけ）の順に試す
-fn match_files(conn: &Connection, data: &DataFile) -> Result<HashMap<i64, (i64, MatchBy)>> {
-    let locals: Vec<LocalFile> = conn
+/// 曲の見分け方の決まり
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MatchOptions {
+    /// フォルダの中の相対パスでも探す（Android へのコピー：Windows とフォルダの場所が違うため）
+    pub by_folder: bool,
+}
+
+/// このライブラリの曲をすべて読む
+pub(crate) fn load_locals(conn: &Connection) -> Result<Vec<LocalFile>> {
+    Ok(conn
         .prepare(
-            "SELECT a.id, f.path, a.rel_path, a.size, a.hash, a.missing FROM audio_files a
+            "SELECT a.id, a.folder_id, f.path, a.rel_path, a.size, a.hash, a.missing FROM audio_files a
              JOIN library_folders f ON f.id = a.folder_id",
         )?
         .query_map([], |r| {
-            let folder: String = r.get(1)?;
-            let rel: String = r.get(2)?;
-            Ok(LocalFile {
-                id: r.get(0)?,
-                key: path_key(&folder, &rel),
-                name: base_name(&rel),
-                size: r.get(3)?,
-                hash: r.get(4)?,
-                missing: r.get(5)?,
-            })
+            let folder: String = r.get(2)?;
+            let rel: String = r.get(3)?;
+            Ok(LocalFile::new(r.get(0)?, r.get(1)?, &folder, &rel, r.get(4)?, r.get(5)?, r.get(6)?))
         })?
-        .collect::<rusqlite::Result<_>>()?;
+        .collect::<rusqlite::Result<_>>()?)
+}
+
+/// ファイルの各フォルダに、このライブラリのフォルダのうち、相対パスが一番多く一致するものを対応させる（1件も一致しなければ対応させない）
+fn map_folders(locals: &[LocalFile], data: &DataFile) -> HashMap<i64, i64> {
+    let mut by_rel: HashMap<&str, Vec<i64>> = HashMap::new();
+    for l in locals {
+        by_rel.entry(l.rel.as_str()).or_default().push(l.folder_id);
+    }
+    let mut tally: HashMap<i64, HashMap<i64, usize>> = HashMap::new();
+    for f in &data.files {
+        let rel = f.rel_path.to_lowercase();
+        for &local in by_rel.get(rel.as_str()).map(Vec::as_slice).unwrap_or_default() {
+            *tally.entry(f.folder).or_default().entry(local).or_default() += 1;
+        }
+    }
+    tally
+        .into_iter()
+        .filter_map(|(folder, counts)| {
+            // 一致の数が同じなら、id の小さいフォルダ
+            counts.into_iter().max_by_key(|&(local, n)| (n, std::cmp::Reverse(local))).map(|(local, _)| (folder, local))
+        })
+        .collect()
+}
+
+/// ファイルの中の曲を、ライブラリの曲（locals）に対応させる。
+/// パス → （by_folder なら）フォルダの中の相対パス → ハッシュ値 → 名前と大きさ（1つに決まるときだけ）の順に試す
+pub(crate) fn match_with(locals: &[LocalFile], data: &DataFile, options: MatchOptions) -> HashMap<i64, (i64, MatchBy)> {
     let by_path: HashMap<&str, &LocalFile> = locals.iter().map(|l| (l.key.as_str(), l)).collect();
+    let by_folder_rel: HashMap<(i64, &str), &LocalFile> = locals.iter().map(|l| ((l.folder_id, l.rel.as_str()), l)).collect();
+    let folder_map = if options.by_folder { map_folders(locals, data) } else { HashMap::new() };
     let mut by_hash: HashMap<&str, Vec<&LocalFile>> = HashMap::new();
     let mut by_name: HashMap<(&str, i64), Vec<&LocalFile>> = HashMap::new();
-    for l in &locals {
+    for l in locals {
         if let Some(h) = &l.hash {
             by_hash.entry(h).or_default().push(l);
         }
@@ -63,8 +114,12 @@ fn match_files(conn: &Connection, data: &DataFile) -> Result<HashMap<i64, (i64, 
     for f in &data.files {
         let name = base_name(&f.rel_path);
         let key = folders.get(&f.folder).map(|folder| path_key(folder, &f.rel_path));
+        let rel = f.rel_path.to_lowercase();
+        let in_folder = folder_map.get(&f.folder).and_then(|&local| by_folder_rel.get(&(local, rel.as_str())));
         let found = if let Some(l) = key.as_deref().and_then(|k| by_path.get(k)) {
             Some((l.id, MatchBy::Path))
+        } else if let Some(l) = in_folder {
+            Some((l.id, MatchBy::Folder))
         } else if let Some(list) = f.hash.as_deref().and_then(|h| by_hash.get(h)) {
             // 同じ音声が複数あれば、見つからない印のないもの、同じファイル名のものを選ぶ
             let best = list.iter().min_by_key(|l| (l.missing, l.name != name, l.id)).unwrap();
@@ -79,7 +134,11 @@ fn match_files(conn: &Connection, data: &DataFile) -> Result<HashMap<i64, (i64, 
             result.insert(f.id, m);
         }
     }
-    Ok(result)
+    result
+}
+
+fn match_files(conn: &Connection, data: &DataFile, options: MatchOptions) -> Result<HashMap<i64, (i64, MatchBy)>> {
+    Ok(match_with(&load_locals(conn)?, data, options))
 }
 
 /// インポートの見込み（取り込む前に画面に出す）
@@ -98,8 +157,9 @@ pub struct ImportPreview {
     pub effect_chains: usize,
     pub sources: usize,
     pub licenses: usize,
-    /// 今のライブラリで見つかる曲（パス・ハッシュ値・名前と大きさ）
+    /// 今のライブラリで見つかる曲（パス・フォルダの中の相対パス・ハッシュ値・名前と大きさ）
     pub matched_by_path: usize,
+    pub matched_by_folder: usize,
     pub matched_by_hash: usize,
     pub matched_by_name: usize,
     /// ハッシュ値をまだ計算していない、このPCの曲の数
@@ -137,7 +197,12 @@ fn folders_not_in_file(conn: &Connection, data: &DataFile) -> Result<Vec<i64>> {
 }
 
 pub fn preview(conn: &Connection, data: &DataFile) -> Result<ImportPreview> {
-    let matched = match_files(conn, data)?;
+    preview_with(conn, data, &load_locals(conn)?, MatchOptions::default())
+}
+
+/// 見込み。locals は曲を探す先（Android へのコピーでは、これから登録するフォルダの曲も入れる）
+pub fn preview_with(conn: &Connection, data: &DataFile, locals: &[LocalFile], options: MatchOptions) -> Result<ImportPreview> {
+    let matched = match_with(locals, data, options);
     let by = |m: MatchBy| matched.values().filter(|(_, b)| *b == m).count();
     Ok(ImportPreview {
         sections: data.sections,
@@ -152,6 +217,7 @@ pub fn preview(conn: &Connection, data: &DataFile) -> Result<ImportPreview> {
         sources: data.sources.len(),
         licenses: data.licenses.len(),
         matched_by_path: by(MatchBy::Path),
+        matched_by_folder: by(MatchBy::Folder),
         matched_by_hash: by(MatchBy::Hash),
         matched_by_name: by(MatchBy::NameSize),
         pending_hashes: conn.query_row(
@@ -194,6 +260,10 @@ pub struct ImportResult {
     pub items_skipped: usize,
     /// 取り込んだ画面の設定（画面側で反映する）
     pub screen: Option<serde_json::Map<String, serde_json::Value>>,
+    /// スキャンしたフォルダの数（Android へのコピー。登録済みのフォルダのスキャンし直しも数える）
+    pub folders_scanned: usize,
+    /// 画面に出す知らせ（登録できなかったフォルダとその理由など）
+    pub messages: Vec<String>,
 }
 
 /// ライブラリのフォルダを取り込む（スキャンが要るので、ほかの項目より前に、トランザクションの外で行う）。
@@ -230,8 +300,15 @@ pub fn import_folders(conn: &Connection, data: &DataFile, replace: bool, result:
 }
 
 /// ライブラリ以外の項目を、1つのトランザクションで取り込む。replace なら、選んだ項目の今のデータを消してから取り込む
-pub fn import_data(conn: &mut Connection, data: &DataFile, sections: Sections, replace: bool, result: &mut ImportResult) -> Result<()> {
-    let matched = match_files(conn, data)?;
+pub fn import_data(
+    conn: &mut Connection,
+    data: &DataFile,
+    sections: Sections,
+    replace: bool,
+    options: MatchOptions,
+    result: &mut ImportResult,
+) -> Result<()> {
+    let matched = match_files(conn, data, options)?;
     result.files_matched = matched.len();
     result.files_unmatched = data.files.len() - matched.len();
     let file_of = |id: i64| matched.get(&id).map(|(local, _)| *local);

@@ -336,8 +336,9 @@ export type ImportPreview = {
   effectChains: number;
   sources: number;
   licenses: number;
-  /** 今のライブラリで見つかる曲 */
+  /** 今のライブラリで見つかる曲（フォルダの中の相対パスは、Android へのコピーだけ） */
   matchedByPath: number;
+  matchedByFolder: number;
   matchedByHash: number;
   matchedByName: number;
   /** ハッシュ値をまだ計算していない曲の数 */
@@ -370,6 +371,31 @@ export type ImportResult = {
   itemsSkipped: number;
   /** 取り込んだ画面の設定 */
   screen: Record<string, unknown> | null;
+  /** スキャンしたフォルダの数（Android へのコピー） */
+  foldersScanned: number;
+  /** 知らせ（登録できなかったフォルダとその理由など） */
+  messages: string[];
+};
+
+/** 音声ファイルも入れて書き出すときの、音声ファイルの数と合計の大きさ */
+export type PackageEstimate = {
+  files: number;
+  bytes: number;
+  /** 見つからない印があるので入れない曲 */
+  missing: number;
+};
+
+/** Windows からのコピー：選んだもの（書き出したフォルダか、データのファイル） */
+export type CopySource = { kind: "dir" | "file"; uri: string };
+
+/** Windows からのコピーの見込み */
+export type CopyPreview = {
+  source: CopySource;
+  import: ImportPreview;
+  /** 書き出したフォルダの中のフォルダ（registered：前に同じ場所から写して登録済み） */
+  folders: { name: string; registered: boolean; files: number }[];
+  /** 前に別の場所から写したフォルダ（登録を外すか聞く） */
+  oldFolders: { id: number; label: string }[];
 };
 
 /** ファイル1件の自動タグ付けの結果 */

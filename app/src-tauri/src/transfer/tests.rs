@@ -39,7 +39,7 @@ fn roundtrip(data: &DataFile) -> DataFile {
 
 fn import(conn: &mut Connection, data: &DataFile, sections: Sections, replace: bool) -> ImportResult {
     let mut result = ImportResult::default();
-    import_data(conn, data, sections, replace, &mut result).unwrap();
+    import_data(conn, data, sections, replace, MatchOptions::default(), &mut result).unwrap();
     result
 }
 
@@ -78,7 +78,7 @@ fn exports_only_selected_files_with_tags_and_credits() {
     // 別のDBに取り込める（選んだファイルのタグ付けだけが入る）
     let mut dest = test_db(&["a.wav", "b.mp3", "sub/c.flac"], &[]);
     let mut result = ImportResult::default();
-    import_data(&mut dest, &data, data.sections, false, &mut result).unwrap();
+    import_data(&mut dest, &data, data.sections, false, MatchOptions::default(), &mut result).unwrap();
     let tagged: i64 = dest.query_row("SELECT count(DISTINCT file_id) FROM file_tags", [], |r| r.get(0)).unwrap();
     assert_eq!(tagged, 1);
 }
@@ -232,4 +232,55 @@ fn rejects_other_files() {
     let newer = parse(r#"{"app":"cyanomelody","formatVersion":99}"#).unwrap_err().to_string();
     assert!(newer.contains("新しい版"), "{newer}");
     assert!(parse(r#"{"app":"cyanomelody","formatVersion":1}"#).is_ok());
+}
+
+#[test]
+fn finds_files_by_relative_path_in_folder_only_when_asked() {
+    let data = roundtrip(&export(&source_db(), ALL, "1.0.0", None).unwrap());
+    // 端末：フォルダの場所が違い、ハッシュ値がまだなく、大きさも違う（名前と大きさでは見つからない）。相対パスは同じ
+    let mut dest = test_db(&["a.wav", "B.MP3", "sub/c.flac"], &[]);
+    dest.execute_batch("UPDATE library_folders SET path = 'X:/phone'; UPDATE audio_files SET size = 1;").unwrap();
+    let p = preview(&dest, &data).unwrap();
+    assert_eq!(p.matched_by_folder, 0);
+    let mut result = ImportResult::default();
+    import_data(&mut dest, &data, ALL, true, MatchOptions { by_folder: true }, &mut result).unwrap();
+    // 大文字・小文字は区別しない
+    assert_eq!((result.files_matched, result.files_unmatched), (3, 0));
+    assert_eq!(file_tags_of(&dest, "a.wav"), vec!["屋外", "雨"]);
+    assert_eq!(file_tags_of(&dest, "B.MP3"), vec!["風"]);
+}
+
+#[test]
+fn copy_preview_counts_files_in_folders_not_yet_registered() {
+    let data = roundtrip(&export(&source_db(), ALL, "1.0.0", None).unwrap());
+    let dest = test_db(&[], &[]);
+    let tree_file = |rel: &str| crate::saf::TreeFile { rel_path: rel.into(), uri: String::new(), size: 1, modified_at: 0 };
+    let package = vec![PackageDir {
+        name: "lib".into(),
+        uri: r#"{"uri":"content://x/tree/primary%3ADownload%2Fcm/document/primary%3ADownload%2Fcm%2Flib","documentTopTreeUri":null}"#.into(),
+        files: vec![tree_file("a.wav"), tree_file("b.mp3"), tree_file("other.wav")],
+    }];
+    let source = CopySource { kind: "dir".into(), uri: String::new() };
+    let p = copy_preview(&dest, &data, &source, &package).unwrap();
+    assert_eq!((p.import.files, p.import.matched_by_folder), (3, 2));
+    assert_eq!(p.folders.len(), 1);
+    assert!(!p.folders[0].registered);
+    assert_eq!(p.folders[0].files, 3);
+    // まだ登録していないので、今のライブラリの曲は増えていない
+    let n: i64 = dest.query_row("SELECT count(*) FROM audio_files", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 0);
+}
+
+#[test]
+fn package_files_skip_missing_and_group_by_folder() {
+    let src = source_db();
+    src.execute("UPDATE audio_files SET missing = 1 WHERE rel_path = 'b.mp3'", []).unwrap();
+    let data = export(&src, ALL, "1.0.0", None).unwrap();
+    let (files, missing) = package::package_files(&src, &data).unwrap();
+    assert_eq!(missing, 1);
+    let folder = data.folders[0].path.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap().to_string();
+    let dests: Vec<_> = files.iter().map(|f| f.dest.clone()).collect();
+    assert_eq!(dests, vec![format!("{folder}/a.wav"), format!("{folder}/sub/c.flac")]);
+    let e = package::estimate(&files, missing);
+    assert_eq!((e.files, e.bytes, e.missing), (2, 100 + 300, 1));
 }

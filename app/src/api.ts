@@ -13,8 +13,11 @@ import type {
   Facets,
   FileFilter,
   HashProgress,
+  CopyPreview,
+  CopySource,
   ImportPreview,
   ImportResult,
+  PackageEstimate,
   LibraryFolder,
   LicenseType,
   LinkOutcome,
@@ -96,6 +99,16 @@ export const api = {
   /** データのインポート。replace なら、選んだ項目の今のデータを置き換える */
   importData: (path: string, sections: DataSections, replace: boolean) =>
     invoke<ImportResult>("import_data", { path, sections, replace }),
+  /** 音声ファイルも入れて書き出すときの、音声ファイルの数と合計の大きさ */
+  estimatePackage: (sections: DataSections) => invoke<PackageEstimate>("estimate_package", { sections }),
+  /** dest の中に作るフォルダ（folderName）に、データと音声ファイルを書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" */
+  exportPackage: (dest: string, folderName: string, sections: DataSections, screen: Record<string, unknown> | null) =>
+    invoke<string>("export_package", { dest, folderName, sections, screen }),
+  /** Android：書き出したフォルダ（dir）かデータのファイル（file）を選び、コピーの見込みを返す。キャンセルしたら null */
+  pickCopySource: (kind: CopySource["kind"]) => invoke<CopyPreview | null>("pick_copy_source", { kind }),
+  /** Android：選んだ項目を、Windows のとおりに置き換える */
+  copyFromWindows: (source: CopySource, sections: DataSections, removeOld: boolean) =>
+    invoke<ImportResult>("copy_from_windows", { source, sections, removeOld }),
   /** 新しく作るタグの既定値（設定画面の「一般」） */
   newTagSettings: () => invoke<TagSettings>("new_tag_settings"),
   setNewTagSettings: (settings: TagSettings) => invoke<void>("set_new_tag_settings", { settings }),

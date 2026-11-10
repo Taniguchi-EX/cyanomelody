@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod autotag;
+pub mod copy;
 pub mod credits;
 pub mod data;
 pub mod effects;

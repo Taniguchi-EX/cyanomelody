@@ -31,7 +31,7 @@ fn unsupported() -> Error {
 }
 
 #[cfg(target_os = "android")]
-pub use imp::{init, list_files, open, pick_dir, readable};
+pub use imp::{child_dirs, init, list_files, open, pick_dir, pick_json_file, read_text, readable, resolve_file};
 
 #[cfg(not(target_os = "android"))]
 pub fn open(_uri: &str) -> io::Result<File> {
@@ -53,12 +53,61 @@ pub fn readable(_dir: &str) -> bool {
     false
 }
 
+#[cfg(not(target_os = "android"))]
+pub fn pick_json_file() -> Result<Option<String>> {
+    Err(unsupported())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn read_text(_uri: &str) -> Result<String> {
+    Err(unsupported())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn child_dirs(_dir: &str) -> Result<Vec<ChildDir>> {
+    Err(unsupported())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn resolve_file(_dir: &str, _name: &str) -> Option<String> {
+    None
+}
+
+/// フォルダの中のフォルダ（1段だけ）
+#[derive(Debug, Clone)]
+pub struct ChildDir {
+    pub name: String,
+    /// フォルダの FsUri の JSON
+    pub uri: String,
+}
+
+/// SAF の URI の JSON から、content:// の URI の文字列を取り出す
+fn uri_of(uri_json: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(uri_json).ok()?;
+    Some(value.get("uri")?.as_str()?.to_string())
+}
+
+/// SAF のフォルダの URI の JSON から、選んだフォルダ（木の根。権限を持っているフォルダ）の場所の名前を作る
+/// （content://…/tree/<ここ>/document/… を戻したもの）。読めなければ None
+pub fn tree_id(uri_json: &str) -> Option<String> {
+    let uri = uri_of(uri_json)?;
+    let rest = uri.split_once("/tree/")?.1;
+    Some(percent_decode(rest.split('/').next().unwrap_or(rest)))
+}
+
+/// 選んだフォルダの中のフォルダ（選んだフォルダそのものではない）か
+pub fn is_subfolder(uri_json: &str) -> bool {
+    match (tree_id(uri_json), document_id(uri_json)) {
+        (Some(tree), Some(doc)) => !tree.eq_ignore_ascii_case(&doc),
+        _ => false,
+    }
+}
+
 /// SAF のフォルダの URI の JSON から、フォルダの場所の名前（「primary:Music/効果音」など。ボリュームとその中のパス）を作る。
 /// content://…/tree/primary%3AMusic%2F効果音/document/… の、document の後ろ（なければ tree の後ろ）。読めなければ None
 pub fn document_id(uri_json: &str) -> Option<String> {
-    let value = serde_json::from_str::<serde_json::Value>(uri_json).ok()?;
-    let uri = value.get("uri")?.as_str()?;
-    Some(percent_decode(uri.rsplit('/').next().unwrap_or(uri)))
+    let uri = uri_of(uri_json)?;
+    Some(percent_decode(uri.rsplit('/').next().unwrap_or(&uri)))
 }
 
 /// SAF のフォルダの URI の JSON から、画面に出す名前（「Music/効果音」など）を作る。読めなければ JSON のまま
@@ -135,6 +184,40 @@ mod imp {
         Ok(Some(PickedDir { uri: uri.to_json_string().map_err(fs_error)? }))
     }
 
+    /// JSON のファイルを選ぶ画面を出す（読むだけ。権限は残さない）。キャンセルしたら None
+    pub fn pick_json_file() -> Result<Option<String>> {
+        let fs = app()?.android_fs();
+        let Some(uri) = fs.picker().pick_file(None, &["application/json"], false).map_err(fs_error)? else { return Ok(None) };
+        Ok(Some(uri.to_json_string().map_err(fs_error)?))
+    }
+
+    /// ファイルの中身を文字として読む
+    pub fn read_text(uri: &str) -> Result<String> {
+        use std::io::Read;
+        let mut text = String::new();
+        open(uri)?.read_to_string(&mut text)?;
+        Ok(text)
+    }
+
+    /// フォルダの中のフォルダ（1段だけ。名前の順）
+    pub fn child_dirs(dir: &str) -> Result<Vec<ChildDir>> {
+        let fs = app()?.android_fs();
+        let mut dirs = Vec::new();
+        for entry in fs.read_dir(&parse(dir)?).map_err(fs_error)? {
+            if let Entry::Dir { uri, name, .. } = entry {
+                dirs.push(ChildDir { name, uri: uri.to_json_string().map_err(fs_error)? });
+            }
+        }
+        dirs.sort_by_key(|d| d.name.to_lowercase());
+        Ok(dirs)
+    }
+
+    /// フォルダの中の、名前が name のファイル。なければ None
+    pub fn resolve_file(dir: &str, name: &str) -> Option<String> {
+        let fs = app().ok()?.android_fs();
+        fs.resolve_file_uri(&parse(dir).ok()?, name).ok()?.to_json_string().ok()
+    }
+
     /// フォルダを読める（権限が残っている）か
     pub fn readable(dir: &str) -> bool {
         let Ok(uri) = parse(dir) else { return false };
@@ -193,5 +276,17 @@ mod tests {
         let sd = r#"{"uri":"content://com.android.externalstorage.documents/tree/1234-ABCD%3ASounds","documentTopTreeUri":null}"#;
         assert_eq!(display_name(sd), "1234-ABCD:Sounds");
         assert_eq!(display_name("C:\\lib"), "C:\\lib");
+    }
+
+    #[test]
+    fn tree_and_subfolder() {
+        let root = r#"{"uri":"content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fcm/document/primary%3ADownload%2Fcm","documentTopTreeUri":"content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fcm"}"#;
+        let child = r#"{"uri":"content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fcm/document/primary%3ADownload%2Fcm%2F%E5%8A%B9%E6%9E%9C%E9%9F%B3","documentTopTreeUri":"content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fcm"}"#;
+        assert_eq!(tree_id(root).as_deref(), Some("primary:Download/cm"));
+        assert_eq!(tree_id(child).as_deref(), Some("primary:Download/cm"));
+        assert!(!is_subfolder(root));
+        assert!(is_subfolder(child));
+        assert_eq!(display_name(child), "Download/cm/効果音");
+        assert!(!is_subfolder("C:\\lib"));
     }
 }

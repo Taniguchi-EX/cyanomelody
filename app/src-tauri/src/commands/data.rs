@@ -95,6 +95,6 @@ pub async fn import_data(
             library::scan_folder(&mut conn, id)?;
         }
     }
-    transfer::import_data(&mut conn, &data, sections, replace, &mut result)?;
+    transfer::import_data(&mut conn, &data, sections, replace, transfer::MatchOptions::default(), &mut result)?;
     Ok(result)
 }

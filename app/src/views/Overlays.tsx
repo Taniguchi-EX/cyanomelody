@@ -119,7 +119,7 @@ export function Overlays({ c }: { c: AppController }) {
           onImported={(r) => {
             showInfo("データを取り込みました");
             reloadAll().catch(showError);
-            if (r.foldersAdded.length > 0) jobs.startHashing();
+            if (r.foldersAdded.length > 0 || r.foldersScanned > 0) jobs.startHashing();
           }}
         />
       )}
