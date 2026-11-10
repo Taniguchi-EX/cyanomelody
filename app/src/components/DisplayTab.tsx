@@ -47,7 +47,6 @@ export function DisplayTab() {
             </option>
           ))}
         </select>
-        <span className="sub">中央の欄が狭くて入らないときは、並べる数を減らします</span>
       </div>
       <div className="setting-row">
         <label>
@@ -58,9 +57,7 @@ export function DisplayTab() {
           />
           ファイルの拡張子を省略する
         </label>
-        <span className="sub">一覧・グリッドのファイル名（例：rain.wav → rain）</span>
       </div>
-      <p className="sub">変えるとすぐに効き、アプリを閉じても覚えておきます。</p>
     </div>
   );
 }

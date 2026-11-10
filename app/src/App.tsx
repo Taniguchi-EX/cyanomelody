@@ -37,6 +37,7 @@ import { FolderPanel } from "./components/FolderPanel";
 import { FilterChips } from "./components/FilterChips";
 import { TagPanel } from "./components/TagPanel";
 import { FileList, type ListView } from "./components/FileList";
+import { GridIcon, ListIcon } from "./components/Icons";
 import type { FileDropTarget } from "./hooks/useFileDrag";
 import { PlaylistPanel } from "./components/PlaylistPanel";
 import { PlaylistEditor } from "./components/PlaylistEditor";
@@ -1234,7 +1235,7 @@ export default function App() {
                 data-testid="view-switch"
                 onClick={() => setStoredView(listView === "grid" ? "list" : "grid")}
               >
-                {listView === "grid" ? "≡" : "▦"}
+                {listView === "grid" ? <ListIcon /> : <GridIcon />}
               </button>
             </div>
             {/* チェックの操作は、チェックがあるときだけ出す（件数は下の行に出す） */}

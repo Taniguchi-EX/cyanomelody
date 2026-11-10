@@ -47,3 +47,30 @@ export function SpeakerIcon({ volume }: { volume: number }) {
     </svg>
   );
 }
+
+/** グリッドで見る：角の丸い四角を2×2に並べたもの */
+export function GridIcon() {
+  return (
+    <svg className="svg-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" data-icon="grid">
+      <g fill="currentColor">
+        <rect x="1" y="1" width="6" height="6" rx="1.2" />
+        <rect x="9" y="1" width="6" height="6" rx="1.2" />
+        <rect x="1" y="9" width="6" height="6" rx="1.2" />
+        <rect x="9" y="9" width="6" height="6" rx="1.2" />
+      </g>
+    </svg>
+  );
+}
+
+/** 一覧で見る：横線を3本並べたもの */
+export function ListIcon() {
+  return (
+    <svg className="svg-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" data-icon="list">
+      <g fill="currentColor">
+        <rect x="1" y="2" width="14" height="2.4" rx="1" />
+        <rect x="1" y="6.8" width="14" height="2.4" rx="1" />
+        <rect x="1" y="11.6" width="14" height="2.4" rx="1" />
+      </g>
+    </svg>
+  );
+}
