@@ -357,16 +357,23 @@ export function PlaylistEditor({
                       onCancel={() => setAliasItemId(null)}
                     />
                   ) : (
-                    // プレイリスト上での名前があればそれだけを出す。元の名前はマウスを乗せると出る
-                    <span className="item-content" title={itemContent(item)} data-testid="item-content">
-                      {item.alias ?? itemContent(item)}
-                      {item.file?.missing && (
-                        <span className="warn" title="ファイルが見つかりません">
-                          {" "}
-                          ⚠
+                    // プレイリスト上での名前があればそれを出し、横に本来の名前を薄く小さく出す（何のファイルだったか分かるように）
+                    <>
+                      <span className={item.alias ? "item-content has-alias" : "item-content"} title={itemContent(item)} data-testid="item-content">
+                        {item.alias ?? itemContent(item)}
+                        {item.file?.missing && (
+                          <span className="warn" title="ファイルが見つかりません">
+                            {" "}
+                            ⚠
+                          </span>
+                        )}
+                      </span>
+                      {item.alias && (
+                        <span className="item-original" title={itemContent(item)} data-testid="item-original">
+                          {itemContent(item)}
                         </span>
                       )}
-                    </span>
+                    </>
                   )}
                   <button
                     className="icon row-icon"

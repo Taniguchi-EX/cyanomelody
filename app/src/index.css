@@ -1058,6 +1058,21 @@ button.filter-chip:hover .chip-x {
   flex: 1;
 }
 
+/* 別名を付けた項目：別名は文字の幅だけ取り、残りに本来の名前を薄く小さく出す（狭いときは本来の名前から省く） */
+.item-content.has-alias {
+  flex: 0 1 auto;
+}
+
+.item-original {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-sub);
+  font-size: 0.85em;
+}
+
 /* 詳細画面：上の行（戻る、名前、✎）、項目と追加の欄（ここだけスクロール）、下の行（書き出す、削除） */
 .editor-head {
   flex-wrap: nowrap;
