@@ -53,10 +53,13 @@ export function MobileApp() {
     if (top.kind === "check" && checked.size === 0) nav.back();
   }, [top.kind, checked.size, nav]);
 
-  // 一括操作：チェックの行の「一括操作」で開き、戻ったら閉じる
+  // 一括操作：チェックの行の「一括操作」で開き（開いた瞬間だけ画面を積む）、戻ったら閉じる。
+  // 戻った直後はまだ開いているので、開いているかだけで積むと、積み直してしまう（履歴がずれる）
+  const prevBulk = useRef(bulkOpen);
   useEffect(() => {
-    if (bulkOpen && top.kind === "check") nav.push({ kind: "bulk" });
-  }, [bulkOpen, top.kind, nav]);
+    if (bulkOpen && !prevBulk.current) nav.push({ kind: "bulk" });
+    prevBulk.current = bulkOpen;
+  }, [bulkOpen, nav]);
   const inBulk = nav.stack.some((s) => s.kind === "bulk");
   useEffect(() => {
     if (!inBulk && bulkOpen) setBulkOpen(false);
@@ -66,15 +69,43 @@ export function MobileApp() {
   const editorOpen = playlistEditor.editor !== null;
   const inEditor = nav.stack.some((s) => s.kind === "editor");
   const editorSeq = playlistEditor.editor?.seq ?? null;
+  // 開いた瞬間（開くたびに変わる seq が変わったとき）だけ積む。戻った直後はまだ開いているので、開いているかだけで積むと積み直してしまう
+  const prevEditorSeq = useRef(editorSeq);
   useEffect(() => {
-    if (editorSeq !== null && !nav.stack.some((s) => s.kind === "editor")) nav.push({ kind: "editor" });
-  }, [editorSeq, nav]);
+    if (editorSeq !== null && editorSeq !== prevEditorSeq.current && !inEditor) nav.push({ kind: "editor" });
+    prevEditorSeq.current = editorSeq;
+  }, [editorSeq, inEditor, nav]);
   const wasInEditor = useRef(false);
   useEffect(() => {
     if (wasInEditor.current && !inEditor && editorOpen) playlistEditor.close();
     if (!editorOpen && inEditor) nav.close("editor");
     wasInEditor.current = inEditor;
   }, [inEditor, editorOpen, playlistEditor, nav]);
+
+  // 重ねて出す画面：開いたら履歴に積み、戻る操作で閉じる。閉じるボタンで閉じたら、積んだ分を戻す
+  const overlays = [
+    { open: c.settingsOpen, close: () => setSettingsOpen(false) },
+    { open: c.tagDetail !== null, close: () => c.setTagDetailId(null) },
+    { open: c.creditForm !== null, close: () => c.setCreditForm(null) },
+    { open: c.effectActions.dialog !== null, close: c.effectActions.closeDialog },
+    { open: c.fileOps.deleteDialog !== null, close: c.fileOps.cancelDelete },
+    { open: c.fileOps.autotagDialog !== null, close: c.fileOps.closeAutotag },
+  ];
+  const overlayOpen = overlays.some((o) => o.open);
+  const inOverlay = nav.stack.some((s) => s.kind === "overlay");
+  const closeOverlays = useRef(() => {});
+  useEffect(() => {
+    closeOverlays.current = () => overlays.forEach((o) => o.open && o.close());
+  });
+  const wasInOverlay = useRef(false);
+  useEffect(() => {
+    if (overlayOpen && !inOverlay && !wasInOverlay.current) nav.push({ kind: "overlay" });
+    else if (wasInOverlay.current && !inOverlay && overlayOpen) closeOverlays.current();
+    else if (!overlayOpen && inOverlay) nav.close("overlay");
+    wasInOverlay.current = inOverlay;
+  }, [overlayOpen, inOverlay, nav]);
+  // 画面に出すのは、重ねて出す画面の下の画面
+  const base = [...nav.stack].reverse().find((s) => s.kind !== "overlay") ?? { kind: "list" as const };
 
   // 一番下の行の結果・エラーは、しばらく出して消す
   const [shownStatus, setShownStatus] = useState(status);
@@ -100,17 +131,17 @@ export function MobileApp() {
   return (
     <div className="m-app" data-testid="m-app">
       <div className="m-dynamic">
-        {(top.kind === "list" || top.kind === "check") && (
+        {(base.kind === "list" || base.kind === "check") && (
           <MobileList
             c={c}
-            checking={top.kind === "check"}
+            checking={base.kind === "check"}
             onStartChecking={() => nav.push({ kind: "check" })}
             onStopChecking={nav.back}
             onOpenFile={() => nav.push({ kind: "detail" })}
             onOpenFilter={() => nav.push({ kind: "filter" })}
           />
         )}
-        {top.kind === "filter" && (
+        {base.kind === "filter" && (
           <section className="m-screen">
             <MobileHeader title="絞り込み" right={toList} />
             <div className="m-body m-filter">
@@ -118,13 +149,13 @@ export function MobileApp() {
             </div>
           </section>
         )}
-        {(top.kind === "detail" || top.kind === "bulk") && (
+        {(base.kind === "detail" || base.kind === "bulk") && (
           <section className="m-screen">
             <MobileHeader
-              title={top.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"}
+              title={base.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"}
               onBack={nav.back}
               right={
-                top.kind === "detail" &&
+                base.kind === "detail" &&
                 focusedFile && (
                   <button onClick={() => playback.playList(focusedFile)} disabled={focusedFile.missing} aria-label="再生" data-testid="m-detail-play">
                     ▶ 再生
@@ -137,7 +168,7 @@ export function MobileApp() {
             </div>
           </section>
         )}
-        {top.kind === "editor" && <section className="m-screen" />}
+        {base.kind === "editor" && <section className="m-screen" />}
         {/* 重ねて出す画面（プレイリストの編集・タグの詳細・設定など）は、動的エリアの中に重ねる（再生エリアは隠さない） */}
         <Overlays c={c} />
       </div>
@@ -147,7 +178,7 @@ export function MobileApp() {
         </div>
       )}
       <MiniPlayer c={c} onOpen={() => nav.push({ kind: "player" })} />
-      {top.kind === "player" && (
+      {base.kind === "player" && (
         <MobileFullPlayer
           c={c}
           onClose={nav.back}

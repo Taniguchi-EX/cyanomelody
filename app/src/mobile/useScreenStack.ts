@@ -9,7 +9,9 @@ export type Screen =
   | { kind: "detail" }
   | { kind: "bulk" }
   | { kind: "editor" }
-  | { kind: "player" };
+  | { kind: "player" }
+  /** 重ねて出す画面（設定・タグの詳細・出典とライセンスの編集・エフェクトの管理・確認）。下の画面はそのまま出し、戻る操作で閉じる */
+  | { kind: "overlay" };
 
 /**
  * 動的エリアの画面の積み重ね。画面を開くたびにブラウザの履歴に積み、端末の戻る操作（popstate）で1つ戻る。

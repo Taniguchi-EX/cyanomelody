@@ -20,13 +20,16 @@ export function MobileFullPlayer({ c, onClose, onJump }: { c: AppController; onC
     <div
       className="m-full"
       data-testid="m-full"
-      onPointerDown={(e) => {
-        swipe.current = (e.target as HTMLElement).closest("button, input, select, [role=button]") ? null : e.clientY;
+      // 指の動きはスクロールとして扱われる（pointerup が届かない）ことがあるので、touch の知らせで見る。
+      // 一番上までスクロールしているときに、ボタン・つまみ・プルダウンのない所から下へ動かしたら閉じる
+      onTouchStart={(e) => {
+        const onControl = (e.target as HTMLElement).closest("button, input, select, [role=button]");
+        swipe.current = onControl || e.currentTarget.scrollTop > 0 ? null : e.touches[0].clientY;
       }}
-      onPointerUp={(e) => {
+      onTouchEnd={(e) => {
         const start = swipe.current;
         swipe.current = null;
-        if (start !== null && e.clientY - start > SWIPE_CLOSE) onClose();
+        if (start !== null && e.changedTouches[0].clientY - start > SWIPE_CLOSE) onClose();
       }}
     >
       <button className="icon m-full-close" onClick={onClose} aria-label="閉じる" title="閉じる">

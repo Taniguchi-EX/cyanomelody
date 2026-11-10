@@ -394,3 +394,11 @@
 .m-full .settings-button {
   display: none;
 }
+
+/* 数の入力欄も、ほかの入力欄と同じ色にする（暗い配色で白くならないように） */
+.m-app input[type="number"] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
