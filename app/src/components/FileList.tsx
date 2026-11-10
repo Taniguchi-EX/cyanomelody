@@ -216,8 +216,7 @@ export function FileList({
                 </button>
               );
               // プレイリストを選んでいるとき：タグの組み合わせ・プレイリストの項目から来た曲に、その項目のアイコン。押すと編集画面のその行
-              // ファイルの項目から来た行（来た項目のアイコンがない行）は、その場所を空けて、後ろの fx のアイコンの列をそろえる
-              const originButton = f.origin ? (
+              const originButton = f.origin && (
                 <button
                   className="icon row-origin"
                   title={origin}
@@ -231,8 +230,6 @@ export function FileList({
                 >
                   {f.origin.kind === "tags" ? "🏷" : "📃"}
                 </button>
-              ) : (
-                f.itemId !== null && <span className="row-origin" aria-hidden="true" />
               );
               // プレイリスト上でエフェクトがかかる行：fx のアイコン。マウスを乗せるとエフェクトセットの名前（かける順）、押すと編集画面のその行の fx を選ぶ
               const fxText =
