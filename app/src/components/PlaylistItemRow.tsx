@@ -3,6 +3,8 @@ import type { PlayMode, PlaylistItem } from "../api";
 import type { EffectChain } from "../effects";
 import { PLAY_MODES } from "../listOptions";
 import { itemContent } from "../playlistItem";
+import { isAndroid } from "../platform";
+import { RowMenu } from "./RowMenu";
 
 /** fx のプルダウンの、管理画面を開く選び肢 */
 const NEW_FX = "new-fx";
@@ -142,18 +144,34 @@ export function PlaylistItemRow(p: Props) {
           )}
         </>
       )}
-      <button
-        className="icon row-icon"
-        onClick={p.onStartAlias}
-        disabled={p.busy}
-        title="プレイリスト上での名前を付ける"
-        aria-label={`${itemContent(item)}のプレイリスト上での名前を付ける`}
-      >
-        ✎
-      </button>
+      {isAndroid ? (
+        // Android：別名と外すは「⋮」の選び肢。再生方法・件数・fx は2段目（m-break で折り返す）
+        <>
+          <RowMenu
+            label={`${itemContent(item)}の操作`}
+            disabled={p.busy}
+            items={[
+              { label: "プレイリスト上での名前を付ける", onClick: p.onStartAlias },
+              { label: "外す", onClick: p.onRemove, danger: true },
+            ]}
+          />
+          <span className="m-break" />
+        </>
+      ) : (
+        <button
+          className="icon row-icon"
+          onClick={p.onStartAlias}
+          disabled={p.busy}
+          title="プレイリスト上での名前を付ける"
+          aria-label={`${itemContent(item)}のプレイリスト上での名前を付ける`}
+        >
+          ✎
+        </button>
+      )}
       {item.kind !== "file" && (
         <>
           <select
+            className="item-mode"
             value={item.mode}
             onChange={(e) => p.onSetMode(e.target.value as PlayMode)}
             disabled={p.busy}
@@ -193,9 +211,11 @@ export function PlaylistItemRow(p: Props) {
         <option value={NEW_FX}>新しいfxを作る</option>
         {item.effectChain && <option value={EDIT_FX}>このfxを編集</option>}
       </select>
-      <button className="icon" onClick={p.onRemove} disabled={p.busy} title="外す" aria-label={`${itemContent(item)}を外す`}>
-        ✕
-      </button>
+      {!isAndroid && (
+        <button className="icon" onClick={p.onRemove} disabled={p.busy} title="外す" aria-label={`${itemContent(item)}を外す`}>
+          ✕
+        </button>
+      )}
       <label className="check-cell" title="チェックすると、まとめて操作できる">
         <input
           type="checkbox"

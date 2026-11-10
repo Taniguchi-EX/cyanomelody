@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppController } from "../hooks/useAppController";
-import { PlayerBar } from "../components/PlayerBar";
 import { FilterSections } from "../views/FilterSections";
 import { DetailArea } from "../views/DetailArea";
 import { Overlays } from "../views/Overlays";
 import { MobileHeader } from "./MobileHeader";
 import { ListIcon } from "../components/Icons";
 import { MiniPlayer } from "./MiniPlayer";
+import { MobileFullPlayer } from "./MobileFullPlayer";
 import { MobileList } from "./MobileList";
 import { useScreenStack } from "./useScreenStack";
 import "./mobile.css";
@@ -31,11 +31,10 @@ export function MobileApp() {
     audio,
     status,
     setSettingsOpen,
-    chains,
     checked,
     checks,
+    focusedFile,
     playback,
-    effectActions,
   } = c;
 
   // 絞り込みでプレイリストを選んだら（抽選したら）、一覧へ移る
@@ -121,7 +120,18 @@ export function MobileApp() {
         )}
         {(top.kind === "detail" || top.kind === "bulk") && (
           <section className="m-screen">
-            <MobileHeader title={top.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"} onBack={nav.back} />
+            <MobileHeader
+              title={top.kind === "bulk" ? `一括操作（${checked.size}件）` : "ファイルの詳細"}
+              onBack={nav.back}
+              right={
+                top.kind === "detail" &&
+                focusedFile && (
+                  <button onClick={() => playback.playList(focusedFile)} disabled={focusedFile.missing} aria-label="再生" data-testid="m-detail-play">
+                    ▶ 再生
+                  </button>
+                )
+              }
+            />
             <div className="m-body m-detail">
               <DetailArea c={c} />
             </div>
@@ -138,39 +148,14 @@ export function MobileApp() {
       )}
       <MiniPlayer c={c} onOpen={() => nav.push({ kind: "player" })} />
       {top.kind === "player" && (
-        <div className="m-full" data-testid="m-full">
-          <button className="icon m-full-close" onClick={nav.back} aria-label="閉じる" title="閉じる">
-            ↓
-          </button>
-          <PlayerBar
-            player={audio.player}
-            time={audio.time}
-            canPlayOpen={files.some((f) => !f.missing)}
-            onPlayOpen={playback.playOpen}
-            playMode={audio.playMode}
-            onPlayMode={audio.setPlayMode}
-            onSeek={audio.seek}
-            onSeekBy={audio.seekBy}
-            onPrev={audio.prev}
-            onNext={audio.next}
-            onTogglePause={audio.togglePause}
-            onStop={audio.stop}
-            previewFile={audio.previewFile}
-            volume={audio.volume}
-            onVolume={audio.setVolume}
-            onVolumeCommit={audio.commitVolume}
-            onToggleMute={audio.toggleMute}
-            chains={chains}
-            baseChain={audio.baseChain}
-            onBaseChain={audio.setBaseChain}
-            onOpenEffects={effectActions.openForPlayer}
-            onJump={() => {
-              nav.back();
-              playback.jumpToPlaying();
-            }}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
-        </div>
+        <MobileFullPlayer
+          c={c}
+          onClose={nav.back}
+          onJump={() => {
+            nav.back();
+            playback.jumpToPlaying();
+          }}
+        />
       )}
       <audio {...audio.audioProps} />
     </div>

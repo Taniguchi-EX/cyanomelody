@@ -8,6 +8,7 @@ import { LicenseTab } from "./LicenseTab";
 import { DataTab } from "./DataTab";
 import { DisplayTab } from "./DisplayTab";
 import { setDisplay, SKIP_SECONDS_MAX, SKIP_SECONDS_MIN, useDisplay } from "../displaySettings";
+import { isAndroid } from "../platform";
 
 type Props = {
   onClose: () => void;
@@ -16,14 +17,17 @@ type Props = {
   onImported: (result: ImportResult) => void;
 };
 
-const TABS = [
+const ALL_TABS = [
   { key: "general", label: "一般" },
   { key: "display", label: "表示" },
   { key: "data", label: "データ" },
   { key: "license", label: "バージョンとライセンス" },
 ] as const;
 
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = (typeof ALL_TABS)[number]["key"];
+
+/** 出すタブ（Android では、データの入出力を使えないので「データ」を出さない） */
+const TABS = isAndroid ? ALL_TABS.filter((t) => t.key !== "data") : ALL_TABS;
 
 /** 設定画面。再生の欄の右端の歯車から開く。タブごとに中身を出す */
 export function SettingsDialog({ onClose, onError, onImported }: Props) {

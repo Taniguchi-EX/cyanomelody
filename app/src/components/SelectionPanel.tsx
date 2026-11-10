@@ -6,6 +6,7 @@ import { Collapsible } from "./Collapsible";
 import { Chip } from "./FilterChips";
 import { PlaylistPicker } from "./PlaylistPicker";
 import { TagInput } from "./TagInput";
+import { isAndroid } from "../platform";
 
 type Props = {
   /** 右の欄の読み込みに失敗したとき（下の行にエラーを出す） */
@@ -117,9 +118,11 @@ export function SelectionPanel({
       <div className="track-title" data-testid="track-title">
         {trackTitle ?? stem(file.relPath)}
       </div>
-      {file.missing ? (
+      {/* Android では、ファイルの場所を開けないので、押せる形にしない */}
+      {file.missing || isAndroid ? (
         <div className="folder-path" data-testid="detail-path">
-          {file.path}
+          {/* Android のフォルダのファイルは、場所が URI（JSON）なので、相対パスを出す */}
+          {file.path.startsWith("{") ? file.relPath : file.path}
         </div>
       ) : (
         <a
@@ -227,9 +230,12 @@ export function SelectionPanel({
             </button>
           </div>
           <div className="row" style={{ marginTop: 4 }}>
-            <button onClick={onLinkFile} disabled={busy} title="ファイルを選んで、タグなどをそのファイルに移す">
-              ファイルを紐づける
-            </button>
+            {/* Android では、ファイルを選んでも、そのフォルダを読む許可が取れないので出さない */}
+            {!isAndroid && (
+              <button onClick={onLinkFile} disabled={busy} title="ファイルを選んで、タグなどをそのファイルに移す">
+                ファイルを紐づける
+              </button>
+            )}
             <button
               onClick={onFindInFolder}
               disabled={busy || !file.hash}
@@ -244,17 +250,19 @@ export function SelectionPanel({
           </div>
         </>
       )}
-      {/* 実際のファイルも消す操作は、一番下に置く */}
-      <div className="row delete-row">
-        <button
-          className="danger"
-          onClick={onDelete}
-          disabled={busy || file.missing}
-          title={file.missing ? "見つからないファイルは「ライブラリから外す」で外せます" : "ごみ箱に移し、ライブラリから外す"}
-        >
-          ファイルを削除する
-        </button>
-      </div>
+      {/* 実際のファイルも消す操作は、一番下に置く（Android では削除できないので出さない） */}
+      {!isAndroid && (
+        <div className="row delete-row">
+          <button
+            className="danger"
+            onClick={onDelete}
+            disabled={busy || file.missing}
+            title={file.missing ? "見つからないファイルは「ライブラリから外す」で外せます" : "ごみ箱に移し、ライブラリから外す"}
+          >
+            ファイルを削除する
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { Collapsible } from "./Collapsible";
 import { Chip } from "./FilterChips";
 import { PlaylistPicker } from "./PlaylistPicker";
 import { TagInput } from "./TagInput";
+import { isAndroid } from "../platform";
 
 const MIXED = "mixed";
 
@@ -223,31 +224,36 @@ export function BulkPanel({
               </div>
             </div>
           )}
-          {/* 書き出し：音声ファイルそのもの（コピー）と、メタデータ（データのエクスポートと同じ形の JSON） */}
-          <h2>書き出し</h2>
-          <div className="row">
-            <button onClick={onExportFiles} disabled={busy} title="対象のファイルを、選んだフォルダの中に作るフォルダへ、そのままコピーする">
-              ファイル
-            </button>
-            <button
-              onClick={onExportMetadata}
-              disabled={busy}
-              title="対象のファイルのタグ・出典・ライセンス・曲名・長さ・リリース年を JSON に書き出す（設定画面の「データ」で取り込める）"
-            >
-              メタデータ
-            </button>
-          </div>
-          {/* 実際のファイルも消す操作は、一番下に置く */}
-          <div className="row delete-row">
-            <button
-              className="danger"
-              onClick={onDelete}
-              disabled={busy || data.missingIds.length === fileIds.length}
-              title="見つかっているファイルをごみ箱に移し、ライブラリから外す（リンク切れのファイルは除く）"
-            >
-              ファイルを削除する
-            </button>
-          </div>
+          {/* 書き出しとファイルの削除は、Android では使えないので出さない */}
+          {!isAndroid && (
+            <>
+              {/* 書き出し：音声ファイルそのもの（コピー）と、メタデータ（データのエクスポートと同じ形の JSON） */}
+              <h2>書き出し</h2>
+              <div className="row">
+                <button onClick={onExportFiles} disabled={busy} title="対象のファイルを、選んだフォルダの中に作るフォルダへ、そのままコピーする">
+                  ファイル
+                </button>
+                <button
+                  onClick={onExportMetadata}
+                  disabled={busy}
+                  title="対象のファイルのタグ・出典・ライセンス・曲名・長さ・リリース年を JSON に書き出す（設定画面の「データ」で取り込める）"
+                >
+                  メタデータ
+                </button>
+              </div>
+              {/* 実際のファイルも消す操作は、一番下に置く */}
+              <div className="row delete-row">
+                <button
+                  className="danger"
+                  onClick={onDelete}
+                  disabled={busy || data.missingIds.length === fileIds.length}
+                  title="見つかっているファイルをごみ箱に移し、ライブラリから外す（リンク切れのファイルは除く）"
+                >
+                  ファイルを削除する
+                </button>
+              </div>
+            </>
+          )}
         </>
       )}
     </section>

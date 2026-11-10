@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { PlaylistNode, Tag } from "../api";
 import { makesLoop } from "../playlistGraph";
 import { TagInput } from "./TagInput";
+import { isAndroid } from "../platform";
 
 type Props = {
   /** 開いているプレイリスト */
@@ -77,7 +78,11 @@ export function PlaylistAddPanel({ playlistId, playlists, tags, busy, onAddTags,
           ))}
         </select>
       </div>
-      <div className="sub">ファイルは、中央の一覧の行を左の欄のプレイリストへドラッグして加えます。</div>
+      <div className="sub">
+        {isAndroid
+          ? "ファイルは、ファイルの詳細か一括操作の「プレイリスト」で加えます。"
+          : "ファイルは、中央の一覧の行を左の欄のプレイリストへドラッグして加えます。"}
+      </div>
     </div>
   );
 }

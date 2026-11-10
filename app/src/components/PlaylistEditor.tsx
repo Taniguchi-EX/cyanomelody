@@ -6,6 +6,7 @@ import { useEscape } from "../hooks/useEscape";
 import { useFileDrag, type LocalDrop } from "../hooks/useFileDrag";
 import { PlaylistAddPanel } from "./PlaylistAddPanel";
 import { PlaylistItemRow } from "./PlaylistItemRow";
+import { isAndroid } from "../platform";
 
 type Props = {
   detail: PlaylistDetail;
@@ -175,11 +176,23 @@ export function PlaylistEditor({
     if (next === detail.name || (await onRename(next))) setRenaming(false);
   };
 
+  const playButton = (
+    <button onClick={onPlay} disabled={busy} title="このプレイリストを選んで、中央の一覧を頭から再生する" aria-label="プレイリストを再生">
+      ▶ 再生
+    </button>
+  );
+
   return (
     <div className="overlay">
       <div className="dialog playlist-dialog" role="dialog" aria-label="プレイリストの編集">
         <div className="playlist-editor" data-testid="playlist-editor">
           <div className="toolbar editor-head">
+            {/* Android：左端に「←」（閉じる。端末の戻る操作と同じ） */}
+            {isAndroid && (
+              <button className="icon m-back" onClick={onClose} aria-label="戻る" title="戻る">
+                ←
+              </button>
+            )}
             {renaming ? (
               <input
                 type="text"
@@ -221,16 +234,11 @@ export function PlaylistEditor({
                 </button>
               </>
             )}
-            <button
-              onClick={onPlay}
-              disabled={busy}
-              title="このプレイリストを選んで、中央の一覧を頭から再生する"
-              aria-label="プレイリストを再生"
-            >
-              ▶ 再生
-            </button>
-            <button onClick={onClose}>閉じる</button>
+            {!isAndroid && playButton}
+            {!isAndroid && <button onClick={onClose}>閉じる</button>}
           </div>
+          {/* Android：「▶ 再生」は見出しの下の行 */}
+          {isAndroid && <div className="toolbar m-editor-play">{playButton}</div>}
 
           <div className="editor-body">
             {/* チェックしているときだけ、チェックの操作を出す */}
@@ -298,19 +306,22 @@ export function PlaylistEditor({
             />
           </div>
 
-          <div className="toolbar editor-foot">
-            <span className="foot-label">書き出し：</span>
-            <button onClick={startExport} disabled={busy} title="エフェクトをかけた音を、階層をフォルダにして書き出す（書き出し先のフォルダを選ぶ）">
-              ファイル
-            </button>
-            <button onClick={() => onExportMetadata(exportItems)} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">
-              メタデータ
-            </button>
-            <span className="sub">
-              どちらも、{checkedItems.length > 0 ? `チェックした${checkedItems.length}件の項目` : "すべての項目"}
-              が対象です。🎲・🔀の項目は書き出すときに抽選し直します
-            </span>
-          </div>
+          {/* 書き出しは、Android では使えないので出さない */}
+          {!isAndroid && (
+            <div className="toolbar editor-foot">
+              <span className="foot-label">書き出し：</span>
+              <button onClick={startExport} disabled={busy} title="エフェクトをかけた音を、階層をフォルダにして書き出す（書き出し先のフォルダを選ぶ）">
+                ファイル
+              </button>
+              <button onClick={() => onExportMetadata(exportItems)} disabled={busy} title="曲のタグ・出典・ライセンス・曲名などを JSON に書き出す">
+                メタデータ
+              </button>
+              <span className="sub">
+                どちらも、{checkedItems.length > 0 ? `チェックした${checkedItems.length}件の項目` : "すべての項目"}
+                が対象です。🎲・🔀の項目は書き出すときに抽選し直します
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -62,6 +62,7 @@ export function MobileList({ c, checking, onStartChecking, onStopChecking, onOpe
     <MobileHeader
       title={`${checked.size}件をチェック`}
       onBack={onStopChecking}
+      back={{ icon: "✕", label: "チェックをやめる" }}
       right={
         <button onClick={() => checks.checkShown(true)} disabled={checks.shownChecked === checks.shownFileCount}>
           全て

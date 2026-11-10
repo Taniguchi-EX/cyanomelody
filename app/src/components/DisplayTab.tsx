@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fontValue, GRID_COLUMNS, setDisplay, TEXT_SCALES, useDisplay } from "../displaySettings";
+import { isAndroid } from "../platform";
 
 /** 設定画面の「表示」：文字の大きさ・フォント、グリッドのカードの数、拡張子を省くか。変えるとすぐ画面に効き、保存する */
 export function DisplayTab({ onError }: { onError: (e: unknown) => void }) {
@@ -37,18 +38,21 @@ export function DisplayTab({ onError }: { onError: (e: unknown) => void }) {
           ))}
         </span>
       </div>
-      <div className="setting-row">
-        <label className="setting-label" htmlFor="display-font">
-          文字のフォント
-        </label>
-        <select id="display-font" value={display.font} onChange={(e) => setDisplay({ font: e.target.value })}>
-          {options.map((f) => (
-            <option key={f.value} value={f.value} style={f.value ? { fontFamily: f.value } : undefined}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Android では、端末のフォントの一覧を読めないので出さない */}
+      {!isAndroid && (
+        <div className="setting-row">
+          <label className="setting-label" htmlFor="display-font">
+            文字のフォント
+          </label>
+          <select id="display-font" value={display.font} onChange={(e) => setDisplay({ font: e.target.value })}>
+            {options.map((f) => (
+              <option key={f.value} value={f.value} style={f.value ? { fontFamily: f.value } : undefined}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <div className="setting-row">
         <label className="setting-label" htmlFor="display-grid-columns">
           グリッドのカードの大きさ
