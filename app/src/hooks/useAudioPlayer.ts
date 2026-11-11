@@ -312,8 +312,43 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     setPlayer({ ...p, paused: !p.paused });
   };
 
+  // 試作：Android の再生のサービス（window.CyanoMedia）に、今の曲と状態を知らせる
+  const media = (window as unknown as { CyanoMedia?: { update: (...a: unknown[]) => void; stop: () => void; log: (t: string) => void } }).CyanoMedia;
+  const protoLog = (t: string) => media?.log(t);
+  const report = () => {
+    const p = playerRef.current;
+    const audio = audioRef.current;
+    if (!media || !audio) return;
+    if (!p) {
+      media.stop();
+      return;
+    }
+    const entry = p.queue[p.index];
+    media.update(entry.alias ?? entry.relPath.split("/").pop() ?? "", `${p.name} ${p.index + 1}/${p.queue.length}`, !p.paused && !p.preparing, audio.currentTime || 0, Number.isFinite(audio.duration) ? audio.duration : 0);
+  };
+  useEffect(() => {
+    report();
+  }, [player]);
+  useEffect(() => {
+    (window as unknown as { __cyanoMediaCommand: (c: string, v: number) => void }).__cyanoMediaCommand = (c, v) => {
+      protoLog(`command ${c} ${v}`);
+      const p = playerRef.current;
+      if (c === "next") move(1);
+      else if (c === "prev") move(-1);
+      else if (c === "stop") stop();
+      else if (c === "seek" && audioRef.current) audioRef.current.currentTime = v;
+      else if ((c === "play" && p?.paused) || (c === "pause" && p && !p.paused)) togglePause();
+    };
+  });
+
   /** audio 要素に渡す属性 */
   const audioProps = {
+    onPlaying: () => {
+      protoLog("playing");
+      report();
+    },
+    onSeeked: () => report(),
+    onLoadedMetadata: () => report(),
     ref: audioRef,
     onTimeUpdate: (e: React.SyntheticEvent<HTMLAudioElement>) =>
       setTime({ current: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0 }),
@@ -322,6 +357,7 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
     },
     // プレイリストの再生中なら次へ。試聴なら止まる
     onEnded: () => {
+      protoLog("ended");
       const p = playerRef.current;
       if (p) playAt(p, p.index + 1);
       else setPreviewFile(null);
