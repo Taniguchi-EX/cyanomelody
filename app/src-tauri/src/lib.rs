@@ -3,6 +3,8 @@ mod autotag;
 mod autotag_job;
 mod chains;
 mod commands;
+#[cfg(target_os = "android")]
+mod update_proto;
 mod credits;
 mod db;
 mod deleting;
@@ -136,6 +138,8 @@ pub fn run() {
             commands::phone::phone_plan,
             #[cfg(windows)]
             commands::phone::phone_copy,
+            #[cfg(target_os = "android")]
+            update_proto::proto_update,
             commands::copy::copy_folder_status,
             commands::copy::set_copy_folder,
             commands::copy::inspect_copy_folder,
