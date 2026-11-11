@@ -19,7 +19,7 @@ import { useAudioPlayer } from "./useAudioPlayer";
 import { useMediaSession } from "./useMediaSession";
 import { useChecks } from "./useChecks";
 import { usePlaylistSelection } from "./usePlaylistSelection";
-import { useFileFilter } from "./useFileFilter";
+import { EMPTY_FILTER, useFileFilter } from "./useFileFilter";
 import type { AppOps } from "./appOps";
 import { useJobProgress } from "./useJobProgress";
 import { useUpdateCheck } from "./useUpdateCheck";
@@ -65,6 +65,12 @@ export function useAppController() {
   const listView: ListView = storedView === "grid" ? "grid" : "list";
   /** クリックして右の欄に出している行（AudioFile.key） */
   const [focusedKey, setFocusedKey] = useState<number | null>(null);
+  /**
+   * 一覧に出ていないのに詳細に出しているファイル（Android の全画面の再生で、曲名を押したとき）。行を押していない（focusedKey が null の）ときだけ使う。
+   * 一覧を読み直すたびに読み直す（ref は読み直しの処理から id を読むため）
+   */
+  const [outsideFile, setOutsideFile] = useState<AudioFile | null>(null);
+  const outsideIdRef = useRef<number | null>(null);
   /**
    * 一覧のその行までスクロールする（再生の欄の曲名を押したとき）。seq は押すたびに変え、同じ行でもスクロールし直す。
    * スクロールし終えたら null に戻す
@@ -148,8 +154,15 @@ export function useAppController() {
   );
   const reloadFiles = useCallback(async () => {
     const request = listRequest();
-    const [list, counts] = await Promise.all([api.listFiles(request), api.facetCounts(request)]);
+    const outsideId = outsideIdRef.current;
+    const [list, counts, outside] = await Promise.all([
+      api.listFiles(request),
+      api.facetCounts(request),
+      outsideId === null ? null : api.listFiles({ ...EMPTY_FILTER, fileIds: [outsideId] }),
+    ]);
     setFiles(list);
+    // 外したファイルなら、詳細からも消す
+    if (outside !== null && outsideIdRef.current === outsideId) setOutsideFile(outside[0] ?? null);
     setFacets(counts);
     setListVersion((v) => v + 1);
     // 絞り込みで消えた行は、右の欄からも消す
@@ -225,7 +238,16 @@ export function useAppController() {
   if (bulkOpen && checked.size === 0) setBulkOpen(false);
 
   /** 右の欄に出しているファイル（押した行のファイル） */
-  const focusedFile = useMemo(() => files.find((f) => f.key === focusedKey) ?? null, [files, focusedKey]);
+  const focusedFile = useMemo(
+    () => (focusedKey !== null ? (files.find((f) => f.key === focusedKey) ?? null) : outsideFile),
+    [files, focusedKey, outsideFile],
+  );
+  /** 行を選ぶ（右の欄・詳細に出す）。一覧に出ていないファイルの詳細はやめる */
+  const focusRow = (key: number | null) => {
+    outsideIdRef.current = null;
+    setOutsideFile(null);
+    setFocusedKey(key);
+  };
   const focusedIds = () => (focusedFile ? [focusedFile.id] : []);
 
   /** 絞り込みの条件をすべて外して next だけにする（選んでいるプレイリストも外す） */
@@ -239,7 +261,7 @@ export function useAppController() {
     resetFilter();
     setCheckedOnly(false);
     checks.clear();
-    setFocusedKey(null);
+    focusRow(null);
   };
 
   const showSameAudio = (hash: string) => {
@@ -279,12 +301,35 @@ export function useAppController() {
     editorId: editor?.id ?? null,
     openEditor: playlistEditor.open,
     reveal: (key) => {
-      setFocusedKey(key);
+      focusRow(key);
       setRevealFile({ key, seq: Date.now() });
     },
     showInfo,
     showError,
   });
+  /**
+   * 鳴らしている曲を、ファイルの詳細に出す（Android の全画面の再生の曲名）。一覧に出ていればその行（一覧から鳴らしているならその行）を選び、
+   * 出ていなければライブラリから読んで出す。出せたら true
+   */
+  const focusPlaying = async () => {
+    const id = playback.playingFileId;
+    if (id === null) return false;
+    setBulkOpen(false);
+    const row = files.find((f) => f.key === playback.playingRowKey && f.id === id) ?? files.find((f) => f.id === id);
+    if (row) {
+      focusRow(row.key);
+      return true;
+    }
+    const [file] = await api.listFiles({ ...EMPTY_FILTER, fileIds: [id] });
+    if (!file) {
+      showInfo("鳴らしている曲は、ライブラリにありません");
+      return false;
+    }
+    setFocusedKey(null);
+    outsideIdRef.current = id;
+    setOutsideFile(file);
+    return true;
+  };
   const effectActions = useEffectChainActions(ops, {
     previewPath: audio.previewPath,
     setBaseChain: audio.setBaseChain,
@@ -352,7 +397,7 @@ export function useAppController() {
     setStoredView,
     listView,
     focusedKey,
-    setFocusedKey,
+    setFocusedKey: focusRow,
     revealFile,
     setRevealFile,
     checkedOnly,
@@ -393,6 +438,7 @@ export function useAppController() {
     bulkFileIds,
     focusedFile,
     focusedIds,
+    focusPlaying,
     resetFilter,
     showSameAudio,
     tagActions,

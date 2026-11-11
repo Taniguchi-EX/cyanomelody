@@ -9,6 +9,7 @@ import { MiniPlayer } from "./MiniPlayer";
 import { MobileFullPlayer } from "./MobileFullPlayer";
 import { MobileList } from "./MobileList";
 import { useScreenStack } from "./useScreenStack";
+import { useKeyboard } from "./useKeyboard";
 import { api } from "../api";
 import { hasNewCopy } from "../dataTransferText";
 import "./mobile.css";
@@ -23,6 +24,8 @@ const STATUS_MS = 4000;
 export function MobileApp() {
   const c = useAppController();
   const nav = useScreenStack();
+  // キーボードが出ている間は、アプリの画面をキーボードの上に収め、再生エリアを隠す（入力欄と候補を出す場所を広く取る）
+  const keyboard = useKeyboard();
   const { top } = nav;
   const {
     files,
@@ -35,7 +38,6 @@ export function MobileApp() {
     setSettingsOpen,
     checked,
     checks,
-    playback,
   } = c;
 
   // アプリを開いたとき、Windows から新しいデータ（cyanomelody 用のフォルダ）が写されていれば知らせる
@@ -148,7 +150,11 @@ export function MobileApp() {
   );
 
   return (
-    <div className="m-app" data-testid="m-app">
+    <div
+      className={"m-app" + (keyboard ? " m-keyboard" : "")}
+      data-testid="m-app"
+      style={keyboard ? { top: keyboard.top, height: keyboard.height } : undefined}
+    >
       <div className="m-dynamic">
         {(base.kind === "list" || base.kind === "check") && (
           <MobileList
@@ -194,14 +200,16 @@ export function MobileApp() {
           {shownStatus.text}
         </div>
       )}
-      <MiniPlayer c={c} onOpen={() => nav.push({ kind: "player" })} />
+      {!keyboard && <MiniPlayer c={c} onOpen={() => nav.push({ kind: "player" })} />}
       {base.kind === "player" && (
         <MobileFullPlayer
           c={c}
           onClose={nav.back}
+          // 曲名を押したら、鳴らしている曲のファイルの詳細を開く（戻ると全画面の再生に戻る）
           onJump={() => {
-            nav.back();
-            playback.jumpToPlaying();
+            c.focusPlaying()
+              .then((ok) => ok && nav.push({ kind: "detail" }))
+              .catch(c.showError);
           }}
         />
       )}

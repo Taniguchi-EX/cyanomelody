@@ -14,6 +14,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* キーボードが出ている間：見える範囲（style の top・height）に収める。下はキーボードなので、ナビゲーションバーの分を空けない */
+.m-app.m-keyboard {
+  bottom: auto;
+  padding-bottom: 0;
+}
+
 .m-app input,
 .m-app textarea {
   -webkit-user-select: text;
@@ -465,4 +471,49 @@
 
 .m-notice span {
   flex: 1;
+}
+
+/* タグの入力欄の候補（Android）：入力欄のすぐ下に並べ、下の欄を押し下げる。押すとすぐ付ける */
+.tag-input {
+  flex: 1 1 100%;
+  min-width: 0;
+  scroll-margin-top: 8px;
+}
+
+.tag-suggest {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.tag-suggest li + li {
+  border-top: 1px solid var(--border);
+}
+
+.tag-suggest button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+
+.tag-suggest-name {
+  flex: none;
+}
+
+.tag-suggest .sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
