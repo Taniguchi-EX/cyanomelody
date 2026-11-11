@@ -76,10 +76,19 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Android の NDK を入れる
-        run: sdkmanager "ndk;29.0.14206865" "build-tools;34.0.0" "platforms;android-34" > /dev/null
+      # Android の SDK と NDK は、手元の Docker の環境（app/android/Dockerfile）と同じやり方で入れる
+      - name: Android の SDK と NDK を入れる
+        run: |
+          sdk="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$sdk/cmdline-tools"
+          curl -sSfo "$RUNNER_TEMP/ct.zip" https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q "$RUNNER_TEMP/ct.zip" -d "$sdk/cmdline-tools"
+          mv "$sdk/cmdline-tools/cmdline-tools" "$sdk/cmdline-tools/latest"
+          (yes 2>/dev/null || true) | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;29.0.14206865" > /dev/null
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$sdk/ndk/29.0.14206865" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -108,7 +117,6 @@ jobs:
       - name: ビルドする
         working-directory: app
         env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
           CYANOMELODY_ANDROID_KEYSTORE: ${{ runner.temp }}/release.jks
           CYANOMELODY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: npx tauri android build --apk --target aarch64 --ci
