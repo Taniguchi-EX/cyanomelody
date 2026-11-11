@@ -1,5 +1,6 @@
 # 版のタグ（v1.0.0 など）を押すと、Windows 向けのインストーラーと自動アップデートの情報（latest.json）をビルドし、
-# それらを付けた Release の下書きを作る。下書きを確かめてから、GitHub の画面で公開する。
+# それらを付けた Release の下書きを作る。続けて Android 向けの APK をビルドし、同じ下書きに付ける。
+# 下書きを確かめてから、GitHub の画面で公開する。
 # タグを押してもビルドが始まらなかったときは、Actions の画面の「Run workflow」で、版のタグを入れて手動で始められる。
 name: release
 
@@ -59,3 +60,64 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
+
+  # Android：リリース版の APK（64ビットの ARM）を公開用の鍵で署名してビルドし、Windows の job が作った下書きに付ける。
+  # ビルドの環境は、手元の Docker の環境（app/android/Dockerfile）と同じものにする（NDK r29 は 16 KB のページサイズに合う）
+  build-android:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Android の NDK を入れる
+        run: sdkmanager "ndk;29.0.14206865" "build-tools;34.0.0" "platforms;android-34" > /dev/null
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - name: 依存関係を入れる
+        working-directory: app
+        run: npm ci
+
+      - name: 公開用の署名の鍵を置く
+        env:
+          # 公開用の署名の鍵（PKCS12 のファイルを base64 にしたもの）と、そのパスワード（リポジトリのシークレットに登録する）
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: ビルドする
+        working-directory: app
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          CYANOMELODY_ANDROID_KEYSTORE: ${{ runner.temp }}/release.jks
+          CYANOMELODY_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: npx tauri android build --apk --target aarch64 --ci
+
+      - name: Release の下書きに付ける
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${RELEASE_TAG#v}"
+          apk="cyanomelody_${version}_android-arm64.apk"
+          cp app/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk "$apk"
+          gh release upload "$RELEASE_TAG" "$apk" --clobber --repo "${{ github.repository }}"

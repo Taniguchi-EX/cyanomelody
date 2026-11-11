@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 自動アップデート：ダウンロードした新しい版の APK を、Android のインストールの画面に渡す -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -34,7 +36,12 @@
             android:resource="@xml/file_paths" />
         </provider>
         <!-- PROVIDERS FOR ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
-        
+        <provider
+            android:name="okayu.tauri.plugin.android.fs.AFCustomFileProvider"
+            android:authorities="${applicationId}.tpafs-custom-file-provider"
+            android:exported="false"
+            android:grantUriPermissions="true" >
+        </provider>
         <!-- PROVIDERS FOR ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->
     </application>
     <!-- ANDROID FS PLUGIN. AUTO-GENERATED. DO NOT REMOVE. -->

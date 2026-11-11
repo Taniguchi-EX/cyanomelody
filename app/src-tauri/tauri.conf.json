@@ -67,6 +67,12 @@
     "android-fs": {
       "contentProtocol": {
         "enable": true
+      },
+      "fileProvider": {
+        "enable": true,
+        "scope": {
+          "allow": ["$APPCACHE/update/**/*"]
+        }
       }
     }
   }

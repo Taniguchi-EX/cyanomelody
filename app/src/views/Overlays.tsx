@@ -127,6 +127,7 @@ export function Overlays({ c }: { c: AppController }) {
         <UpdateDialog
           version={update.version}
           busy={update.updating}
+          installerOpened={update.installerOpened}
           onUpdate={update.install}
           onLater={update.later}
           onError={showError}

@@ -154,6 +154,8 @@ pub struct XItem {
 }
 
 mod copying;
+// スマホへの直接コピー（Windows だけ）で置く場所と差分の決め方
+#[cfg(any(windows, test))]
 pub mod package;
 mod exporting;
 mod importing;

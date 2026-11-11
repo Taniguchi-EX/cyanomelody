@@ -25,6 +25,19 @@ android {
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
+    // 公開用の署名（リリース版）。鍵のファイルとパスワードは環境変数で渡す（GitHub Actions ではリポジトリのシークレットから）。
+    // 渡さないときは、署名しない APK になる
+    val releaseKeystore = System.getenv("CYANOMELODY_ANDROID_KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("CYANOMELODY_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = "cyanomelody"
+                keyPassword = System.getenv("CYANOMELODY_ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".debug"
@@ -40,6 +53,9 @@ android {
             }
         }
         getByName("release") {
+            if (releaseKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

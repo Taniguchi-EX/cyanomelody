@@ -46,9 +46,12 @@ winmtp = "0.3"
 windows = { version = "0.52", features = ["Win32_System_Com", "Win32_Devices_PortableDevices", "Win32_UI_Shell_PropertiesSystem", "Win32_Foundation"] }
 widestring = "1"
 
-# Android：Storage Access Framework（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル
+# Android：Storage Access Framework（フォルダの選択・読み取り）と、content:// のファイルを画面に渡すプロトコル、
+# ダウンロードした新しい版の APK をインストールの画面に渡す仕組み（file_provider）
 [target.'cfg(target_os = "android")'.dependencies]
-tauri-plugin-android-fs = { version = "30", features = ["protocol-content"] }
+tauri-plugin-android-fs = { version = "30", features = ["protocol-content", "file_provider"] }
+# 自動アップデート：GitHub の Release の情報を読み、新しい版の APK をダウンロードする
+ureq = "3"
 
 [dev-dependencies]
 tempfile = "3"

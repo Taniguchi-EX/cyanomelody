@@ -108,6 +108,7 @@ pub(crate) fn spawn_steps(
     });
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 /// 同時に1つだけの決まりで、書き出しの仕事を始める（始められないときはエラー）。始めたら、終わるまで job.running が立つ
 pub(crate) fn claim(job: &ExportJob) -> Result<()> {
     if job.running.swap(true, Ordering::SeqCst) {
@@ -116,6 +117,7 @@ pub(crate) fn claim(job: &ExportJob) -> Result<()> {
     Ok(())
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 /// claim の後、仕事を始められなかったときに戻す
 pub(crate) fn release(job: &ExportJob) {
     job.running.store(false, Ordering::SeqCst);
