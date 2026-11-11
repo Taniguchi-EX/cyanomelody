@@ -8,5 +8,7 @@ pub mod data;
 pub mod effects;
 pub mod files;
 pub mod library;
+#[cfg(windows)]
+pub mod phone;
 pub mod playlists;
 pub mod tags;

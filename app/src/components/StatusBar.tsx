@@ -58,7 +58,8 @@ export function StatusBar({
         <div className="hash-status" data-testid="export-status">
           {describeExport(exportProgress)}
           {/* 書き出したフォルダは、押すとエクスプローラーで見せる（渡すときに探さなくてよい） */}
-          {!exportProgress.running && (
+          {!exportProgress.running && exportProgress.phone && <span>{exportProgress.folder}</span>}
+          {!exportProgress.running && !exportProgress.phone && (
             <a
               href="#"
               className="folder-link"

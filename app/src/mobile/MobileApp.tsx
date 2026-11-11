@@ -9,6 +9,8 @@ import { MiniPlayer } from "./MiniPlayer";
 import { MobileFullPlayer } from "./MobileFullPlayer";
 import { MobileList } from "./MobileList";
 import { useScreenStack } from "./useScreenStack";
+import { api } from "../api";
+import { hasNewCopy } from "../dataTransferText";
 import "./mobile.css";
 
 /** 一番下の行の結果・エラーを出しておく時間（ミリ秒） */
@@ -35,6 +37,21 @@ export function MobileApp() {
     checks,
     playback,
   } = c;
+
+  // アプリを開いたとき、Windows から新しいデータ（cyanomelody 用のフォルダ）が写されていれば知らせる
+  const [newCopy, setNewCopy] = useState(false);
+  useEffect(() => {
+    api
+      .copyFolderStatus()
+      .then((s) => setNewCopy(hasNewCopy(s)))
+      .catch(() => {});
+  }, []);
+  const openCopy = () => {
+    setNewCopy(false);
+    // 設定画面を「データ」のタブで開く（開いたタブは設定画面が覚えている）
+    localStorage.setItem("cyanomelody.settingsTab", JSON.stringify("data"));
+    setSettingsOpen(true);
+  };
 
   // 絞り込みでプレイリストを選んだら（抽選したら）、一覧へ移る
   const prevPlaylist = useRef(selectedPlaylistId);
@@ -163,6 +180,15 @@ export function MobileApp() {
         {/* 重ねて出す画面（プレイリストの編集・タグの詳細・設定など）は、動的エリアの中に重ねる（再生エリアは隠さない） */}
         <Overlays c={c} />
       </div>
+      {newCopy && (
+        <div className="m-notice" data-testid="m-copy-notice">
+          <span>Windows から新しいデータが写されています</span>
+          <button onClick={openCopy}>取り込む</button>
+          <button className="icon" onClick={() => setNewCopy(false)} aria-label="閉じる" title="閉じる">
+            ✕
+          </button>
+        </div>
+      )}
       {shownStatus.text && (
         <div className={"m-status" + (shownStatus.error ? " error" : "")} data-testid="m-status">
           {shownStatus.text}

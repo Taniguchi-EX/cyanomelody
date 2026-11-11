@@ -19,6 +19,14 @@ export function describeHashing(p: HashProgress): string {
 }
 
 export function describeExport(p: ExportProgress): string {
+  if (p.phone) {
+    // スマホへのコピー：消す・写すを合わせて数える
+    if (p.running) return `スマホへ写しています ${p.done}/${p.total}`;
+    if (p.error) return `スマホへ写せませんでした（${p.error}）: `;
+    const parts = [`${p.done - p.failed}件`];
+    if (p.failed) parts.push(`写せなかったファイル ${p.failed}件`);
+    return `${p.cancelled ? "スマホへのコピーを中止しました" : "スマホへ写しました"}（${parts.join("、")}）: `;
+  }
   if (p.running) return `書き出し中 ${p.done}/${p.total}`;
   const parts = [`${p.done - p.failed}件`];
   if (p.failed) parts.push(`書き出せなかったファイル ${p.failed}件`);

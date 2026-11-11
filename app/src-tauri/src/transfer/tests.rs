@@ -281,6 +281,4 @@ fn package_files_skip_missing_and_group_by_folder() {
     let folder = data.folders[0].path.trim_end_matches(['\\', '/']).rsplit(['\\', '/']).next().unwrap().to_string();
     let dests: Vec<_> = files.iter().map(|f| f.dest.clone()).collect();
     assert_eq!(dests, vec![format!("{folder}/a.wav"), format!("{folder}/sub/c.flac")]);
-    let e = package::estimate(&files, missing);
-    assert_eq!((e.files, e.bytes, e.missing), (2, 100 + 300, 1));
 }

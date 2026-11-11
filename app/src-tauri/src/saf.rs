@@ -31,7 +31,7 @@ fn unsupported() -> Error {
 }
 
 #[cfg(target_os = "android")]
-pub use imp::{child_dirs, init, list_files, open, pick_dir, pick_json_file, read_text, readable, resolve_file};
+pub use imp::{child_dirs, init, list_files, open, pick_app_dir, pick_dir, pick_json_file, read_text, readable, resolve_file};
 
 #[cfg(not(target_os = "android"))]
 pub fn open(_uri: &str) -> io::Result<File> {
@@ -51,6 +51,11 @@ pub fn list_files(_dir: &str, _extensions: &[&str]) -> Result<Vec<TreeFile>> {
 #[cfg(not(target_os = "android"))]
 pub fn readable(_dir: &str) -> bool {
     false
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn pick_app_dir() -> Result<Option<PickedDir>> {
+    Err(unsupported())
 }
 
 #[cfg(not(target_os = "android"))]
@@ -184,6 +189,18 @@ mod imp {
         Ok(Some(PickedDir { uri: uri.to_json_string().map_err(fs_error)? }))
     }
 
+    /// cyanomelody 用のフォルダ（`Music/cyanomelody`。なければ作る）から始めて、フォルダを選ぶ画面を出し、選んだフォルダの権限を残す。キャンセルしたら None
+    pub fn pick_app_dir() -> Result<Option<PickedDir>> {
+        let fs = app()?.android_fs();
+        let initial = fs
+            .picker()
+            .resolve_public_storage_initial_location(None, tauri_plugin_android_fs::PublicAudioDir::Music, "cyanomelody", true)
+            .ok();
+        let Some(uri) = fs.picker().pick_dir(initial.as_ref(), false).map_err(fs_error)? else { return Ok(None) };
+        fs.picker().persist_uri_permission(&uri).map_err(fs_error)?;
+        Ok(Some(PickedDir { uri: uri.to_json_string().map_err(fs_error)? }))
+    }
+
     /// JSON のファイルを選ぶ画面を出す（読むだけ。権限は残さない）。キャンセルしたら None
     pub fn pick_json_file() -> Result<Option<String>> {
         let fs = app()?.android_fs();
@@ -204,7 +221,10 @@ mod imp {
         let fs = app()?.android_fs();
         let mut dirs = Vec::new();
         for entry in fs.read_dir(&parse(dir)?).map_err(fs_error)? {
-            if let Entry::Dir { uri, name, .. } = entry {
+            // 隠しフォルダ（「.」で始まる）は除く
+            if let Entry::Dir { uri, name, .. } = entry
+                && !name.starts_with('.')
+            {
                 dirs.push(ChildDir { name, uri: uri.to_json_string().map_err(fs_error)? });
             }
         }

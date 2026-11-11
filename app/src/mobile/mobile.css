@@ -451,3 +451,18 @@
   flex: none;
   white-space: nowrap;
 }
+
+/* Windows から新しいデータが写されているときの知らせ（再生エリアの上） */
+.m-notice {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sub);
+}
+
+.m-notice span {
+  flex: 1;
+}

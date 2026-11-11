@@ -1,4 +1,4 @@
-import type { DataSections, ImportPreview, ImportResult } from "./api";
+import type { CopyFolderStatus, DataSections, ImportPreview, ImportResult } from "./api";
 
 /** データのエクスポート・インポートと Windows からのコピーで出す、項目の名前と見込み・結果の文言 */
 
@@ -64,3 +64,7 @@ export function resultLines(r: ImportResult, s: DataSections): string[] {
   }
   return lines;
 }
+
+/** 新しいデータがあるか（cyanomelody 用のフォルダのデータが、前に取り込んだものより新しい） */
+export const hasNewCopy = (s: CopyFolderStatus) =>
+  s.readable && s.exportedAt !== null && (s.importedAt === null || s.exportedAt > s.importedAt);

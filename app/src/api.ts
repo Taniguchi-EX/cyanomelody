@@ -13,11 +13,13 @@ import type {
   Facets,
   FileFilter,
   HashProgress,
+  CopyFolderStatus,
   CopyPreview,
   CopySource,
   ImportPreview,
   ImportResult,
-  PackageEstimate,
+  PhoneDevice,
+  PhoneSummary,
   LibraryFolder,
   LicenseType,
   LinkOutcome,
@@ -99,13 +101,20 @@ export const api = {
   /** データのインポート。replace なら、選んだ項目の今のデータを置き換える */
   importData: (path: string, sections: DataSections, replace: boolean) =>
     invoke<ImportResult>("import_data", { path, sections, replace }),
-  /** 音声ファイルも入れて書き出すときの、音声ファイルの数と合計の大きさ */
-  estimatePackage: (sections: DataSections) => invoke<PackageEstimate>("estimate_package", { sections }),
-  /** dest の中に作るフォルダ（folderName）に、データと音声ファイルを書き出し始め、作ったフォルダのパスを返す。進み具合は "export-progress" */
-  exportPackage: (dest: string, folderName: string, sections: DataSections, screen: Record<string, unknown> | null) =>
-    invoke<string>("export_package", { dest, folderName, sections, screen }),
-  /** Android：書き出したフォルダ（dir）かデータのファイル（file）を選び、コピーの見込みを返す。キャンセルしたら null */
-  pickCopySource: (kind: CopySource["kind"]) => invoke<CopyPreview | null>("pick_copy_source", { kind }),
+  /** Windows：USB でつないでいる端末（スマホで「ファイル転送」を選んでいるもの） */
+  phoneDevices: () => invoke<PhoneDevice[]>("phone_devices"),
+  /** Windows：スマホの中を調べ、写すものの数を返す */
+  phonePlan: (deviceId: string) => invoke<PhoneSummary>("phone_plan", { deviceId }),
+  /** Windows：調べた結果のとおりに写し始め、写し先を返す。進み具合は "export-progress" */
+  phoneCopy: (screen: Record<string, unknown> | null) => invoke<string>("phone_copy", { screen }),
+  /** Android：cyanomelody 用のフォルダの状態 */
+  copyFolderStatus: () => invoke<CopyFolderStatus>("copy_folder_status"),
+  /** Android：cyanomelody 用のフォルダを選んで覚える。キャンセルしたら false */
+  setCopyFolder: () => invoke<boolean>("set_copy_folder"),
+  /** Android：cyanomelody 用のフォルダの中のデータの見込み */
+  inspectCopyFolder: () => invoke<CopyPreview>("inspect_copy_folder"),
+  /** Android：データのファイル（JSON）だけを選び、見込みを返す。キャンセルしたら null */
+  pickCopyFile: () => invoke<CopyPreview | null>("pick_copy_file"),
   /** Android：選んだ項目を、Windows のとおりに置き換える */
   copyFromWindows: (source: CopySource, sections: DataSections, removeOld: boolean) =>
     invoke<ImportResult>("copy_from_windows", { source, sections, removeOld }),

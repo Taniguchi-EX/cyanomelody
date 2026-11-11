@@ -21,6 +21,8 @@ mod location;
 mod linking;
 mod metadata;
 mod names;
+#[cfg(windows)]
+mod phone;
 mod playlists;
 mod recent;
 mod romaji;
@@ -100,6 +102,8 @@ pub fn run() {
                 export: Arc::new(ExportJob::default()),
                 autotag: Arc::new(AutotagJob::default()),
                 draw: Mutex::new(None),
+                #[cfg(windows)]
+                phone_plan: Mutex::new(None),
             });
             Ok(())
         })
@@ -126,9 +130,16 @@ pub fn run() {
             commands::data::export_metadata,
             commands::data::inspect_import,
             commands::data::import_data,
-            commands::copy::estimate_package,
-            commands::copy::export_package,
-            commands::copy::pick_copy_source,
+            #[cfg(windows)]
+            commands::phone::phone_devices,
+            #[cfg(windows)]
+            commands::phone::phone_plan,
+            #[cfg(windows)]
+            commands::phone::phone_copy,
+            commands::copy::copy_folder_status,
+            commands::copy::set_copy_folder,
+            commands::copy::inspect_copy_folder,
+            commands::copy::pick_copy_file,
             commands::copy::copy_from_windows,
             commands::tags::set_new_tag_settings,
             commands::tags::delete_tag,

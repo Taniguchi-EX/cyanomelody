@@ -194,30 +194,24 @@ await step("S05", "データ：cyanomelody のものでないファイルは取�
   await closeSettings();
 });
 
-await step("S06", "データ：「音声ファイルも入れる」で、選んだフォルダの中に、データの JSON と音声ファイル（ライブラリのフォルダごと・相対パスのまま）をまとめたフォルダを作る。書き出す前に数と大きさを確かめる", async () => {
-  const dest = path.join(shotDir, "package");
-  fs.mkdirSync(dest, { recursive: true });
+await step("S06", "データ：「スマホへコピー…」で、USB でつないだスマホを探す。見つからなければ「ファイル転送」を選ぶよう案内し、見つかれば写すものの数を確かめる（ここではキャンセルする）", async () => {
   await openSettings();
   await tab("データ").click();
-  await page.getByTestId("export-with-audio").check();
-  await ui.setDialogReply(dest);
-  await ui.setConfirmReply(true);
-  await ui.confirmed(() => page.getByRole("button", { name: "エクスポート…" }).click());
-  const asked = await ui.lastConfirm();
-  expect(asked.includes("音声ファイル 5件") && asked.includes("Windows からコピー"), asked.replace(/\n/g, " / "));
-  await page.getByTestId("export-result").waitFor({ timeout: 5000 });
-  const [folder] = fs.readdirSync(dest);
-  expect(/^cyanomelody-\d{8}$/.test(folder ?? ""), `作ったフォルダ ${folder}`);
-  const root = path.join(dest, folder);
-  // 音声ファイルのコピーは裏で行うので、終わるまで待つ
-  const audio = () => (fs.existsSync(path.join(root, "formats")) ? fs.readdirSync(path.join(root, "formats")).length : 0);
-  for (let i = 0; i < 50 && audio() < 5; i++) await page.waitForTimeout(100);
-  expect(audio() === 5, `音声ファイル ${audio()}件`);
-  const json = JSON.parse(fs.readFileSync(path.join(root, "cyanomelody.json"), "utf8"));
-  expect(json.app === "cyanomelody" && json.files.length === 5, `データ ${json.files?.length}`);
-  await shot("S06_音声ファイルも入れる");
-  await page.getByTestId("export-with-audio").uncheck();
-  await ui.setDialogReply(undefined);
+  await page.getByTestId("phone-copy").waitFor({ timeout: 3000 });
+  await ui.setConfirmReply(false);
+  const confirms = () => page.evaluate(() => window.__confirms.length);
+  const before = await confirms();
+  await page.getByTestId("phone-find").click();
+  // テストの PC にスマホがつながっていれば確認が出る（キャンセル）。つながっていなければ案内が出る
+  const none = page.getByTestId("phone-none");
+  for (let i = 0; i < 300 && !(await none.count()) && (await confirms()) === before; i++) await page.waitForTimeout(100);
+  if (await none.count()) {
+    expect((await none.innerText()).includes("ファイル転送"), await none.innerText());
+  } else {
+    const asked = await ui.lastConfirm();
+    expect(asked.includes("Music/cyanomelody") && asked.includes("写す曲"), asked.replace(/\n/g, " / "));
+  }
+  await shot("S06_スマホへコピー");
   await closeSettings();
 });
 

@@ -21,6 +21,9 @@ pub struct AppState {
     pub autotag: Arc<AutotagJob>,
     /// 選んでいるプレイリストと、抽選したときの中身の版（抽選した並びは DB の一時テーブルにある）
     pub draw: Mutex<Option<DrawState>>,
+    /// Windows：スマホへの直接コピーの、調べた結果（写すときに使う）
+    #[cfg(windows)]
+    pub phone_plan: Mutex<Option<crate::phone::PhonePlan>>,
 }
 
 #[derive(Debug, Clone)]

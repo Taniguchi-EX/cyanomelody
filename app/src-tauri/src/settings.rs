@@ -8,6 +8,12 @@ use crate::error::{Error, Result};
 /// 新しく作るタグの既定値（TagSettings）
 pub const NEW_TAG: &str = "new_tag";
 
+/// Android：Windows からのコピーの、cyanomelody 用のフォルダ（`Music/cyanomelody`。選んで許可した SAF のフォルダの URI の JSON。Option<String>）
+pub const COPY_FOLDER: &str = "copy_folder";
+
+/// Android：cyanomelody 用のフォルダから前に取り込んだデータの、書き出した日時（UNIX 時間の秒。Option<i64>）
+pub const COPY_IMPORTED_AT: &str = "copy_imported_at";
+
 /// 設定を読む。まだ保存していないときは既定の値
 pub fn get<T: DeserializeOwned + Default>(conn: &Connection, key: &str) -> Result<T> {
     let value: Option<String> =

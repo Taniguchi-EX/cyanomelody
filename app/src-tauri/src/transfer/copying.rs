@@ -1,5 +1,5 @@
-//! Android：Windows からのコピー。Windows で書き出したデータ（JSON）と、一緒に書き出した音声ファイルのフォルダ（書き出したフォルダ）を取り込む。
-//! 書き出したフォルダの中のフォルダは、置いた場所のままライブラリに登録する（端末の中で写し直さない）。
+//! Android：Windows からのコピー。Windows が「スマホへコピー」で写した cyanomelody 用のフォルダ（データの JSON と、曲のフォルダ）を取り込む。
+//! cyanomelody 用のフォルダの中のフォルダは、置いた場所のままライブラリに登録する（端末の中で写し直さない）。
 //! 曲は「フォルダの中の相対パス」でも見分け、選んだ項目を Windows のとおりに置き換える。
 //! SAF を使う所（フォルダ・ファイルを選ぶ、中を読む）は commands/copy.rs、ここはデータベースと見分け方
 
@@ -8,10 +8,10 @@ use super::*;
 use crate::library::{self, KIND_SAF};
 use crate::saf::{self, TreeFile};
 
-/// 書き出したフォルダの中の、データのファイルの名前
+/// cyanomelody 用のフォルダの中の、データのファイルの名前
 pub const PACKAGE_JSON: &str = "cyanomelody.json";
 
-/// どこから写すか：書き出したフォルダ（dir）か、データのファイルだけ（file）
+/// どこから取り込むか：cyanomelody 用のフォルダ（dir）か、データのファイルだけ（file）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CopySource {
@@ -26,13 +26,13 @@ impl CopySource {
         self.kind == "dir"
     }
 
-    /// 書き出したフォルダ（選んだフォルダ）の場所の名前。ファイルだけを選んだときは None
+    /// cyanomelody 用のフォルダ（選んだフォルダ）の場所の名前。ファイルだけを選んだときは None
     fn tree(&self) -> Option<String> {
         if self.is_dir() { saf::tree_id(&self.uri) } else { None }
     }
 }
 
-/// 書き出したフォルダの中のフォルダ（ライブラリに登録するもの）と、その中の音声ファイル
+/// cyanomelody 用のフォルダの中のフォルダ（ライブラリに登録するもの）と、その中の音声ファイル
 #[derive(Debug, Clone)]
 pub struct PackageDir {
     pub name: String,
@@ -40,7 +40,7 @@ pub struct PackageDir {
     pub files: Vec<TreeFile>,
 }
 
-/// 見込みに出す、書き出したフォルダの中のフォルダ
+/// 見込みに出す、cyanomelody 用のフォルダの中のフォルダ
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyFolder {
@@ -65,7 +65,7 @@ pub struct CopyPreview {
     pub source: CopySource,
     /// 中身の件数・見つかる曲・置き換えで消える件数（インポートと同じ）
     pub import: ImportPreview,
-    /// 書き出したフォルダの中のフォルダ（ファイルだけを選んだときは空）
+    /// cyanomelody 用のフォルダの中のフォルダ（ファイルだけを選んだときは空）
     pub folders: Vec<CopyFolder>,
     pub old_folders: Vec<OldFolder>,
 }
@@ -87,7 +87,7 @@ fn registered_id(folders: &[library::LibraryFolder], uri: &str) -> Option<i64> {
     folders.iter().find(|f| same_folder(&f.path, uri)).map(|f| f.id)
 }
 
-/// 前に別の場所から写したフォルダ：選んだフォルダの中のフォルダとして登録したもので、今回の書き出したフォルダ（package_tree）の外にあるもの。
+/// 前に別の場所から写したフォルダ：選んだフォルダの中のフォルダとして登録したもので、今回の cyanomelody 用のフォルダ（package_tree）の外にあるもの。
 /// データのファイルだけを選んだとき（package_tree が None）は、ない
 fn old_folders(folders: &[library::LibraryFolder], package_tree: Option<&str>) -> Vec<OldFolder> {
     let Some(tree) = package_tree else { return vec![] };
@@ -101,7 +101,7 @@ fn old_folders(folders: &[library::LibraryFolder], package_tree: Option<&str>) -
 
 const BY_FOLDER: MatchOptions = MatchOptions { by_folder: true };
 
-/// コピーの見込み。書き出したフォルダの中のフォルダは、まだ登録していなくても、中の曲を探す先に入れて数える
+/// コピーの見込み。cyanomelody 用のフォルダの中のフォルダは、まだ登録していなくても、中の曲を探す先に入れて数える
 pub fn copy_preview(conn: &Connection, data: &DataFile, source: &CopySource, package: &[PackageDir]) -> Result<CopyPreview> {
     let registered = saf_folders(conn)?;
     let mut locals = load_locals(conn)?;
@@ -127,7 +127,7 @@ pub fn copy_preview(conn: &Connection, data: &DataFile, source: &CopySource, pac
     })
 }
 
-/// 書き出したフォルダの中のフォルダを登録してスキャンし（登録済みならスキャンし直す）、選んだ項目を置き換えで取り込む。
+/// cyanomelody 用のフォルダの中のフォルダを登録してスキャンし（登録済みならスキャンし直す）、選んだ項目を置き換えで取り込む。
 /// remove_old なら、前に別の場所から写したフォルダの登録を外す。ライブラリ（フォルダの登録）の項目は使わない
 pub fn copy_into_library(
     conn: &mut Connection,

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { api, type DataSections, type ImportPreview, type ImportResult } from "../api";
 import { confirmDialog } from "../confirm";
-import { pickJsonOpenPath, pickJsonSavePath, pickPath } from "../dialogs";
+import { pickJsonOpenPath, pickJsonSavePath } from "../dialogs";
 import { todayStamp } from "../paths";
-import { formatBytes, readScreen, writeScreen } from "../screenTransfer";
+import { readScreen, writeScreen } from "../screenTransfer";
+import { PhoneCopy } from "./PhoneCopy";
 import { dateText, replaceWarnings, resultLines, SECTIONS, sectionCount } from "../dataTransferText";
 
 const ALL: DataSections = { library: true, tags: true, playlists: true, credits: true };
@@ -18,8 +19,6 @@ type Props = {
 /** 設定画面の「データ」：エクスポートとインポート */
 export function DataTab({ onError, onImported }: Props) {
   const [exportSections, setExportSections] = useState<DataSections>(ALL);
-  /** 音声ファイルも入れる（Android の端末へ写すとき） */
-  const [withAudio, setWithAudio] = useState(false);
   const [exported, setExported] = useState<string | null>(null);
   const [importPath, setImportPath] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -28,35 +27,7 @@ export function DataTab({ onError, onImported }: Props) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string[] | null>(null);
 
-  /** データと音声ファイルを、選んだフォルダの中に作るフォルダへ書き出す（Android の端末へ写すため） */
-  const exportPackage = async () => {
-    const dest = await pickPath({ directory: true });
-    if (!dest) return;
-    setBusy(true);
-    try {
-      const est = await api.estimatePackage(exportSections);
-      const ok = await confirmDialog(
-        `データと一緒に、音声ファイル ${est.files}件（${formatBytes(est.bytes)}）を書き出します。` +
-          (est.missing ? `見つからない曲 ${est.missing}件は入れません。` : "") +
-          "\n\n書き出したフォルダを、USB や Google ドライブなどで Android の端末に写し、Android の設定画面の「データ」の「Windows からコピー」で取り込みます。\n\nよろしいですか？",
-      );
-      if (!ok) return;
-      const folder = await api.exportPackage(
-        dest,
-        `cyanomelody-${todayStamp()}`,
-        exportSections,
-        exportSections.credits ? readScreen() : null,
-      );
-      setExported(`${folder} に書き出しています（進み具合は一番下の行に出ます）`);
-    } catch (e) {
-      onError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const exportData = async () => {
-    if (withAudio) return exportPackage();
     const path = await pickJsonSavePath(`cyanomelody-${todayStamp()}`);
     if (!path) return;
     setBusy(true);
@@ -133,16 +104,6 @@ export function DataTab({ onError, onImported }: Props) {
             {s.label}
           </label>
         ))}
-        <label className="data-check">
-          <input
-            type="checkbox"
-            checked={withAudio}
-            onChange={(e) => setWithAudio(e.target.checked)}
-            aria-label="音声ファイルも入れる"
-            data-testid="export-with-audio"
-          />
-          音声ファイルも入れる（Android の端末へ写すとき。選んだフォルダの中に、データと音声ファイルをまとめたフォルダを作ります）
-        </label>
         <div className="row">
           <button onClick={exportData} disabled={busy || !anyExport}>
             エクスポート…
@@ -154,6 +115,8 @@ export function DataTab({ onError, onImported }: Props) {
           </p>
         )}
       </section>
+
+      <PhoneCopy onError={onError} />
 
       <section>
         <h3>インポート</h3>

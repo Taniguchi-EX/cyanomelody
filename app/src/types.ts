@@ -294,8 +294,12 @@ export type ExportProgress = {
   total: number;
   failed: number;
   cancelled: boolean;
-  /** 書き出し先（作ったフォルダ） */
+  /** 書き出し先（作ったフォルダ。スマホへのコピーでは、端末の名前と写し先） */
   folder: string;
+  /** スマホへのコピーか（書き出し先をエクスプローラーで見せられない） */
+  phone: boolean;
+  /** 途中で続けられなくなったときのエラー */
+  error: string | null;
 };
 
 /** エクスポート・インポートする項目 */
@@ -377,22 +381,40 @@ export type ImportResult = {
   messages: string[];
 };
 
-/** 音声ファイルも入れて書き出すときの、音声ファイルの数と合計の大きさ */
-export type PackageEstimate = {
-  files: number;
-  bytes: number;
-  /** 見つからない印があるので入れない曲 */
+/** Windows：USB でつないでいる端末 */
+export type PhoneDevice = { id: string; name: string };
+
+/** Windows：スマホへ写す前に出す、写すものの数 */
+export type PhoneSummary = {
+  device: string;
+  copyFiles: number;
+  copyBytes: number;
+  /** スマホから消す曲（Windows のライブラリにないもの） */
+  deleteFiles: number;
+  unchanged: number;
+  /** 見つからない印があるので写さない曲 */
   missing: number;
 };
 
-/** Windows からのコピー：選んだもの（書き出したフォルダか、データのファイル） */
+/** Android：cyanomelody 用のフォルダの状態 */
+export type CopyFolderStatus = {
+  /** 設定したフォルダ（まだなら null） */
+  label: string | null;
+  readable: boolean;
+  /** フォルダの中のデータを Windows で書き出した日時（データがなければ null） */
+  exportedAt: number | null;
+  /** 前に取り込んだデータの、書き出した日時 */
+  importedAt: number | null;
+};
+
+/** Windows からのコピー：選んだもの（cyanomelody 用のフォルダか、データのファイル） */
 export type CopySource = { kind: "dir" | "file"; uri: string };
 
 /** Windows からのコピーの見込み */
 export type CopyPreview = {
   source: CopySource;
   import: ImportPreview;
-  /** 書き出したフォルダの中のフォルダ（registered：前に同じ場所から写して登録済み） */
+  /** cyanomelody 用のフォルダの中のフォルダ（registered：登録済み） */
   folders: { name: string; registered: boolean; files: number }[];
   /** 前に別の場所から写したフォルダ（登録を外すか聞く） */
   oldFolders: { id: number; label: string }[];
