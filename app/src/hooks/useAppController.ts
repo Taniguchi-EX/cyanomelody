@@ -16,6 +16,7 @@ import { FILE_SORTS, PLAYLIST_SORTS } from "../listOptions";
 import type { ListView } from "../components/FileList";
 import type { FileDropTarget } from "./useFileDrag";
 import { useAudioPlayer } from "./useAudioPlayer";
+import { useMediaSession } from "./useMediaSession";
 import { useChecks } from "./useChecks";
 import { usePlaylistSelection } from "./usePlaylistSelection";
 import { useFileFilter } from "./useFileFilter";
@@ -117,6 +118,8 @@ export function useAppController() {
         .catch(showError),
     chainIds: chains.map((c) => c.id),
   });
+  // Android：再生の通知とロック画面に出し、画面をロックしても鳴らし続ける
+  useMediaSession(audio);
 
   useEffect(() => {
     onDrawnRef.current = (id) => {

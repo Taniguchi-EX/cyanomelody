@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { mediaSrc } from "../platform";
+import { isAndroid, mediaSrc } from "../platform";
 import type { AudioFile, PlayEntry } from "../api";
 
 /** 試聴するファイル（エフェクトの管理画面の試聴）。ファイルの一覧のファイルでも、プレイリストの項目の曲でもよい */
@@ -319,6 +319,20 @@ export function useAudioPlayer({ onInfo, onError, onPlayed, chainIds }: Options)
       setTime({ current: e.currentTarget.currentTime, duration: e.currentTarget.duration || 0 }),
     onError: () => {
       if (playerRef.current) skip(playSeqRef.current, "ファイルを読めません");
+    },
+    // 外から止められたとき（Android で、ほかのアプリが音を鳴らし始めたときなど、WebView が止める）は、一時停止にする。
+    // こちらから止めたとき（一時停止・エフェクトの用意・停止）と、曲が終わったときは、状態がもう合っている
+    onPause: (e: React.SyntheticEvent<HTMLAudioElement>) => {
+      const p = playerRef.current;
+      if (p && !p.paused && !p.preparing && !e.currentTarget.ended) setPlayer({ ...p, paused: true });
+    },
+    // 一時停止しているのに外から鳴らされたとき：Android では、電話などの割り込みが終わって WebView が再開したものなので、
+    // 止め直す（自動では再開しない）。Windows では、キーボードのメディアキーなど使う人の操作なので、再開にする
+    onPlay: (e: React.SyntheticEvent<HTMLAudioElement>) => {
+      const p = playerRef.current;
+      if (!p?.paused) return;
+      if (isAndroid) e.currentTarget.pause();
+      else setPlayer({ ...p, paused: false });
     },
     // プレイリストの再生中なら次へ。試聴なら止まる
     onEnded: () => {

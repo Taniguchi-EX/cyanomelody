@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react";
 import { useDisplay } from "../displaySettings";
-import { api } from "../api";
 import type { EffectChain } from "../effects";
-import { stem } from "../paths";
+import { playingName, useTrackTitle } from "../hooks/useTrackTitle";
 import { GearIcon, PauseIcon, PlayIcon, SpeakerIcon } from "./Icons";
 import { PLAYER_MODES, type Player, type PlayerMode, type PreviewTarget } from "../hooks/useAudioPlayer";
 
@@ -101,22 +99,9 @@ export function PlayerBar({
   // 鳴らしているファイル。曲名（タグ情報のタイトル）はデータベースにないので、ファイルから読む
   const playing = entry ?? previewFile;
   const playingPath = playing?.path ?? null;
-  const [title, setTitle] = useState<{ path: string; title: string | null } | null>(null);
-  useEffect(() => {
-    if (playingPath === null) return;
-    let alive = true;
-    // 曲名を読めないときは、ファイル名を出す（エラーにしない）
-    api
-      .trackTitle(playingPath)
-      .then((t) => alive && setTitle({ path: playingPath, title: t }))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [playingPath]);
-  const trackTitle = title && title.path === playingPath ? title.title : null;
+  const trackTitle = useTrackTitle(playingPath);
   /** 曲の名前：プレイリスト上での名前 → 曲名 → 拡張子を除いたファイル名 */
-  const name = playing ? (entry?.alias ?? trackTitle ?? stem(playing.relPath)) : "";
+  const name = playing ? playingName(entry?.alias ?? null, trackTitle, playing.relPath) : "";
   const ratio = player && time.duration > 0 ? time.current / time.duration : 0;
   // 鳴らしている曲にプレイリストの項目のエフェクトがかかるときは、再生の欄のエフェクトセットはかけない
   const itemFx = (entry?.chains.length ?? 0) > 0;
