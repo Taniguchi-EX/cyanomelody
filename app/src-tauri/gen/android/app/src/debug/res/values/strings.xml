@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- デバッグ版（dev.cyanomelody.app.debug）だけの名前。配布する版（main）と見分けるため。アイコンも mipmap-* で差し替える -->
+<resources>
+    <string name="app_name">"cyanomelody 開発版"</string>
+    <string name="main_activity_title">"cyanomelody 開発版"</string>
+</resources>
