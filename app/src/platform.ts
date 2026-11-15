@@ -5,7 +5,8 @@ export const isAndroid = /Android/.test(navigator.userAgent);
 
 /**
  * 音のファイルの場所から、audio 要素に渡す URL を作る。
- * SAF のファイル（場所が FsUri の JSON）はプラグインのプロトコル、それ以外（パス）はアセットのプロトコルで読む
+ * Android は、アプリのプロトコル `cm-media`（SAF のファイルとエフェクトの音を、CORS のヘッダー付きで返す。src-tauri の media_protocol.rs）で読む。
+ * プラグインのプロトコルやアセットのプロトコルでは、音を Web Audio に通すと無音にされる（リアルタイムエフェクトで通す）。
+ * Windows は、アセットのプロトコルで読む
  */
-export const mediaSrc = (path: string) =>
-  path.startsWith("{") ? convertFileSrc(path, "android-fs-content") : convertFileSrc(path);
+export const mediaSrc = (path: string) => (isAndroid ? convertFileSrc(path, "cm-media") : convertFileSrc(path));

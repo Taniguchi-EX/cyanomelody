@@ -213,7 +213,8 @@ export function MobileApp() {
           }}
         />
       )}
-      <audio {...audio.audioProps} />
+      {/* 音を Web Audio に通せるよう、CORS で読む（platform.ts の mediaSrc） */}
+      <audio crossOrigin="anonymous" {...audio.audioProps} />
     </div>
   );
 }

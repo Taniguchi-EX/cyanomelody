@@ -2,6 +2,7 @@
 //! プラグインのプロトコル（`android-fs-content`）は、別のオリジンから読んでよいという印（CORS のヘッダー）を付けないので、
 //! audio 要素の音を Web Audio（AudioContext）に通すと、ブラウザの決まりで無音にされる。
 //! このプロトコルは同じファイルを、範囲を指定した読み出し（Range）に応えて返し、CORS のヘッダーを付ける。
+//! エフェクトセットをかけた音（データの置き場所の `effects-cache` の WAV）も、同じ理由でこのプロトコルで返す（それ以外のパスは返さない）。
 //! URL は `http://cm-media.localhost/<場所（FsUri の JSON）を URL エンコードしたもの>`（画面では convertFileSrc(場所, "cm-media")）
 
 use std::io::{Read, Seek, SeekFrom};
@@ -130,26 +131,51 @@ pub fn respond<F: Read + Seek>(mut file: F, range: Option<&str>, kind: &str) -> 
     builder.body(body).unwrap_or_default()
 }
 
+/// パスが、決まったフォルダ（エフェクトの音の置き場所）の中のファイルか
+pub fn inside(path: &std::path::Path, dir: &std::path::Path) -> bool {
+    match (path.canonicalize(), dir.canonicalize()) {
+        (Ok(p), Ok(d)) => p.starts_with(d) && p.is_file(),
+        _ => false,
+    }
+}
+
 /// プロトコルの処理（Android）。ファイルを開くのは時間がかかることがあるので、別のスレッドで行う
 #[cfg(target_os = "android")]
 pub fn protocol<R: tauri::Runtime>(
-    _ctx: tauri::UriSchemeContext<'_, R>,
+    ctx: tauri::UriSchemeContext<'_, R>,
     request: tauri::http::Request<Vec<u8>>,
     responder: tauri::UriSchemeResponder,
 ) {
     use tauri::http::{header, Response, StatusCode};
+    use tauri::Manager as _;
+    let cache_dir = ctx.app_handle().path().app_data_dir().ok().map(|d| d.join("effects-cache"));
     std::thread::spawn(move || {
         let path = request.uri().path().trim_start_matches('/');
         let range = request.headers().get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
-        let response = match percent_decode(path).filter(|p| p.starts_with('{')) {
-            Some(location) => match crate::saf::open(&location) {
+        let not_found = || {
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(Vec::new())
+                .unwrap_or_default()
+        };
+        let response = match percent_decode(path) {
+            // SAF のファイル（場所が FsUri の JSON）
+            Some(location) if location.starts_with('{') => match crate::saf::open(&location) {
                 Ok(file) => respond(file, range.as_deref(), content_type(&location)),
-                Err(_) => Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-                    .body(Vec::new())
-                    .unwrap_or_default(),
+                Err(_) => not_found(),
             },
+            // エフェクトの音（effects-cache の中だけ）
+            Some(location) => {
+                let file_path = std::path::PathBuf::from(&location);
+                match &cache_dir {
+                    Some(dir) if inside(&file_path, dir) => match std::fs::File::open(&file_path) {
+                        Ok(file) => respond(file, range.as_deref(), content_type(&location)),
+                        Err(_) => not_found(),
+                    },
+                    _ => Response::builder().status(StatusCode::FORBIDDEN).body(Vec::new()).unwrap_or_default(),
+                }
+            }
             None => Response::builder().status(StatusCode::BAD_REQUEST).body(Vec::new()).unwrap_or_default(),
         };
         responder.respond(response);
@@ -189,6 +215,20 @@ mod tests {
         );
         assert_eq!(content_type("a.flac"), "audio/flac");
         assert_eq!(content_type("a.xyz"), "application/octet-stream");
+    }
+
+    #[test]
+    fn 決まったフォルダの中だけを返す() {
+        let dir = std::env::temp_dir().join("cm-media-test");
+        std::fs::create_dir_all(dir.join("effects-cache")).unwrap();
+        let inner = dir.join("effects-cache").join("a.wav");
+        std::fs::write(&inner, b"x").unwrap();
+        std::fs::write(dir.join("b.wav"), b"x").unwrap();
+        let cache = dir.join("effects-cache");
+        assert!(inside(&inner, &cache));
+        assert!(!inside(&dir.join("b.wav"), &cache));
+        assert!(!inside(&cache.join("..").join("b.wav"), &cache));
+        assert!(!inside(&cache.join("none.wav"), &cache));
     }
 
     #[test]
