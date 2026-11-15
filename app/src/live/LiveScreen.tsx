@@ -60,6 +60,7 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
                 // 指が触れた瞬間に鳴らす（click は離したときなので遅い）
                 onPointerDown={(e) => {
                   e.preventDefault();
+                  flash(e.currentTarget);
                   const ctx = liveAudio.context();
                   void liveAudio.resume();
                   s.play(ctx, liveAudio.oneShotOutput(), ctx.currentTime);
@@ -93,6 +94,16 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
   );
 }
 
+/**
+ * 押したボタンを短く光らせる（CSS の .hit のアニメーション）。:active は、素早いタップだと光る前に指が離れて光らないので使わない。
+ * 続けて押したときも最初から光らせ直す
+ */
+function flash(el: HTMLElement) {
+  el.classList.remove("hit");
+  void el.offsetWidth; // アニメーションを最初からやり直させる
+  el.classList.add("hit");
+}
+
 /** BPM のボタン：曲に合わせて何回か押すと、間隔から BPM を出して覚える（bpm.ts） */
 function BpmButton({ bpm, onBpm }: { bpm: number; onBpm: (bpm: number) => void }) {
   const taps = useRef<number[]>([]);
@@ -103,6 +114,7 @@ function BpmButton({ bpm, onBpm }: { bpm: number; onBpm: (bpm: number) => void }
       className={"m-live-bpm" + (count > 0 ? " measuring" : "")}
       onPointerDown={(e) => {
         e.preventDefault();
+        flash(e.currentTarget);
         taps.current = addTap(taps.current, e.timeStamp);
         const next = tapBpm(taps.current);
         if (next !== null) onBpm(next);

@@ -572,9 +572,17 @@
   font-size: calc(13px * var(--text-scale, 1));
 }
 
-.m-live-pad:active {
-  background: var(--accent);
-  color: #fff;
+/* 押したときに短く光る（LiveScreen.tsx の flash） */
+.m-live-pad.hit,
+.m-live-bpm.hit {
+  animation: m-live-hit 0.15s ease-out;
+}
+
+@keyframes m-live-hit {
+  from {
+    background: var(--accent);
+    color: #fff;
+  }
 }
 
 /* BPM のボタン（左下） */
