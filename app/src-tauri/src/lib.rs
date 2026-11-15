@@ -18,6 +18,7 @@ mod hash_job;
 mod hashing;
 mod library;
 mod location;
+mod media_protocol;
 mod linking;
 mod metadata;
 mod names;
@@ -60,6 +61,9 @@ pub fn run() {
     // プロトコルは画面を作る前に登録が要るので、setup の中ではなく、ここで加える
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_fs::builder().build());
+    // Android：曲のファイルを、Web Audio に通せる形（CORS のヘッダー付き）で画面に渡すプロトコル（media_protocol.rs）
+    #[cfg(target_os = "android")]
+    let builder = builder.register_asynchronous_uri_scheme_protocol("cm-media", media_protocol::protocol);
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
