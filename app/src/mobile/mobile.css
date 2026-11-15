@@ -670,3 +670,15 @@
   opacity: 0.6;
   pointer-events: none;
 }
+
+/* XY パッドに指を置いている間の、今の値（「1/16」など）。パッドの上の真ん中 */
+.m-live-xy-value {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: calc(26px * var(--text-scale, 1));
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}

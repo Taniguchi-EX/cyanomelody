@@ -8,22 +8,23 @@
  * 一度通したら、アプリを閉じるまで通したまま（ライブの画面を開かなければ、普段の再生には手を入れない）。
  * audio 要素は、CORS で読んでいる（crossOrigin。platform.ts の mediaSrc）。そうでないと、通した音が無音にされる
  */
+import processorsUrl from "./processors.js?url";
 
 /** エフェクトを切り替えるときに、音を滑らかにつなぐ時間（秒）。急に切り替えると「プツッ」と鳴る */
 const FADE = 0.01;
 
-/** XY パッドの位置（0〜1。x は左が 0、y は下が 0）と、今の BPM */
+/** XY パッドの位置（0〜1。x は左が 0、y は下が 0） */
 export type PadPoint = { x: number; y: number };
 
 /** ライブのエフェクト1つ。入口と出口の間で音を変える */
 export interface LiveEffect {
   readonly input: AudioNode;
   readonly output: AudioNode;
-  /** 指の位置が変わったとき（指を置いた瞬間も） */
-  move(point: PadPoint, bpm: number): void;
+  /** 指の位置が変わったとき（指を置いた瞬間も）。パッドに出す今の値（「1/16」など）を返す */
+  move(point: PadPoint, bpm: number): string;
   /** 指を置いたとき（繰り返しの始まりなどを決める）。move の前に呼ぶ */
   start?(point: PadPoint, bpm: number): void;
-  /** 指を離したとき（素通しに戻した後） */
+  /** 指を離したとき */
   stop?(): void;
   dispose(): void;
 }
@@ -33,14 +34,20 @@ export type LiveEffectKind = {
   id: string;
   /** ボタンに出す名前 */
   label: string;
-  /** XY パッドの横と縦で何が変わるか（パッドの隅に小さく出す） */
+  /** XY パッドの横と縦で何が変わるか（パッドの隅に小さく出す。縦を使わなければ空） */
   xLabel: string;
   yLabel: string;
+  /**
+   * 指を離した後も、残りの響きを鳴らすか（エコー）。true なら、離したときにエフェクトの出口を閉じず、
+   * エフェクトの stop で、エフェクトへ送る音と、エフェクトの中の素通しを閉じる（素通しは土台の方に戻す）
+   */
+  tail?: boolean;
   create(ctx: AudioContext): LiveEffect;
 };
 
 class LiveAudio {
   private ctx: AudioContext | null = null;
+  private loading: Promise<void> | null = null;
   private attached: HTMLAudioElement | null = null;
   private input: GainNode | null = null;
   private dry: GainNode | null = null;
@@ -74,6 +81,12 @@ class LiveAudio {
     return this.ctx;
   }
 
+  /** AudioWorklet の処理（processors.js）を読み込む。エフェクトを作る前に待つ */
+  ready(): Promise<void> {
+    if (!this.loading) this.loading = this.context().audioWorklet.addModule(processorsUrl);
+    return this.loading;
+  }
+
   /** 曲の audio 要素の音を通す（2回目からは何もしない）。止まっていれば動かす */
   attach(audio: HTMLAudioElement) {
     const ctx = this.context();
@@ -89,7 +102,7 @@ class LiveAudio {
     if (this.ctx && this.ctx.state !== "running") await this.ctx.resume().catch(() => {});
   }
 
-  /** 選ぶエフェクトを変える。かけている最中なら、新しいエフェクトに切り替える */
+  /** 選ぶエフェクトを変える（ready の後に呼ぶ）。かけている最中なら、新しいエフェクトに切り替える */
   select(kind: LiveEffectKind | null) {
     if (this.effect?.kind.id === kind?.id) return;
     const ctx = this.context();
@@ -104,6 +117,8 @@ class LiveAudio {
         this.effect.node.move(this.last.point, this.last.bpm);
       }
     }
+    // 指を置いていなければ、エフェクトの出口は閉じておく（前のエフェクトの残りの響きも、ここで消える）
+    if (!this.engaged) this.wet!.gain.setTargetAtTime(0, ctx.currentTime, FADE / 3);
     if (old) {
       // 切り替えのつなぎ目で音が切れないよう、少し待ってから外す
       window.setTimeout(() => {
@@ -119,33 +134,40 @@ class LiveAudio {
     if (this.engaged && !this.effect) this.release();
   }
 
-  /** 指を置いた：選んでいるエフェクトをかける */
-  press(point: PadPoint, bpm: number) {
-    if (!this.effect) return;
+  /** 指を置いた：選んでいるエフェクトをかける。パッドに出す今の値を返す */
+  press(point: PadPoint, bpm: number): string {
+    if (!this.effect) return "";
     void this.resume();
     const t = this.context().currentTime;
     this.last = { point, bpm };
     this.effect.node.start?.(point, bpm);
-    this.effect.node.move(point, bpm);
+    const label = this.effect.node.move(point, bpm);
     this.dry!.gain.setTargetAtTime(0, t, FADE / 3);
     this.wet!.gain.setTargetAtTime(1, t, FADE / 3);
     this.engaged = true;
+    return label;
   }
 
-  /** 指を動かした */
-  move(point: PadPoint, bpm: number) {
+  /** 指を動かした。パッドに出す今の値を返す */
+  move(point: PadPoint, bpm: number): string {
     this.last = { point, bpm };
-    if (this.engaged) this.effect?.node.move(point, bpm);
+    return this.engaged && this.effect ? this.effect.node.move(point, bpm) : "";
   }
 
-  /** 指を離した：素通しに戻す */
+  /** 指を離した：素通しに戻す（残りの響きを鳴らすエフェクトは、出口を開けたまま） */
   release() {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.dry!.gain.setTargetAtTime(1, t, FADE / 3);
-    this.wet!.gain.setTargetAtTime(0, t, FADE / 3);
+    if (!this.effect?.kind.tail) this.wet!.gain.setTargetAtTime(0, t, FADE / 3);
     this.engaged = false;
     this.effect?.node.stop?.();
+  }
+
+  /** 単発の音の出口（エフェクトを通さない） */
+  oneShotOutput(): AudioNode {
+    this.context();
+    return this.oneShots!;
   }
 
   /**
@@ -165,12 +187,6 @@ class LiveAudio {
       an.getFloatFrequencyData(freq);
       return { peak: wave.reduce((m, v) => Math.max(m, Math.abs(v)), 0), spectrum: Array.from(freq) };
     };
-  }
-
-  /** 単発の音の出口（エフェクトを通さない） */
-  oneShotOutput(): AudioNode {
-    this.context();
-    return this.oneShots!;
   }
 }
 

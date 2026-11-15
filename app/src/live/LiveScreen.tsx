@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { stem } from "../paths";
 import { PauseIcon, PlayIcon } from "../components/Icons";
-import { useStoredNumber } from "../storage";
+import { useStoredNumber, useStoredString } from "../storage";
 import type { AppController } from "../hooks/useAppController";
 import { liveAudio, type PadPoint } from "./liveAudio";
 import { LIVE_EFFECTS } from "./effects";
@@ -33,11 +33,20 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
 
   /** 測った BPM（アプリを閉じても覚えておく） */
   const [bpm, , , saveBpm] = useStoredNumber("cyanomelody.liveBpm", DEFAULT_BPM);
-  const [effectId, setEffectId] = useState(LIVE_EFFECTS[0].id);
-  const effect = LIVE_EFFECTS.find((e) => e.id === effectId) ?? LIVE_EFFECTS[0];
+  /** 選んでいるエフェクト（アプリを閉じても覚えておく） */
+  const [storedEffect, setStoredEffect] = useStoredString("cyanomelody.liveEffect");
+  const effect = LIVE_EFFECTS.find((e) => e.id === storedEffect) ?? LIVE_EFFECTS[0];
+  // AudioWorklet の処理を読み込んでから、エフェクトを作る（読み込むまでは、XY パッドを押せない）
+  const [ready, setReady] = useState(false);
   useEffect(() => {
-    liveAudio.select(effect);
-  }, [effect]);
+    liveAudio
+      .ready()
+      .then(() => setReady(true))
+      .catch(c.showError);
+  }, [c.showError]);
+  useEffect(() => {
+    if (ready) liveAudio.select(effect);
+  }, [ready, effect]);
 
   return (
     <div className="m-live" data-testid="m-live">
@@ -81,13 +90,13 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
                 role="radio"
                 aria-checked={e.id === effect.id}
                 className={"m-live-effect" + (e.id === effect.id ? " selected" : "")}
-                onClick={() => setEffectId(e.id)}
+                onClick={() => setStoredEffect(e.id)}
               >
                 {e.label}
               </button>
             ))}
           </div>
-          <XyPad bpm={bpm} xLabel={effect.xLabel} yLabel={effect.yLabel} />
+          <XyPad bpm={bpm} xLabel={effect.xLabel} yLabel={effect.yLabel} disabled={!ready} />
         </div>
       </div>
     </div>
@@ -130,10 +139,12 @@ function BpmButton({ bpm, onBpm }: { bpm: number; onBpm: (bpm: number) => void }
 }
 
 /** XY パッド：指を置いている間だけ、選んでいるエフェクトをかける。位置で効き方を変える */
-function XyPad({ bpm, xLabel, yLabel }: { bpm: number; xLabel: string; yLabel: string }) {
+function XyPad({ bpm, xLabel, yLabel, disabled }: { bpm: number; xLabel: string; yLabel: string; disabled: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   /** 指の位置（置いていなければ null）。最初に置いた指だけを追う */
   const [point, setPoint] = useState<PadPoint | null>(null);
+  /** 指を置いている間に出す、今の値（「1/16」など） */
+  const [value, setValue] = useState("");
   const pointerId = useRef<number | null>(null);
   const toPoint = (e: React.PointerEvent): PadPoint => {
     const r = ref.current!.getBoundingClientRect();
@@ -144,6 +155,7 @@ function XyPad({ bpm, xLabel, yLabel }: { bpm: number; xLabel: string; yLabel: s
     if (e.pointerId !== pointerId.current) return;
     pointerId.current = null;
     setPoint(null);
+    setValue("");
     liveAudio.release();
   };
   return (
@@ -152,25 +164,30 @@ function XyPad({ bpm, xLabel, yLabel }: { bpm: number; xLabel: string; yLabel: s
       className={"m-live-xy" + (point ? " active" : "")}
       data-testid="m-live-xy"
       onPointerDown={(e) => {
-        if (pointerId.current !== null) return;
+        if (pointerId.current !== null || disabled) return;
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
         pointerId.current = e.pointerId;
         const p = toPoint(e);
         setPoint(p);
-        liveAudio.press(p, bpm);
+        setValue(liveAudio.press(p, bpm));
       }}
       onPointerMove={(e) => {
         if (e.pointerId !== pointerId.current) return;
         const p = toPoint(e);
         setPoint(p);
-        liveAudio.move(p, bpm);
+        setValue(liveAudio.move(p, bpm));
       }}
       onPointerUp={end}
       onPointerCancel={end}
     >
       <span className="m-live-xy-label x">← {xLabel} →</span>
-      <span className="m-live-xy-label y">↑ {yLabel}</span>
+      {yLabel && <span className="m-live-xy-label y">↑ {yLabel}</span>}
+      {value && (
+        <span className="m-live-xy-value" data-testid="m-live-xy-value">
+          {value}
+        </span>
+      )}
       {point && <span className="m-live-xy-dot" style={{ left: `${point.x * 100}%`, top: `${(1 - point.y) * 100}%` }} />}
     </div>
   );
