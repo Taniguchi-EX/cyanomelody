@@ -10,6 +10,8 @@ export type Screen =
   | { kind: "bulk" }
   | { kind: "editor" }
   | { kind: "player" }
+  /** ライブの画面（全画面の再生の右上のボタンから。live/LiveScreen.tsx） */
+  | { kind: "live" }
   /** 重ねて出す画面（設定・タグの詳細・出典とライセンスの編集・エフェクトの管理・確認）。下の画面はそのまま出し、戻る操作で閉じる */
   | { kind: "overlay" };
 

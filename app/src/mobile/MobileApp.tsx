@@ -10,6 +10,7 @@ import { MobileFullPlayer } from "./MobileFullPlayer";
 import { MobileList } from "./MobileList";
 import { useScreenStack } from "./useScreenStack";
 import { useKeyboard } from "./useKeyboard";
+import { LiveScreen } from "../live/LiveScreen";
 import { api } from "../api";
 import { hasNewCopy } from "../dataTransferText";
 import "./mobile.css";
@@ -211,8 +212,10 @@ export function MobileApp() {
               .then((ok) => ok && nav.push({ kind: "detail" }))
               .catch(c.showError);
           }}
+          onOpenLive={() => nav.push({ kind: "live" })}
         />
       )}
+      {base.kind === "live" && <LiveScreen c={c} onClose={nav.back} />}
       {/* 音を Web Audio に通せるよう、CORS で読む（platform.ts の mediaSrc） */}
       <audio crossOrigin="anonymous" {...audio.audioProps} />
     </div>

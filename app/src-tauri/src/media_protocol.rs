@@ -5,6 +5,9 @@
 //! エフェクトセットをかけた音（データの置き場所の `effects-cache` の WAV）も、同じ理由でこのプロトコルで返す（それ以外のパスは返さない）。
 //! URL は `http://cm-media.localhost/<場所（FsUri の JSON）を URL エンコードしたもの>`（画面では convertFileSrc(場所, "cm-media")）
 
+// 使うのは Android だけ（Windows では、単体テストだけが使う）
+#![cfg_attr(not(target_os = "android"), allow(dead_code))]
+
 use std::io::{Read, Seek, SeekFrom};
 
 /// 終わりを指定しない範囲（`bytes=100-`）のとき、1回に返す最大の大きさ。audio 要素は続きを改めて求める

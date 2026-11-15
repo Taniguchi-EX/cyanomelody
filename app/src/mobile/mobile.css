@@ -441,10 +441,14 @@
   justify-content: flex-end;
 }
 
-.m-full-close {
+/* 上の行：左に「↓」（閉じる）、右にライブの画面へ切り替えるボタン */
+.m-full-top {
   position: absolute;
   top: calc(env(safe-area-inset-top) + 8px);
   left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
 }
 
 /* 設定のタブ：名前を折り返さず、入らない分は横にスクロールする */
@@ -516,4 +520,145 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ===== ライブの画面（live/LiveScreen.tsx）：全画面の再生と同じく、画面いっぱいに重ねる ===== */
+.m-live {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--bg);
+  /* 指の操作を、スクロールや拡大に使わせない */
+  touch-action: none;
+}
+
+.m-live-title {
+  font-size: calc(15px * var(--text-scale, 1));
+}
+
+/* 左右の半分 */
+.m-live-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+}
+
+.m-live-left,
+.m-live-right {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 単発の音のボタン（2列×3段。縦は残りの高さを分ける） */
+.m-live-pads {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.m-app .m-live-pad {
+  min-height: 0;
+  border-radius: 10px;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.m-live-pad:active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* BPM のボタン（左下） */
+.m-app .m-live-bpm {
+  flex: none;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 10px;
+}
+
+.m-live-bpm-value {
+  font-size: calc(22px * var(--text-scale, 1));
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+}
+
+.m-live-bpm.measuring {
+  border-color: var(--accent);
+}
+
+/* エフェクトを選ぶボタン（2列） */
+.m-live-effects {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.m-app .m-live-effect {
+  min-height: 40px;
+  font-size: calc(13px * var(--text-scale, 1));
+}
+
+.m-live-effect.selected {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* XY パッド：残りの高さいっぱい */
+.m-live-xy {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-sub);
+  overflow: hidden;
+}
+
+.m-live-xy.active {
+  border-color: var(--accent);
+}
+
+.m-live-xy-label {
+  position: absolute;
+  color: var(--fg-sub);
+  font-size: calc(11px * var(--text-scale, 1));
+  pointer-events: none;
+}
+
+.m-live-xy-label.x {
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.m-live-xy-label.y {
+  top: 4px;
+  left: 6px;
+}
+
+.m-live-xy-dot {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+  pointer-events: none;
 }
