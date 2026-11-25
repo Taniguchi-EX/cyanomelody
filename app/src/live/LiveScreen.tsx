@@ -5,7 +5,7 @@ import { useStoredNumber, useStoredString } from "../storage";
 import type { AppController } from "../hooks/useAppController";
 import { liveAudio, type PadPoint } from "./liveAudio";
 import { LIVE_EFFECTS } from "./effects";
-import { ONE_SHOTS } from "./oneShots";
+import { ONE_SHOTS, pressOneShot, type OneShot } from "./oneShots";
 import { addTap, DEFAULT_BPM, tapBpm } from "./bpm";
 
 /**
@@ -63,21 +63,7 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
         <div className="m-live-left">
           <div className="m-live-pads">
             {ONE_SHOTS.map((s) => (
-              <button
-                key={s.id}
-                className="m-live-pad"
-                // 指が触れた瞬間に鳴らす（click は離したときなので遅い）
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  flash(e.currentTarget);
-                  const ctx = liveAudio.context();
-                  void liveAudio.resume();
-                  s.play(ctx, liveAudio.oneShotOutput(), ctx.currentTime);
-                }}
-                data-testid="m-live-pad"
-              >
-                {s.label}
-              </button>
+              <OneShotPad key={s.id} shot={s} bpm={bpm} />
             ))}
           </div>
           <BpmButton bpm={bpm} onBpm={saveBpm} />
@@ -111,6 +97,49 @@ function flash(el: HTMLElement) {
   el.classList.remove("hit");
   void el.offsetWidth; // アニメーションを最初からやり直させる
   el.classList.add("hit");
+}
+
+/**
+ * 単発の音のボタン：触れた瞬間に鳴らし、押したままなら連打する（oneShots.ts）。
+ * 指ごとに別々に扱う。指がボタンの外に出ても、離すまで続ける
+ */
+function OneShotPad({ shot, bpm }: { shot: OneShot; bpm: number }) {
+  /** 押している指ごとの、離したときに呼ぶ関数 */
+  const holds = useRef(new Map<number, () => void>());
+  const end = (e: React.PointerEvent) => {
+    holds.current.get(e.pointerId)?.();
+    holds.current.delete(e.pointerId);
+  };
+  // 画面を閉じたときは、押したままの音を止める
+  useEffect(() => {
+    const map = holds.current;
+    return () => {
+      map.forEach((stop) => stop());
+      map.clear();
+    };
+  }, []);
+  return (
+    <button
+      className="m-live-pad"
+      // 指が触れた瞬間に鳴らす（click は離したときなので遅い）
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        flash(e.currentTarget);
+        const ctx = liveAudio.context();
+        void liveAudio.resume();
+        holds.current.get(e.pointerId)?.();
+        holds.current.set(e.pointerId, pressOneShot(shot, ctx, liveAudio.oneShotOutput(), bpm));
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      // 長押しで端末のメニューが出ないように
+      onContextMenu={(e) => e.preventDefault()}
+      data-testid="m-live-pad"
+    >
+      {shot.label}
+    </button>
+  );
 }
 
 /** BPM のボタン：曲に合わせて何回か押すと、間隔から BPM を出して覚える（bpm.ts） */

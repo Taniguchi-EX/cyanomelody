@@ -1,4 +1,5 @@
 import type { LiveEffect, LiveEffectKind, PadPoint } from "./liveAudio";
+import { BeatClock } from "./beatClock";
 
 /**
  * ライブの画面のエフェクト（12個。docs の 01-01_エフェクト.md）。SOUND VOLTEX の FX とつまみのフィルターを参考にしたもの。
@@ -35,45 +36,6 @@ const seconds = (beats: number, bpm: number) => (beats * 60) / bpm;
 
 /** 周波数を「850Hz」「2.4kHz」の形にする */
 const hz = (f: number) => (f >= 1000 ? `${(f / 1000).toFixed(1)}kHz` : `${Math.round(f)}Hz`);
-
-/**
- * 拍に合わせて、音の動きを先に予定しておく仕組み。画面の描き直しやタイマーの遅れに影響されないよう、
- * 少し先（LOOKAHEAD 秒）までの拍の時刻を AudioContext の時刻で決め、onBeat に渡す
- */
-class BeatClock {
-  private static readonly LOOKAHEAD = 0.15;
-  private timer: number | null = null;
-  private next = 0;
-  private period = 0.5;
-  private ctx: AudioContext;
-  private onBeat: (time: number, period: number) => void;
-  constructor(ctx: AudioContext, onBeat: (time: number, period: number) => void) {
-    this.ctx = ctx;
-    this.onBeat = onBeat;
-  }
-  start(period: number) {
-    this.stop();
-    this.period = period;
-    this.next = this.ctx.currentTime;
-    this.tick();
-    this.timer = window.setInterval(() => this.tick(), 25);
-  }
-  /** 間隔を変える（次の拍から） */
-  setPeriod(period: number) {
-    this.period = period;
-  }
-  stop() {
-    if (this.timer !== null) window.clearInterval(this.timer);
-    this.timer = null;
-  }
-  private tick() {
-    const until = this.ctx.currentTime + BeatClock.LOOKAHEAD;
-    while (this.next < until) {
-      this.onBeat(this.next, this.period);
-      this.next += this.period;
-    }
-  }
-}
 
 /** AudioWorklet の処理（processors.js）を使うノード。2チャンネルで出す */
 const workletNode = (ctx: AudioContext, name: string) =>

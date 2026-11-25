@@ -72,6 +72,8 @@ class LiveAudio {
       this.wet.gain.value = 0;
       this.output = ctx.createGain();
       this.oneShots = ctx.createGain();
+      // 単発の音は、曲より少し小さめにする
+      this.oneShots.gain.value = 0.8;
       this.input.connect(this.dry);
       this.dry.connect(this.output);
       this.wet.connect(this.output);
