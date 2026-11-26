@@ -1,16 +1,13 @@
 /**
  * 単発の音（6個。docs の 01-02_単発の音.md）：音のファイルを使わず、その場で作る短い音。
- * 押した瞬間に1回鳴らし、押したままにすると BPM に合わせて連打する（押した瞬間を拍の頭とみなす）。
+ * 押した瞬間に1回鳴らす（Riser だけは、押している間鳴らす）。ボタンに録った音があれば、そちらを鳴らす（samples.ts）。
  * 曲の音には重ねるが、エフェクトは通さない（liveAudio の oneShotOutput へ鳴らす）
  */
-import { BeatClock } from "./beatClock";
 
 export type OneShot = {
   id: string;
   /** ボタンに出す名前 */
   label: string;
-  /** 押したままにしたときの連打の間隔（拍。四分音符が1）。なければ連打しない */
-  roll?: number;
   /** when（AudioContext の時刻）に、out へ1回鳴らす */
   play?(ctx: AudioContext, out: AudioNode, when: number): void;
   /** 押している間だけ鳴らす音（Riser）。when から鳴らし始め、離したときに呼ぶ関数を返す */
@@ -107,22 +104,19 @@ export const ONE_SHOTS: OneShot[] = [
   {
     id: "kick",
     label: "Kick",
-    roll: 1,
     play: (ctx, out, t) => (drop(ctx, out, t, 160, 45, 0.9, 0.5), noiseHit(ctx, out, t, "highpass", 4000, 0.25, 0.015)),
   },
   {
     id: "snare",
     label: "Snare",
-    roll: 1 / 4,
     play: (ctx, out, t) => (noiseHit(ctx, out, t, "highpass", 1200, 0.6, 0.2), drop(ctx, out, t, 220, 160, 0.35, 0.12)),
   },
   {
     id: "clap",
     label: "Clap",
-    roll: 1 / 2,
     play: (ctx, out, t) => [0, 0.012, 0.024].forEach((d) => noiseHit(ctx, out, t + d, "bandpass", 1500, 1.8, 0.12)),
   },
-  { id: "hat", label: "Hat", roll: 1 / 4, play: (ctx, out, t) => noiseHit(ctx, out, t, "highpass", 7000, 0.6, 0.06) },
+  { id: "hat", label: "Hat", play: (ctx, out, t) => noiseHit(ctx, out, t, "highpass", 7000, 0.6, 0.06) },
   { id: "riser", label: "Riser", hold: riser },
   {
     id: "impact",
@@ -135,35 +129,10 @@ export const ONE_SHOTS: OneShot[] = [
   },
 ];
 
-/**
- * ボタンを押した：音を鳴らし始める。離したときに呼ぶ関数を返す。
- * 連打は、拍に合わせて少し先まで予定を組むので、離したときに、まだ鳴り始めていない分を取り消す
- * （短く押したときに、2回目が鳴らないように）
- */
+/** ボタンを押した：音を鳴らし始める。離したときに呼ぶ関数を返す（Riser のほかは、何もしない） */
 export function pressOneShot(shot: OneShot, ctx: AudioContext, out: AudioNode, bpm: number): () => void {
   const now = ctx.currentTime;
   if (shot.hold) return shot.hold(ctx, out, now, bpm);
-  if (!shot.play) return () => {};
-  if (!shot.roll) {
-    shot.play(ctx, out, now);
-    return () => {};
-  }
-  const play = shot.play;
-  /** 予定を組んだ音（鳴り始めの時刻と、その音だけの出口） */
-  let hits: { time: number; gain: GainNode }[] = [];
-  const clock = new BeatClock(ctx, (time) => {
-    const gain = ctx.createGain();
-    gain.connect(out);
-    play(ctx, gain, time);
-    // 鳴り始めてから時間がたったものは、もう取り消さないので覚えておかない
-    hits = hits.filter((h) => h.time > ctx.currentTime);
-    hits.push({ time, gain });
-  });
-  clock.start(seconds(shot.roll, bpm));
-  return () => {
-    clock.stop();
-    const t = ctx.currentTime;
-    for (const h of hits) if (h.time > t) h.gain.disconnect();
-    hits = [];
-  };
+  shot.play?.(ctx, out, now);
+  return () => {};
 }

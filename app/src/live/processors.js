@@ -232,6 +232,45 @@ class BitCrushProcessor extends AudioWorkletProcessor {
   }
 }
 
+/**
+ * 録音：作られた瞬間から、入ってきた音を覚える（2チャンネル）。{ type: "stop" } を受け取るか、
+ * 最大の長さ（processorOptions.max 秒）に達したら止め、覚えた音を { type: "done", channels } で返す。出口は無音
+ */
+class RecorderProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    this.max = Math.floor(sampleRate * (options?.processorOptions?.max ?? 8));
+    this.buf = [new Float32Array(this.max), new Float32Array(this.max)];
+    this.n = 0;
+    this.done = false;
+    this.port.onmessage = (e) => {
+      if (e.data?.type === "stop") this.finish();
+    };
+  }
+
+  finish() {
+    if (this.done) return;
+    this.done = true;
+    const channels = this.buf.map((b) => b.slice(0, this.n));
+    this.port.postMessage({ type: "done", channels }, channels.map((c) => c.buffer));
+  }
+
+  process(inputs) {
+    if (this.done) return false;
+    const input = inputs[0];
+    const len = input && input.length > 0 ? input[0].length : 128;
+    const take = Math.min(len, this.max - this.n);
+    for (let c = 0; c < 2; c++) {
+      const src = channel(input, c);
+      if (src) this.buf[c].set(src.subarray(0, take), this.n);
+    }
+    this.n += take;
+    if (this.n >= this.max) this.finish();
+    return !this.done;
+  }
+}
+
+registerProcessor("cm-recorder", RecorderProcessor);
 registerProcessor("cm-retrigger", RetriggerProcessor);
 registerProcessor("cm-tapestop", TapeStopProcessor);
 registerProcessor("cm-pitch", PitchProcessor);

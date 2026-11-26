@@ -585,9 +585,104 @@
   }
 }
 
-/* BPM のボタン（左下） */
-.m-app .m-live-bpm {
+/* 単発の音のボタンの、名前の下の小さな文字（録った音の印「REC」、録っている間の長さ） */
+.m-app .m-live-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.m-live-pad-sub {
+  font-size: calc(10px * var(--text-scale, 1));
+  color: var(--rec, #e5484d);
+  font-weight: bold;
+  letter-spacing: 0.05em;
+}
+
+.m-live-pad-sub.recording {
+  font-variant-numeric: tabular-nums;
+}
+
+/* REC モードの間は、単発の音のボタンを赤い枠にする。録っている間は赤く塗る */
+.m-app .m-live-pad.rec-mode {
+  border-color: var(--rec, #e5484d);
+}
+
+.m-app .m-live-pad.recording {
+  background: var(--rec, #e5484d);
+  color: #fff;
+}
+
+.m-app .m-live-pad.recording .m-live-pad-sub {
+  color: #fff;
+}
+
+/* 録る音の切り替え（REC モードの間だけ、左下のボタンの上に出す） */
+.m-live-rec-source {
   flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.m-app .m-live-rec-source button {
+  height: 36px;
+  border-radius: 8px;
+  font-size: calc(12px * var(--text-scale, 1));
+}
+
+.m-app .m-live-rec-source button.selected {
+  border-color: var(--rec, #e5484d);
+  color: var(--rec, #e5484d);
+  font-weight: bold;
+}
+
+/* 左下の並び：REC のボタンと BPM のボタン */
+.m-live-bottom {
+  flex: none;
+  display: flex;
+  gap: 8px;
+}
+
+.m-app .m-live-rec {
+  flex: none;
+  width: 64px;
+  height: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  font-size: calc(12px * var(--text-scale, 1));
+  font-weight: bold;
+}
+
+.m-live-rec-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--rec, #e5484d);
+}
+
+/* REC モードの間は、押し込まれた見た目にして赤くする */
+.m-app .m-live-rec.on {
+  background: var(--rec, #e5484d);
+  border-color: var(--rec, #e5484d);
+  color: #fff;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+
+.m-app .m-live-rec.on .m-live-rec-dot {
+  background: #fff;
+}
+
+/* BPM のボタン（左下。REC のボタンの右） */
+.m-app .m-live-bpm {
+  flex: 1;
+  min-width: 0;
   height: 88px;
   display: flex;
   flex-direction: column;
@@ -595,6 +690,12 @@
   justify-content: center;
   gap: 2px;
   border-radius: 10px;
+}
+
+/* 「曲に合わせてタップ」などの小さな文字（REC のボタンの分だけ狭いので、1行に収める） */
+.m-app .m-live-bpm .sub {
+  font-size: calc(10px * var(--text-scale, 1));
+  white-space: nowrap;
 }
 
 .m-live-bpm-value {

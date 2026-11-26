@@ -3,6 +3,7 @@
  *
  * 曲の audio 要素の音 → 入口 →（素通し｜エフェクト）→ 出口 → スピーカー
  * 単発の音 → 単発の音の出口 → スピーカー（エフェクトは通さない）
+ * 録音（REC モード）：出口の音（曲。エフェクトの後）か、マイクの音 → 録音の処理（processors.js の cm-recorder）
  *
  * 曲の音を AudioContext に通すのは、ライブの画面を初めて開いたとき（attach）。createMediaElementSource は取り消せないので、
  * 一度通したら、アプリを閉じるまで通したまま（ライブの画面を開かなければ、普段の再生には手を入れない）。
@@ -164,6 +165,72 @@ class LiveAudio {
     if (!this.effect?.kind.tail) this.wet!.gain.setTargetAtTime(0, t, FADE / 3);
     this.engaged = false;
     this.effect?.node.stop?.();
+  }
+
+  /** マイクの音（REC モードでマイクを選んでいる間だけ開く） */
+  private mic: { stream: MediaStream; node: MediaStreamAudioSourceNode } | null = null;
+  /** openMic・closeMic のたびに増やす（開いている途中で閉じられたかを見分ける） */
+  private micGeneration = 0;
+
+  /**
+   * マイクを開く（初めてのときは、端末が許可を求める）。許可されなければ失敗する。
+   * 押した瞬間に録り始められるよう、REC モードでマイクを選んだときに開いておく
+   */
+  async openMic() {
+    if (this.mic) return;
+    const ctx = this.context();
+    const generation = ++this.micGeneration;
+    // 声の通話向けの処理（こだま消し・雑音消し・音量の自動調整）は、音を変えてしまうので切る
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    // 開いている途中で閉じられた（または開き直された）ときは、この分は使わずに閉じる
+    if (generation !== this.micGeneration || this.mic) {
+      stream.getTracks().forEach((t) => t.stop());
+      if (generation !== this.micGeneration) throw new Error("マイクを開く途中で閉じました");
+      return;
+    }
+    this.mic = { stream, node: ctx.createMediaStreamSource(stream) };
+  }
+
+  /** マイクを閉じる（端末のマイクの使用中の表示も消える。開いている途中なら、開き終わったときに閉じる） */
+  closeMic() {
+    this.micGeneration++;
+    if (!this.mic) return;
+    this.mic.node.disconnect();
+    this.mic.stream.getTracks().forEach((t) => t.stop());
+    this.mic = null;
+  }
+
+  /**
+   * 録り始める（ready の後に呼ぶ）。曲（ライブの出口。エフェクトの後の音）か、マイク（先に openMic する）の音を、
+   * stop を呼ぶか max 秒に達するまで覚える。result は、覚えた音（2チャンネル）
+   */
+  record(source: "song" | "mic", max: number): { stop(): void; result: Promise<Float32Array[]> } {
+    const ctx = this.context();
+    const from = source === "mic" ? this.mic?.node : this.output;
+    if (!from) throw new Error("マイクを開いていません");
+    const node = new AudioWorkletNode(ctx, "cm-recorder", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      processorOptions: { max },
+    });
+    // 出口は無音だが、スピーカーまでつながないと処理が動かない
+    const silent = ctx.createGain();
+    silent.gain.value = 0;
+    from.connect(node);
+    node.connect(silent).connect(ctx.destination);
+    const result = new Promise<Float32Array[]>((resolve) => {
+      node.port.onmessage = (e) => {
+        if (e.data?.type !== "done") return;
+        from.disconnect(node);
+        node.disconnect();
+        silent.disconnect();
+        resolve(e.data.channels as Float32Array[]);
+      };
+    });
+    return { stop: () => node.port.postMessage({ type: "stop" }), result };
   }
 
   /** 単発の音の出口（エフェクトを通さない） */
