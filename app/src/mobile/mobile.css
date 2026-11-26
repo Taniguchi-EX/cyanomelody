@@ -585,23 +585,38 @@
   }
 }
 
-/* 単発の音のボタンの、名前の下の小さな文字（録った音の印「REC」、録っている間の長さ） */
+/* 単発の音のボタンの中身：鳴らす音の波形（名前は出さない）と、録っている間の長さ */
 .m-app .m-live-pad {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+
+.m-live-wave {
+  position: absolute;
+  inset: 12px 8px;
+  width: calc(100% - 16px);
+  height: calc(100% - 24px);
+  fill: none;
+  stroke: var(--fg-sub);
+  stroke-width: 0.55;
+  stroke-linecap: round;
+  opacity: 0.45;
+}
+
+/* 録った音の波形は、はっきりした色にする */
+.m-live-wave.recorded {
+  stroke: var(--accent);
+  opacity: 1;
 }
 
 .m-live-pad-sub {
-  font-size: calc(10px * var(--text-scale, 1));
-  color: var(--rec, #e5484d);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  font-size: calc(11px * var(--text-scale, 1));
   font-weight: bold;
-  letter-spacing: 0.05em;
-}
-
-.m-live-pad-sub.recording {
   font-variant-numeric: tabular-nums;
 }
 
@@ -615,8 +630,11 @@
   color: #fff;
 }
 
-.m-app .m-live-pad.recording .m-live-pad-sub {
+.m-app .m-live-pad.recording .m-live-pad-sub,
+.m-app .m-live-pad.recording .m-live-wave {
   color: #fff;
+  stroke: #fff;
+  opacity: 0.8;
 }
 
 /* 録る音の切り替え（REC モードの間だけ、左下のボタンの上に出す） */

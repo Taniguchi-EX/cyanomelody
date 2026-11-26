@@ -5,9 +5,9 @@ import { useStoredNumber, useStoredString } from "../storage";
 import type { AppController } from "../hooks/useAppController";
 import { liveAudio, type PadPoint } from "./liveAudio";
 import { LIVE_EFFECTS } from "./effects";
-import { ONE_SHOTS, pressOneShot, type OneShot } from "./oneShots";
+import { ONE_SHOTS, pressOneShot, renderOneShot, type OneShot } from "./oneShots";
 import { addTap, DEFAULT_BPM, tapBpm } from "./bpm";
-import { bufferFor, loadSamples, MAX_RECORD_SECONDS, playSample, saveSample, type Sample } from "./samples";
+import { bufferFor, loadSamples, MAX_RECORD_SECONDS, peaks, playSample, saveSample, type Sample } from "./samples";
 
 /** 録る音（曲：ライブの出口の音、マイク：端末のマイク） */
 type RecSource = "song" | "mic";
@@ -104,6 +104,18 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
     return () => window.clearTimeout(timer);
   }, [samples, bpm]);
   const canRecord = ready && (recSource === "song" || micOpen);
+  /** その場で作る音の波形（録った音がないボタンに出す。開いたときに、音を出さずに作る） */
+  const [builtin, setBuiltin] = useState<Map<string, Float32Array[]>>(new Map());
+  useEffect(() => {
+    const rate = liveAudio.context().sampleRate;
+    let alive = true;
+    void Promise.all(ONE_SHOTS.map(async (s) => [s.id, await renderOneShot(s, rate)] as const)).then(
+      (list) => alive && setBuiltin(new Map(list)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="m-live" data-testid="m-live">
@@ -125,6 +137,7 @@ export function LiveScreen({ c, onClose }: { c: AppController; onClose: () => vo
                 shot={s}
                 bpm={bpm}
                 sample={samples.get(s.id)}
+                builtinWave={builtin.get(s.id)}
                 rec={recMode ? { source: recSource, enabled: canRecord, onRecorded } : null}
               />
             ))}
@@ -197,11 +210,14 @@ function OneShotPad({
   shot,
   bpm,
   sample,
+  builtinWave,
   rec,
 }: {
   shot: OneShot;
   bpm: number;
   sample: Sample | undefined;
+  /** その場で作る音の波形（録った音がないときに出す） */
+  builtinWave: Float32Array[] | undefined;
   rec: { source: RecSource; enabled: boolean; onRecorded: (id: string, sample: Sample) => void } | null;
 }) {
   /** 押している指ごとの、離したときに呼ぶ関数 */
@@ -267,15 +283,31 @@ function OneShotPad({
       onPointerCancel={end}
       // 長押しで端末のメニューが出ないように
       onContextMenu={(e) => e.preventDefault()}
+      aria-label={shot.label + (sample ? "（録った音）" : "")}
       data-testid="m-live-pad"
     >
-      <span>{shot.label}</span>
-      {recording ? (
-        <span className="m-live-pad-sub recording">● {recording.seconds.toFixed(1)}秒</span>
-      ) : (
-        sample && <span className="m-live-pad-sub">REC</span>
-      )}
+      {/* 名前は出さず、鳴らす音の波形を出す（録った音ははっきりした色、その場で作る音は薄い色） */}
+      {(sample?.channels ?? builtinWave) && <Waveform channels={(sample?.channels ?? builtinWave)!} recorded={!!sample} />}
+      {recording && <span className="m-live-pad-sub recording">● {recording.seconds.toFixed(1)}秒</span>}
     </button>
+  );
+}
+
+/** 波形の区間の数（ボタンの横幅に対して十分な細かさ） */
+const WAVE_BARS = 48;
+
+/** 音の波形（区間ごとの大きさを、真ん中から上下に伸びる棒で描く） */
+function Waveform({ channels, recorded }: { channels: Float32Array[]; recorded: boolean }) {
+  const p = peaks(channels, WAVE_BARS);
+  // 小さな音も見えるよう、棒の高さは少しだけ底上げする
+  const d = p.map((v, i) => {
+    const h = Math.max(1, v * 90);
+    return `M${i + 0.5} ${50 - h / 2}V${50 + h / 2}`;
+  });
+  return (
+    <svg className={"m-live-wave" + (recorded ? " recorded" : "")} viewBox={`0 0 ${WAVE_BARS} 100`} preserveAspectRatio="none" aria-hidden>
+      <path d={d.join("")} />
+    </svg>
   );
 }
 
@@ -299,7 +331,7 @@ function BpmButton({ bpm, onBpm }: { bpm: number; onBpm: (bpm: number) => void }
       data-testid="m-live-bpm"
     >
       <span className="m-live-bpm-value">BPM {Math.round(bpm)}</span>
-      <span className="sub">{count > 0 && count < 4 ? `あと${4 - count}回` : "曲に合わせてタップ"}</span>
+      {count > 0 && count < 4 && <span className="sub">あと{4 - count}回</span>}
     </button>
   );
 }

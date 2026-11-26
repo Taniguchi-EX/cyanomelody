@@ -136,3 +136,18 @@ export function pressOneShot(shot: OneShot, ctx: AudioContext, out: AudioNode, b
   shot.play?.(ctx, out, now);
   return () => {};
 }
+
+/**
+ * その場で作る音を、音を出さずに作って返す（録った音がないボタンに、その音の波形を出すため）。
+ * Riser は押している間鳴る音なので、1小節（BPM 120 で2秒）分を作る
+ */
+export async function renderOneShot(shot: OneShot, sampleRate: number): Promise<Float32Array[]> {
+  const seconds = shot.hold ? 2 : shot.id === "impact" ? 1.8 : 0.6;
+  const ctx = new OfflineAudioContext(1, Math.round(sampleRate * seconds), sampleRate);
+  // OfflineAudioContext は AudioContext の型と違うが、使う部品は同じ
+  const c = ctx as unknown as AudioContext;
+  if (shot.hold) shot.hold(c, ctx.destination, 0, 120);
+  else shot.play?.(c, ctx.destination, 0);
+  const buf = await ctx.startRendering();
+  return [buf.getChannelData(0)];
+}

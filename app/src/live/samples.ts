@@ -157,3 +157,27 @@ export function stopSample(ctx: AudioContext, id: string) {
   prev.src.stop(now + 0.015);
   playing.delete(id);
 }
+
+/**
+ * 波形の形（ボタンに出す）：音を count 個の区間に分け、区間ごとの大きさの最大を、全体の最大（0.05 より小さければ 0.05）で 0〜1 にそろえて返す。
+ * 録った音ごとに覚えておく（描き直しのたびに数十万の点を読まないように）
+ */
+const peakCache = new WeakMap<Float32Array[], number[]>();
+export function peaks(channels: Float32Array[], count: number): number[] {
+  const hit = peakCache.get(channels);
+  if (hit && hit.length === count) return hit;
+  const len = channels[0]?.length ?? 0;
+  const out = new Array<number>(count).fill(0);
+  for (let b = 0; b < count; b++) {
+    const from = Math.floor((b * len) / count);
+    const to = Math.max(from + 1, Math.floor(((b + 1) * len) / count));
+    let m = 0;
+    for (const ch of channels) for (let i = from; i < to && i < len; i++) m = Math.max(m, Math.abs(ch[i]));
+    out[b] = m;
+  }
+  // ごく小さな音（ほぼ無音の録音）は、全体の最大でそろえると大きく見えてしまうので、小さいまま描く
+  const top = Math.max(0.05, ...out);
+  const result = out.map((v) => v / top);
+  peakCache.set(channels, result);
+  return result;
+}
